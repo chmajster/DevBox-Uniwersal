@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { request } from '../api/client'
+import './DirectoryPicker.css'
 
 interface DirectoryEntry {
   name: string
