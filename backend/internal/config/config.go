@@ -18,6 +18,20 @@ type Config struct {
 	BootstrapAdminPassword string
 	MasterKeyBase64        string
 	AppVersion             string
+
+	MySQLHost          string
+	MySQLPort          int
+	MySQLAdminUser     string
+	MySQLAdminPassword string
+	MySQLAppHost       string
+	MySQLBinary        string
+	MySQLDumpBinary    string
+	MySQLBackupDir     string
+
+	PHPMyAdminDockerBinary string
+	PHPMyAdminImage        string
+	PHPMyAdminContainer    string
+	PHPMyAdminHostPort     int
 }
 
 func Load() (Config, error) {
@@ -33,6 +47,14 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("parse DEVBOX_COOKIE_SECURE: %w", err)
 	}
+	mysqlPort, err := getEnvInt("DEVBOX_MYSQL_PORT", 3306)
+	if err != nil {
+		return Config{}, err
+	}
+	phpMyAdminPort, err := getEnvInt("DEVBOX_PHPMYADMIN_PORT", 8081)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		HTTPAddr:               getEnv("DEVBOX_HTTP_ADDR", "127.0.0.1:8787"),
@@ -44,6 +66,18 @@ func Load() (Config, error) {
 		BootstrapAdminPassword: os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_PASSWORD"),
 		MasterKeyBase64:        strings.TrimSpace(os.Getenv("DEVBOX_MASTER_KEY")),
 		AppVersion:             getEnv("DEVBOX_VERSION", "dev"),
+		MySQLHost:              getEnv("DEVBOX_MYSQL_HOST", "127.0.0.1"),
+		MySQLPort:              mysqlPort,
+		MySQLAdminUser:         getEnv("DEVBOX_MYSQL_ADMIN_USER", "devbox_admin"),
+		MySQLAdminPassword:     os.Getenv("DEVBOX_MYSQL_ADMIN_PASSWORD"),
+		MySQLAppHost:           getEnv("DEVBOX_MYSQL_APP_HOST", "%"),
+		MySQLBinary:            getEnv("DEVBOX_MYSQL_BIN", "mysql"),
+		MySQLDumpBinary:        getEnv("DEVBOX_MYSQLDUMP_BIN", "mysqldump"),
+		MySQLBackupDir:         getEnv("DEVBOX_MYSQL_BACKUP_DIR", "./data/backups/mysql"),
+		PHPMyAdminDockerBinary: getEnv("DEVBOX_DOCKER_BIN", "docker"),
+		PHPMyAdminImage:        getEnv("DEVBOX_PHPMYADMIN_IMAGE", "phpmyadmin:5.2-apache"),
+		PHPMyAdminContainer:    getEnv("DEVBOX_PHPMYADMIN_CONTAINER", "devbox-phpmyadmin"),
+		PHPMyAdminHostPort:     phpMyAdminPort,
 	}
 
 	if cfg.HTTPAddr == "" || cfg.DatabasePath == "" || cfg.MigrationsDir == "" {
@@ -51,6 +85,12 @@ func Load() (Config, error) {
 	}
 	if (cfg.BootstrapAdminUsername == "") != (cfg.BootstrapAdminPassword == "") {
 		return Config{}, fmt.Errorf("bootstrap admin username and password must be configured together")
+	}
+	if cfg.MySQLPort < 1 || cfg.MySQLPort > 65535 {
+		return Config{}, fmt.Errorf("DEVBOX_MYSQL_PORT must be between 1 and 65535")
+	}
+	if cfg.PHPMyAdminHostPort < 1 || cfg.PHPMyAdminHostPort > 65535 {
+		return Config{}, fmt.Errorf("DEVBOX_PHPMYADMIN_PORT must be between 1 and 65535")
 	}
 	return cfg, nil
 }
@@ -60,4 +100,13 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func getEnvInt(key string, fallback int) (int, error) {
+	value := getEnv(key, strconv.Itoa(fallback))
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", key, err)
+	}
+	return parsed, nil
 }

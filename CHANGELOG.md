@@ -18,9 +18,33 @@
 - Reproducible `go.sum` and `package-lock.json`.
 - CI for backend and frontend quality gates.
 - Architecture, roadmap, agent rules and ADR documentation.
+- MySQL/MariaDB-compatible database provider with status/version/connection checks, database lifecycle and database size reporting.
+- Managed database users with secure password generation, password rotation and whitelist-based per-database grants/revokes.
+- Project database provisioning that creates a dedicated database and user, stores the generated password in encrypted `SecretStore`, and returns the credential only from the provisioning response.
+- Database backup metadata and `mysqldump`/restore job handlers integrated with shared jobs/job logs.
+- Backup list/download/delete and restore API operations.
+- Independent phpMyAdmin Docker container lifecycle and frontend controls.
+- “Bazy danych” frontend page with database table, provisioning forms, backup controls, MySQL status and phpMyAdmin status/actions.
+- Same-origin protection for database-module browser mutations and actor-aware audit integration.
+
+### Security
+
+- Application projects never receive the MySQL administrative account.
+- MySQL application accounts are unique and scoped to their own database rather than `*.*`.
+- MySQL SQL is sent to controlled CLI processes over stdin; HTTP clients cannot supply arbitrary shell commands.
+- Administrative MySQL credentials are written only to a temporary mode-0600 option file for command execution and are not logged.
+- Database passwords and secret references are excluded from list serialization and job payloads.
+
+### Changed
+
+- Added `api.CurrentUser(ctx)` as an additive module integration helper for authenticated actor identity.
+- Added MySQL/phpMyAdmin environment configuration to `.env.example`.
+
+### Migration
+
+- `002_database_backups.sql`: adds `database_backups` and a unique managed database username index.
 
 ### Validation
 
-- GitHub Actions run `36341280870` passed all backend quality gates: formatting, vet, tests and build.
-- GitHub Actions run `36341280870` passed all frontend quality gates: `npm ci`, lint, typecheck, tests and production build.
-- Integration coverage validates SQLite migration idempotency, health/auth session flow and AES-GCM secret round-trip.
+- Agent 1 GitHub Actions run `36341280870` passed all backend and frontend foundation quality gates.
+- Agent 5 branch validation pending CI.

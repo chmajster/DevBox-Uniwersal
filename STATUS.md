@@ -1,39 +1,36 @@
 # Status
 
-Branch: `agent/01-foundation`
+Branch: `agent/05-databases`
 
-Foundation implementation is complete and validated.
+Agent 5 database scope is implemented on top of the Agent 1 foundation.
 
 Implemented:
 
-- Go HTTP bootstrap and configuration loader.
-- SQLite connection, WAL/foreign-key configuration and ordered transactional migration runner.
-- Initial schema for users, sessions, projects, project sources, runtime configs, ports, domains, databases, database users, deployments, jobs, job logs, secrets, health checks, audit events and settings.
-- Opaque-session authentication with bcrypt passwords and Admin/Operator/Viewer roles.
-- Bootstrap administrator creation with explicit environment credentials.
-- Core audit service and read endpoint.
-- AES-256-GCM secret encryption abstraction and SQLite `SecretStore`.
-- Runtime, job and provider contracts for parallel agent development.
-- API v1 health, system info, auth, jobs and audit endpoints.
-- React/TypeScript/Vite shell with login, protected layout, overview, jobs and audit pages.
-- Reproducible Go/npm dependency locks.
-- Backend/frontend GitHub Actions quality gates.
+- Concrete MySQL provider conforming to `providers.DatabaseProvider`.
+- MySQL/MariaDB-compatible status, version and connection checks.
+- Managed database create/delete/list/size operations.
+- Database user create/delete/password rotation.
+- Whitelisted, database-scoped grant/revoke operations; no application receives global grants.
+- Per-project database provisioning with a dedicated user and cryptographically generated password.
+- Database credentials encrypted through `secrets.SecretStore`; secret references and plaintext are masked from list APIs and job payloads.
+- Controlled MySQL CLI execution using a mode-0600 temporary client option file and SQL over stdin; no arbitrary shell endpoint.
+- Persistent database backup metadata migration.
+- `mysqldump` backup and MySQL restore handlers executed as jobs with shared `jobs`/`job_logs` persistence.
+- Backup list/download/delete and restore APIs.
+- Independent phpMyAdmin Docker install/start/stop/restart/status lifecycle.
+- Database API module with Viewer/Operator RBAC, audit events and same-origin checks for mutations.
+- Frontend “Bazy danych” page with required database table, project provisioning, backup/restore controls and phpMyAdmin panel.
+- Configuration for MySQL CLI/admin connection, backup directory and phpMyAdmin container.
+- Tests for identifier validation, secure password generation, database-scoped grants, secret masking, backup job behavior and restore failure handling.
+
+Schema changes:
+
+- `migrations/002_database_backups.sql` adds `database_backups` and a global uniqueness index for managed database usernames.
+
+Shared additive integration change:
+
+- `api.CurrentUser(ctx)` exposes the already-authenticated principal to domain modules for actor-aware audit/job records without exposing the private context key.
 
 Validation:
 
-- GitHub Actions run `36341280870`: successful.
-- Backend: `gofmt` clean, `go vet ./...`, `go test ./...`, `go build ./cmd/devbox` all successful.
-- Frontend: `npm ci`, lint, TypeScript typecheck, Vitest and Vite production build all successful.
-- Tests cover idempotent SQLite migrations, API health + bootstrap-admin login/session/current-user flow, and AES-GCM secret round-trip without plaintext ciphertext leakage.
-
-Intentionally not implemented in Agent 1:
-
-- Full Git provider.
-- Full runtime implementations.
-- Docker provider.
-- MySQL provider.
-- Nginx/reverse-proxy provider.
-- Platform-specific Windows/WSL service implementation.
-- Production job worker implementations.
-
-Those modules must implement the published contracts without creating cross-domain dependencies.
+- Pending branch CI after commit.
