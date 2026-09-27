@@ -15,11 +15,14 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/auth"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/config"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/monitoring"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/operations"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	devboxLogs := operations.NewRingLogSource("devbox", 2000)
+	logger := slog.New(operations.NewSlogCaptureHandler(slog.NewJSONHandler(os.Stdout, nil), devboxLogs))
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Error("configuration error", "error", err)
@@ -46,7 +49,34 @@ func main() {
 		os.Exit(1)
 	}
 	auditService := audit.NewService(auditRepo)
-	handler := api.New(api.Dependencies{DB: db, Auth: authService, Audit: auditService, Jobs: jobsRepo, Version: cfg.AppVersion, CookieSecure: cfg.CookieSecure})
+
+	logRegistry := operations.NewRegistry()
+	logSources := []operations.LogSource{
+		devboxLogs,
+		operations.NewSQLLogSource("project", db, operations.LogModeProject),
+		operations.NewSQLLogSource("deployment", db, operations.LogModeDeployment),
+		operations.NewSQLLogSource("job", db, operations.LogModeJob),
+	}
+	for _, source := range logSources {
+		if err := logRegistry.Register(source); err != nil {
+			logger.Error("register log source failed", "source", source.Name(), "error", err)
+			os.Exit(1)
+		}
+	}
+
+	modules := []api.Module{
+		monitoring.NewModule(monitoring.NewCollector()),
+		operations.NewModule(logRegistry),
+	}
+	handler := api.New(api.Dependencies{
+		DB:           db,
+		Auth:         authService,
+		Audit:        auditService,
+		Jobs:         jobsRepo,
+		Version:      cfg.AppVersion,
+		CookieSecure: cfg.CookieSecure,
+		Modules:      modules,
+	})
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
 	errCh := make(chan error, 1)
