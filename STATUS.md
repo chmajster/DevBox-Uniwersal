@@ -51,3 +51,9 @@ Validation:
 - MySQL/MariaDB provisioning, users, grants, backup/restore and phpMyAdmin are implemented.
 - Project credentials are generated securely and persisted only through SecretStore.
 - Agent 5 validation run: 36343337782.
+
+## Networking module
+
+- Port Manager, Nginx reverse proxy, domains and health checks are implemented.
+- Nginx changes follow validate → activate → validate → reload with rollback on failure.
+- Networking frontend exposes Domeny i Proxy and Porty.
