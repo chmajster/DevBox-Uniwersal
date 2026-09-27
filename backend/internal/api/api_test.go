@@ -50,12 +50,21 @@ func TestLoginMeAndHealth(t *testing.T) {
 		t.Fatalf("login status=%d body=%s", login.Code, login.Body.String())
 	}
 	cookies := login.Result().Cookies()
-	if len(cookies) == 0 {
-		t.Fatal("expected session cookie")
+	var sessionCookie, csrfCookie *http.Cookie
+	for _, cookie := range cookies {
+		switch cookie.Name {
+		case sessionCookieName:
+			sessionCookie = cookie
+		case csrfCookieName:
+			csrfCookie = cookie
+		}
+	}
+	if sessionCookie == nil || csrfCookie == nil {
+		t.Fatalf("expected session and CSRF cookies, got %#v", cookies)
 	}
 
 	meReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
-	meReq.AddCookie(cookies[0])
+	meReq.AddCookie(sessionCookie)
 	me := httptest.NewRecorder()
 	h.ServeHTTP(me, meReq)
 	if me.Code != http.StatusOK {
@@ -63,5 +72,23 @@ func TestLoginMeAndHealth(t *testing.T) {
 	}
 	if !strings.Contains(me.Body.String(), `"role":"admin"`) {
 		t.Fatalf("me response missing role: %s", me.Body.String())
+	}
+
+	logoutWithoutCSRF := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	logoutWithoutCSRF.AddCookie(sessionCookie)
+	blocked := httptest.NewRecorder()
+	h.ServeHTTP(blocked, logoutWithoutCSRF)
+	if blocked.Code != http.StatusForbidden {
+		t.Fatalf("logout without CSRF status=%d body=%s", blocked.Code, blocked.Body.String())
+	}
+
+	logoutReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	logoutReq.AddCookie(sessionCookie)
+	logoutReq.AddCookie(csrfCookie)
+	logoutReq.Header.Set("X-CSRF-Token", csrfCookie.Value)
+	logout := httptest.NewRecorder()
+	h.ServeHTTP(logout, logoutReq)
+	if logout.Code != http.StatusOK {
+		t.Fatalf("logout status=%d body=%s", logout.Code, logout.Body.String())
 	}
 }
