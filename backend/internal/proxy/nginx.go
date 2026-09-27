@@ -396,7 +396,7 @@ func privilegeFailure(operation, path string, err error) error {
 	if os.IsPermission(err) {
 		return &PrivilegeError{
 			Operation: operation,
-			Path: path,
+			Path:      path,
 			Instruction: "Grant the DevBox service account write access to " + path +
 				" or perform the change through a privilege-separated system service.",
 			Err: err,

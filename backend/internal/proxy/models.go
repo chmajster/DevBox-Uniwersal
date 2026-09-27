@@ -15,13 +15,13 @@ type PortRecord struct {
 }
 
 type HealthResult struct {
-	Status         string     `json:"status"`
-	ResponseTimeMS int64      `json:"response_time_ms"`
-	Error          string     `json:"error,omitempty"`
-	CheckedAt      time.Time  `json:"checked_at"`
-	Type           string     `json:"type,omitempty"`
-	Target         string     `json:"target,omitempty"`
-	ProjectID      string     `json:"project_id,omitempty"`
+	Status         string    `json:"status"`
+	ResponseTimeMS int64     `json:"response_time_ms"`
+	Error          string    `json:"error,omitempty"`
+	CheckedAt      time.Time `json:"checked_at"`
+	Type           string    `json:"type,omitempty"`
+	Target         string    `json:"target,omitempty"`
+	ProjectID      string    `json:"project_id,omitempty"`
 }
 
 type Domain struct {

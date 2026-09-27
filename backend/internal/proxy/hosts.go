@@ -87,7 +87,7 @@ func (h *FileHostsManager) Ensure(ctx context.Context, hostname, address string)
 	if err := atomicWriteFile(h.path, []byte(content), mode); err != nil {
 		if os.IsPermission(err) {
 			return HostChange{
-				Path: h.path,
+				Path:              h.path,
 				RequiresPrivilege: true,
 				Instruction: "Add the following line to " + h.path +
 					" with Administrator/root privileges: " + address + " " + hostname,
@@ -131,7 +131,7 @@ func (h *FileHostsManager) Remove(ctx context.Context, hostname string) (HostCha
 	if err := atomicWriteFile(h.path, []byte(content), mode); err != nil {
 		if os.IsPermission(err) {
 			return HostChange{
-				Path: h.path,
+				Path:              h.path,
 				RequiresPrivilege: true,
 				Instruction: "Remove the DevBox-managed entry for " + hostname +
 					" from " + h.path + " with Administrator/root privileges.",

@@ -35,7 +35,7 @@ func (f *fakeNginxRunner) Run(_ context.Context, _ string, args ...string) (stri
 func TestNginxConfigGeneration(t *testing.T) {
 	provider := NewNginxProvider(NginxOptions{})
 	config, err := provider.Render(providers.ProxyRoute{
-		Domain: "cloudportal.devbox.local",
+		Domain:   "cloudportal.devbox.local",
 		Upstream: "http://127.0.0.1:8010",
 	})
 	if err != nil {
@@ -59,7 +59,7 @@ func TestNginxFailedCandidateDoesNotActivate(t *testing.T) {
 	provider.runner = runner
 
 	err := provider.Apply(context.Background(), providers.ProxyRoute{
-		Domain: "cloudportal.devbox.local",
+		Domain:   "cloudportal.devbox.local",
 		Upstream: "http://127.0.0.1:8010",
 	})
 	if err == nil {
@@ -84,7 +84,7 @@ func TestNginxFailedGlobalValidationRollsBack(t *testing.T) {
 	provider.runner = runner
 
 	err := provider.Apply(context.Background(), providers.ProxyRoute{
-		Domain: "cloudportal.devbox.local",
+		Domain:   "cloudportal.devbox.local",
 		Upstream: "http://127.0.0.1:8010",
 	})
 	if err == nil {

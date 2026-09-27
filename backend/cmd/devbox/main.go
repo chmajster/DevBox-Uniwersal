@@ -51,9 +51,9 @@ func main() {
 	networkRepo := proxy.NewSQLiteRepository(db)
 	portManager := proxy.NewPortManager(db, cfg.PortRangeStart, cfg.PortRangeEnd)
 	nginxProvider := proxy.NewNginxProvider(proxy.NginxOptions{
-		Binary: cfg.NginxBinary,
+		Binary:         cfg.NginxBinary,
 		SitesAvailable: cfg.NginxSitesAvailable,
-		SitesEnabled: cfg.NginxSitesEnabled,
+		SitesEnabled:   cfg.NginxSitesEnabled,
 	})
 	hostsManager := proxy.NewFileHostsManager(proxy.DefaultHostsPath(cfg.HostsFile))
 	healthChecker := proxy.NewHealthChecker(networkRepo)
@@ -61,13 +61,13 @@ func main() {
 	networkModule := proxy.NewModule(networkService, portManager, healthChecker, nginxProvider, auditService, cfg.HealthTimeout)
 
 	handler := api.New(api.Dependencies{
-		DB: db,
-		Auth: authService,
-		Audit: auditService,
-		Jobs: jobsRepo,
-		Version: cfg.AppVersion,
+		DB:           db,
+		Auth:         authService,
+		Audit:        auditService,
+		Jobs:         jobsRepo,
+		Version:      cfg.AppVersion,
 		CookieSecure: cfg.CookieSecure,
-		Modules: []api.Module{networkModule},
+		Modules:      []api.Module{networkModule},
 	})
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}

@@ -14,10 +14,10 @@ import (
 type socketProbe func(int) (bool, error)
 
 type PortManager struct {
-	db       *sql.DB
-	start    int
-	end      int
-	probe    socketProbe
+	db    *sql.DB
+	start int
+	end   int
+	probe socketProbe
 }
 
 var _ providers.PortAllocator = (*PortManager)(nil)
