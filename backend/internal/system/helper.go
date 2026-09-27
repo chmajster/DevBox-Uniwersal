@@ -40,7 +40,11 @@ var allowedEnvKeys = map[string]struct{}{
 	"DEVBOX_MIGRATIONS_DIR": {},
 	"DEVBOX_FRONTEND_DIR":   {},
 	"DEVBOX_COOKIE_SECURE":  {},
-	"DEVBOX_VERSION":        {},
+	"DEVBOX_VERSION":               {},
+	"DEVBOX_NGINX_SITES_AVAILABLE": {},
+	"DEVBOX_NGINX_SITES_ENABLED":   {},
+	"DEVBOX_PRIVILEGED_HELPER":     {},
+	"DEVBOX_SUDO_BINARY":           {},
 }
 
 type PrivilegedHelper struct {
@@ -71,9 +75,16 @@ func (h *PrivilegedHelper) RestartService(ctx context.Context, service string) e
 	return h.run(ctx, "systemctl", "restart", unit)
 }
 
-func (h *PrivilegedHelper) ReloadNginx(ctx context.Context) error {
+func (h *PrivilegedHelper) ValidateNginx(ctx context.Context) error {
 	if err := h.run(ctx, "nginx", "-t"); err != nil {
 		return fmt.Errorf("validate nginx config: %w", err)
+	}
+	return nil
+}
+
+func (h *PrivilegedHelper) ReloadNginx(ctx context.Context) error {
+	if err := h.ValidateNginx(ctx); err != nil {
+		return err
 	}
 	return h.run(ctx, "systemctl", "reload", "nginx.service")
 }
