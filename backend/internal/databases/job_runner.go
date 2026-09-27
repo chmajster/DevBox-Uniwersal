@@ -92,7 +92,15 @@ func (r *SQLiteJobRunner) execute(job domain.Job, handler jobs.Handler) {
 	}()
 
 	started := time.Now().UTC()
-	_, _ = r.db.Exec(`UPDATE jobs SET status='running',started_at=? WHERE id=? AND status='queued'`, started.Format(time.RFC3339Nano), job.ID)
+	update, err := r.db.Exec(`UPDATE jobs SET status='running',started_at=? WHERE id=? AND status='queued'`, started.Format(time.RFC3339Nano), job.ID)
+	if err != nil {
+		r.log(job.ID, "error", "job could not start")
+		return
+	}
+	affected, err := update.RowsAffected()
+	if err != nil || affected == 0 {
+		return
+	}
 	r.log(job.ID, "info", "job started")
 
 	result, err := handler.Run(ctx, job)
