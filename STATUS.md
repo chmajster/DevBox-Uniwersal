@@ -17,11 +17,11 @@ Implemented:
 - Persistent database backup metadata migration.
 - `mysqldump` backup and MySQL restore handlers executed as jobs with shared `jobs`/`job_logs` persistence.
 - Backup list/download/delete and restore APIs; backup downloads require Operator or Admin.
-- Independent phpMyAdmin Docker install/start/stop/restart/status lifecycle.
+- Independent phpMyAdmin Docker install/start/stop/restart/status lifecycle, including host/WSL MySQL routing through `host.docker.internal` when MySQL is bound to loopback.
 - Database API module with Viewer/Operator RBAC, audit events and same-origin checks for mutations.
 - Frontend “Bazy danych” page with required database table, project provisioning, backup/restore controls and phpMyAdmin panel.
 - Configuration for MySQL CLI/admin connection, backup directory and phpMyAdmin container.
-- Tests for identifier validation, secure password generation, database-scoped grants, secret masking, backup job behavior and restore failure handling.
+- Tests for identifier validation, secure password generation, database-scoped grants, secret masking, backup job behavior, restore failure handling and phpMyAdmin host routing.
 - Job start/cancel transition is atomic at the SQLite status boundary so a cancelled queued backup/restore is not started afterward.
 
 Schema changes:
@@ -34,6 +34,6 @@ Shared additive integration change:
 
 Validation:
 
-- GitHub Actions run `36343000426`: successful.
+- GitHub Actions run `36343217115`: successful.
 - Backend: `gofmt`, `go vet ./...`, `go test ./...`, `go build ./cmd/devbox` all successful.
 - Frontend: `npm ci`, lint, TypeScript typecheck, Vitest and Vite production build all successful.
