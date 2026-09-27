@@ -82,3 +82,10 @@ Validation:
 - The Go server can serve the built frontend from `DEVBOX_FRONTEND_DIR`.
 - Installer CI adds Bash syntax/shellcheck tests plus PowerShell parser tests.
 - Agent 8 ADR is integrated as ADR-008 to avoid collision with the existing networking ADR-007.
+## Integration fixes
+
+- Applications use a single canonical `/apps` route; legacy `/applications` redirects to it.
+- Frontend collection adapters tolerate `data: null` from empty API lists instead of dereferencing `items` on null.
+- Light-theme module panels use theme variables instead of hard-coded dark backgrounds.
+- Installed Nginx integration stores DevBox-managed site files under `/var/lib/devbox/nginx` and performs global validation/reload through the allowlisted privileged helper.
+

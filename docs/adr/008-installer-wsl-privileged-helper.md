@@ -6,7 +6,7 @@ Status: Accepted
 
 Windows installation is a bootstrap layer around WSL. `install.ps1` selects a supported Ubuntu/Debian WSL distribution and delegates Linux-side installation to `install.sh`. The installed API process runs as the unprivileged `devbox` account.
 
-Privileged host mutations use `devbox-helper`, whose command surface is a fixed set of typed operations. The helper does not accept an arbitrary executable, shell command or destination path. Package and service names are mapped through internal allowlists.
+Privileged host mutations use `devbox-helper`, whose command surface is a fixed set of typed operations. The helper does not accept an arbitrary executable, shell command or destination path. Package and service names are mapped through internal allowlists. Nginx validation and reload are explicit helper operations; the installer grants the `devbox` service account passwordless sudo only for those exact helper commands.
 
 The HTTP System Components API is read-only until the durable Job Engine worker exists. Privileged package installation must not be implemented as a blocking root operation inside an HTTP handler.
 

@@ -1,7 +1,6 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppLayout } from './layout/AppLayout'
-import { ApplicationsPage } from './pages/ApplicationsPage'
 import { AuditPage } from './pages/AuditPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DatabasesPage } from './pages/DatabasesPage'
@@ -25,8 +24,8 @@ export function App() {
     <Route element={<ProtectedRoute />}>
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
-        <Route path={ROUTES.applications} element={<ApplicationsPage />} />
-        <Route path="apps" element={<ProjectsPage />} />
+        <Route path={ROUTES.applications} element={<ProjectsPage />} />
+        <Route path="/applications" element={<Navigate to={ROUTES.applications} replace />} />
         <Route path="apps/new" element={<ProjectWizardPage />} />
         <Route path="apps/:id" element={<ProjectDetailPage />} />
         <Route path={ROUTES.project} element={<ProjectDetailsPage />} />

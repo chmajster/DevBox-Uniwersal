@@ -146,6 +146,8 @@ func serve() error {
 		Binary:         cfg.NginxBinary,
 		SitesAvailable: cfg.NginxSitesAvailable,
 		SitesEnabled:   cfg.NginxSitesEnabled,
+		HelperBinary:   cfg.NginxHelperBinary,
+		SudoBinary:     cfg.SudoBinary,
 	})
 	hostsManager := proxy.NewFileHostsManager(proxy.DefaultHostsPath(cfg.HostsFile))
 	healthChecker := proxy.NewHealthChecker(networkRepo)

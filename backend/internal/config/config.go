@@ -40,6 +40,8 @@ type Config struct {
 	NginxBinary         string
 	NginxSitesAvailable string
 	NginxSitesEnabled   string
+	NginxHelperBinary   string
+	SudoBinary          string
 	HostsFile           string
 	HealthTimeout       time.Duration
 }
@@ -113,6 +115,8 @@ func Load() (Config, error) {
 		NginxBinary:            getEnv("DEVBOX_NGINX_BINARY", "nginx"),
 		NginxSitesAvailable:    getEnv("DEVBOX_NGINX_SITES_AVAILABLE", "/etc/nginx/sites-available"),
 		NginxSitesEnabled:      getEnv("DEVBOX_NGINX_SITES_ENABLED", "/etc/nginx/sites-enabled"),
+		NginxHelperBinary:      strings.TrimSpace(os.Getenv("DEVBOX_PRIVILEGED_HELPER")),
+		SudoBinary:             getEnv("DEVBOX_SUDO_BINARY", "sudo"),
 		HostsFile:              strings.TrimSpace(os.Getenv("DEVBOX_HOSTS_FILE")),
 		HealthTimeout:          healthTimeout,
 	}
