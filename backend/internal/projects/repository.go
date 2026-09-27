@@ -127,6 +127,11 @@ func (r *Repository) UpdateStatus(ctx context.Context, id, status string) error 
 	return err
 }
 
+func (r *Repository) UpdateRuntime(ctx context.Context, id, runtime string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE projects SET runtime=?,updated_at=? WHERE id=?`, runtime, time.Now().UTC().Format(time.RFC3339Nano), id)
+	return err
+}
+
 func (r *Repository) CreateDeployment(ctx context.Context, d Deployment) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO deployments(id,project_id,revision,status,runtime,metadata_json,created_by,created_at,commit_before,commit_after,duration_ms,current_stage,error_text,job_id) VALUES(?,?,?,?,?,'{}',?,?,?,?,?,?,?,?)`,
 		d.ID, d.ProjectID, nil, d.Status, nil, d.TriggeredBy, d.CreatedAt.UTC().Format(time.RFC3339Nano), nullable(d.CommitBefore), nullable(d.CommitAfter), d.DurationMS, d.Stage, nullable(d.Error), d.JobID)
