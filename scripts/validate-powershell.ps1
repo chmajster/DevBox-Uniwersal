@@ -10,7 +10,7 @@ foreach ($file in $files) {
     [void][System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$tokens, [ref]$errors)
     if ($errors.Count -gt 0) {
         $messages = ($errors | ForEach-Object { $_.Message }) -join '; '
-        throw "PowerShell parse failed for $file: $messages"
+        throw "PowerShell parse failed for ${file}: $messages"
     }
 }
 Write-Host 'PowerShell syntax validation: OK'
