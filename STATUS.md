@@ -1,39 +1,37 @@
 # Status
 
-Branch: `agent/01-foundation`
+Branch: `agent/03-runtimes`
 
-Foundation implementation is complete and validated.
+Agent 3 Runtime Engine implementation is complete pending final CI verification.
 
 Implemented:
 
-- Go HTTP bootstrap and configuration loader.
-- SQLite connection, WAL/foreign-key configuration and ordered transactional migration runner.
-- Initial schema for users, sessions, projects, project sources, runtime configs, ports, domains, databases, database users, deployments, jobs, job logs, secrets, health checks, audit events and settings.
-- Opaque-session authentication with bcrypt passwords and Admin/Operator/Viewer roles.
-- Bootstrap administrator creation with explicit environment credentials.
-- Core audit service and read endpoint.
-- AES-256-GCM secret encryption abstraction and SQLite `SecretStore`.
-- Runtime, job and provider contracts for parallel agent development.
-- API v1 health, system info, auth, jobs and audit endpoints.
-- React/TypeScript/Vite shell with login, protected layout, overview, jobs and audit pages.
-- Reproducible Go/npm dependency locks.
-- Backend/frontend GitHub Actions quality gates.
+- Runtime registry with concrete Static, PHP, Python, Go and Node.js providers implementing the Agent 1 lifecycle contract.
+- Deterministic project detection with runtime, framework, confidence, detected files, required version and suggested build/start commands.
+- Host runtime inspection reporting `available`, `missing`, `invalid`, versions and component dependencies.
+- PHP support for Composer, PHP-FPM, Laravel, Symfony, generic PHP and `ext-*` requirement validation without system-package auto-installation.
+- Python per-project `.venv` isolation with pip, uv and Poetry support plus FastAPI, Flask and Django detection. Django `manage.py runserver` is restricted to development mode.
+- Go dependency download and controlled `.devbox/build` binary output.
+- Node.js npm/pnpm/yarn lockfile selection with install, build and start behavior.
+- Built-in loopback-only static HTTP serving suitable for reverse-proxy handoff.
+- Local process supervision for direct runtimes with project-scoped logs and lifecycle status.
+- Runtime configuration resolver isolated from ProjectService and backed by the Agent 1 project/runtime tables.
+- SecretStore-backed environment resolution with API masking for secret references and secret-like environment keys.
+- Runtime API module:
+  - `GET /api/v1/runtimes`
+  - `GET /api/v1/runtimes/detect?project_id=...`
+  - `GET /api/v1/projects/{id}/runtime`
+  - `POST /api/v1/projects/{id}/runtime/validate`
+- Runtime Manager frontend and reusable project Runtime configuration section.
+- Fixture-based detector tests for Static, Laravel, Symfony, FastAPI, Django, Go, Vite, pip, uv and Poetry.
+
+Scope exclusions preserved:
+
+- No Docker implementation.
+- No MySQL implementation.
+- No Nginx implementation.
+- No automatic operating-system package installation.
 
 Validation:
 
-- GitHub Actions run `36341280870`: successful.
-- Backend: `gofmt` clean, `go vet ./...`, `go test ./...`, `go build ./cmd/devbox` all successful.
-- Frontend: `npm ci`, lint, TypeScript typecheck, Vitest and Vite production build all successful.
-- Tests cover idempotent SQLite migrations, API health + bootstrap-admin login/session/current-user flow, and AES-GCM secret round-trip without plaintext ciphertext leakage.
-
-Intentionally not implemented in Agent 1:
-
-- Full Git provider.
-- Full runtime implementations.
-- Docker provider.
-- MySQL provider.
-- Nginx/reverse-proxy provider.
-- Platform-specific Windows/WSL service implementation.
-- Production job worker implementations.
-
-Those modules must implement the published contracts without creating cross-domain dependencies.
+- Final GitHub Actions backend/frontend quality gates will be recorded after the branch push.

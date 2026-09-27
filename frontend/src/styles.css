@@ -3,7 +3,9 @@
 body { margin: 0; min-width: 320px; min-height: 100vh; background: #0e1117; }
 button, input { font: inherit; }
 button { cursor: pointer; border: 1px solid #3c4758; border-radius: 8px; background: #1f6feb; color: white; padding: 9px 14px; }
+button:disabled { cursor: not-allowed; opacity: .65; }
 input { width: 100%; margin-top: 6px; border: 1px solid #344052; border-radius: 8px; background: #111722; color: inherit; padding: 10px 12px; }
+code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 .login-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
 .login-card { width: min(420px, 100%); background: #151b24; border: 1px solid #2a3442; border-radius: 14px; padding: 28px; display: grid; gap: 16px; }
 .login-card h1 { margin: 0; }
@@ -28,4 +30,32 @@ table { width: 100%; border-collapse: collapse; background: #151b24; border: 1px
 th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid #273140; }
 th { color: #94a3b8; font-size: 12px; text-transform: uppercase; }
 .centered { min-height: 100vh; display: grid; place-items: center; }
-@media (max-width: 760px) { .app-shell { grid-template-columns: 1fr; } .sidebar { border-right: 0; border-bottom: 1px solid #273140; } .sidebar nav { grid-template-columns: repeat(3, 1fr); } .cards { grid-template-columns: 1fr; } }
+.runtime-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 20px; }
+.runtime-card { border: 1px solid #2a3442; background: #151b24; border-radius: 10px; padding: 18px; }
+.runtime-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; text-transform: capitalize; }
+.runtime-version { margin-top: 8px; color: #94a3b8; font-size: 13px; min-height: 20px; }
+.runtime-dependencies { display: grid; gap: 8px; margin-top: 18px; }
+.runtime-dependencies > div { display: grid; grid-template-columns: minmax(80px, 1fr) auto; gap: 4px 10px; border-top: 1px solid #273140; padding-top: 8px; }
+.runtime-dependencies code { grid-column: 1 / -1; color: #94a3b8; overflow-wrap: anywhere; }
+.status-pill { border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.status-text { font-weight: 700; }
+.status-available { color: #7ee787; }
+.status-pill.status-available { background: #17351f; border: 1px solid #2f6f3e; }
+.status-missing { color: #f2cc60; }
+.status-pill.status-missing { background: #352b12; border: 1px solid #6f5a24; }
+.status-invalid { color: #ff7b72; }
+.status-pill.status-invalid { background: #3a171b; border: 1px solid #77343c; }
+.runtime-section { display: grid; gap: 18px; }
+.section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.section-heading h2 { margin: 0; }
+.runtime-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 0; }
+.runtime-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.runtime-detail-grid article { border: 1px solid #2a3442; background: #151b24; border-radius: 10px; padding: 18px; }
+.runtime-detail-grid h3 { margin-top: 0; }
+.runtime-detail-grid ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.runtime-detail-grid label { display: block; color: #94a3b8; font-size: 12px; margin: 12px 0 6px; text-transform: uppercase; }
+.command-block { display: block; padding: 10px 12px; border-radius: 7px; background: #0e1117; border: 1px solid #273140; overflow-wrap: anywhere; }
+.validation-box { border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; }
+.validation-ok { background: #17351f; border: 1px solid #2f6f3e; color: #a7f3b5; }
+.validation-fail { background: #3a171b; border: 1px solid #77343c; color: #ffb8c1; }
+@media (max-width: 760px) { .app-shell { grid-template-columns: 1fr; } .sidebar { border-right: 0; border-bottom: 1px solid #273140; } .sidebar nav { grid-template-columns: repeat(4, 1fr); } .cards, .runtime-summary, .runtime-detail-grid { grid-template-columns: 1fr; } .section-heading { align-items: stretch; flex-direction: column; } }

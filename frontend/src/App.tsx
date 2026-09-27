@@ -5,6 +5,8 @@ import { AuditPage } from './pages/AuditPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { JobsPage } from './pages/JobsPage'
 import { LoginPage } from './pages/LoginPage'
+import { ProjectRuntimePage } from './pages/ProjectRuntimePage'
+import { RuntimeManagerPage } from './pages/RuntimeManagerPage'
 
 export function App() {
   return <BrowserRouter><Routes>
@@ -12,6 +14,8 @@ export function App() {
     <Route element={<ProtectedRoute />}>
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
+        <Route path="runtimes" element={<RuntimeManagerPage />} />
+        <Route path="projects/:projectId/runtime" element={<ProjectRuntimePage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="audit" element={<AuditPage />} />
       </Route>
