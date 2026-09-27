@@ -93,3 +93,69 @@ export interface RuntimeValidation {
   warnings?: string[]
   errors?: string[]
 }
+
+export interface DockerStatus {
+  available: boolean
+  client_version?: string
+  server_version?: string
+  engine_name?: string
+  operating_system?: string
+  os_type?: string
+  architecture?: string
+  docker_root_dir?: string
+  cpus?: number
+  memory_bytes?: number
+  containers?: number
+  containers_running?: number
+  containers_stopped?: number
+  images?: number
+  error?: string
+}
+
+export interface DockerContainer {
+  id: string
+  name: string
+  image: string
+  state: string
+  status: string
+  ports?: string
+  created_at?: string
+}
+
+export interface DockerImage {
+  id: string
+  repository: string
+  tag: string
+  digest?: string
+  size?: string
+  created_since?: string
+}
+
+export interface DockerVolume {
+  name: string
+  driver: string
+  scope?: string
+  mountpoint?: string
+}
+
+export interface DockerNetwork {
+  id: string
+  name: string
+  driver: string
+  scope?: string
+  internal?: string
+  ipv6?: string
+}
+
+export interface ComposeProject {
+  name: string
+  config_file: string
+}
+
+export interface ComposeProcess {
+  name?: string
+  service?: string
+  state?: string
+  health?: string
+  image?: string
+}

@@ -36,3 +36,11 @@
 - Foundation GitHub Actions run `36341280870` passed all backend quality gates: formatting, vet, tests and build.
 - Foundation GitHub Actions run `36341280870` passed all frontend quality gates: `npm ci`, lint, typecheck, tests and production build.
 - Runtime Engine GitHub Actions run `36343299084` passed backend formatting, vet, tests and build plus frontend install, lint, typecheck, tests and production build.
+
+### Agent 4 — Docker
+
+- Docker provider with engine detection and live Docker status.
+- Containers, images, volumes, networks and Docker Compose lifecycle operations.
+- Docker/DockerCompose project detection and project-root path validation.
+- RBAC/audit-protected Docker API and frontend management page.
+- Docker operations use controlled CLI arguments without arbitrary shell execution.
