@@ -52,6 +52,36 @@ func TestNginxConfigGeneration(t *testing.T) {
 	}
 }
 
+func TestNginxUsesPrivilegedHelperForGlobalValidationAndReload(t *testing.T) {
+	available, enabled, _ := nginxTestLayout(t)
+	runner := &fakeNginxRunner{}
+	provider := NewNginxProvider(NginxOptions{
+		Binary:         "nginx",
+		SitesAvailable: available,
+		SitesEnabled:   enabled,
+		HelperBinary:   "/usr/local/lib/devbox/devbox-helper",
+		SudoBinary:     "sudo",
+	})
+	provider.runner = runner
+
+	err := provider.Apply(context.Background(), providers.ProxyRoute{
+		Domain:   "cloudportal.devbox.local",
+		Upstream: "http://127.0.0.1:8010",
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if !containsExactCall(runner.calls, []string{"-n", "/usr/local/lib/devbox/devbox-helper", "validate-nginx"}) {
+		t.Fatal("global validation did not use privileged helper")
+	}
+	if !containsExactCall(runner.calls, []string{"-n", "/usr/local/lib/devbox/devbox-helper", "reload-nginx"}) {
+		t.Fatal("reload did not use privileged helper")
+	}
+	if containsReload(runner.calls) {
+		t.Fatal("direct unprivileged nginx reload must not run when helper is configured")
+	}
+}
+
 func TestNginxFailedCandidateDoesNotActivate(t *testing.T) {
 	available, enabled, oldPath := nginxTestLayout(t)
 	runner := &fakeNginxRunner{failCandidate: true}
@@ -134,6 +164,25 @@ func nginxTestLayout(t *testing.T) (string, string, string) {
 func containsReload(calls [][]string) bool {
 	for _, args := range calls {
 		if len(args) == 2 && args[0] == "-s" && args[1] == "reload" {
+			return true
+		}
+	}
+	return false
+}
+
+func containsExactCall(calls [][]string, expected []string) bool {
+	for _, args := range calls {
+		if len(args) != len(expected) {
+			continue
+		}
+		match := true
+		for i := range args {
+			if args[i] != expected[i] {
+				match = false
+				break
+			}
+		}
+		if match {
 			return true
 		}
 	}
