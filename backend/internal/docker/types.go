@@ -1,5 +1,23 @@
 package docker
 
+type DockerVersion struct {
+	Client string `json:"client"`
+	Server string `json:"server"`
+}
+
+type DeploymentMode string
+
+const (
+	DeploymentModeDocker        DeploymentMode = "Docker"
+	DeploymentModeDockerCompose DeploymentMode = "DockerCompose"
+)
+
+type ProjectDeploymentSupport struct {
+	Dockerfile  bool             `json:"dockerfile"`
+	ComposeFile string           `json:"compose_file,omitempty"`
+	Modes       []DeploymentMode `json:"modes"`
+}
+
 type Status struct {
 	Available         bool   `json:"available"`
 	ClientVersion     string `json:"client_version,omitempty"`

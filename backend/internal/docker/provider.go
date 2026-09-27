@@ -34,11 +34,36 @@ func (p *CLIProvider) Available(ctx context.Context) error {
 	return nil
 }
 
+func (p *CLIProvider) Version(ctx context.Context) (DockerVersion, error) {
+	out, _, err := p.runner.Run(ctx, "version", "--format", "{{json .}}")
+	if err != nil {
+		return DockerVersion{}, err
+	}
+	var raw struct {
+		Client struct {
+			Version string `json:"Version"`
+		} `json:"Client"`
+		Server struct {
+			Version string `json:"Version"`
+		} `json:"Server"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return DockerVersion{}, fmt.Errorf("decode docker version: %w", err)
+	}
+	return DockerVersion{Client: raw.Client.Version, Server: raw.Server.Version}, nil
+}
+
 func (p *CLIProvider) Status(ctx context.Context) (Status, error) {
 	status := Status{}
-	client, _, clientErr := p.runner.Run(ctx, "--version")
-	if clientErr == nil {
-		status.ClientVersion = strings.TrimSpace(string(client))
+	version, versionErr := p.Version(ctx)
+	if versionErr == nil {
+		status.ClientVersion = version.Client
+		status.ServerVersion = version.Server
+	} else {
+		client, _, clientErr := p.runner.Run(ctx, "--version")
+		if clientErr == nil {
+			status.ClientVersion = strings.TrimSpace(string(client))
+		}
 	}
 	info, _, err := p.runner.Run(ctx, "info", "--format", "{{json .}}")
 	if err != nil {
@@ -64,7 +89,9 @@ func (p *CLIProvider) Status(ctx context.Context) (Status, error) {
 	}
 	status.Available = true
 	status.EngineName = raw.Name
-	status.ServerVersion = raw.ServerVersion
+	if status.ServerVersion == "" {
+		status.ServerVersion = raw.ServerVersion
+	}
 	status.OperatingSystem = raw.OperatingSystem
 	status.OSType = raw.OSType
 	status.Architecture = raw.Architecture
