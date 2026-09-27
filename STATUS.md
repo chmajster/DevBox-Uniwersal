@@ -1,39 +1,42 @@
 # Status
 
-Branch: `agent/01-foundation`
+Branch: `agent/08-installer-wsl`
 
-Foundation implementation is complete and validated.
+Agent 8 Windows / WSL / Installer implementation is complete and ready for integration.
 
 Implemented:
 
-- Go HTTP bootstrap and configuration loader.
-- SQLite connection, WAL/foreign-key configuration and ordered transactional migration runner.
-- Initial schema for users, sessions, projects, project sources, runtime configs, ports, domains, databases, database users, deployments, jobs, job logs, secrets, health checks, audit events and settings.
-- Opaque-session authentication with bcrypt passwords and Admin/Operator/Viewer roles.
-- Bootstrap administrator creation with explicit environment credentials.
-- Core audit service and read endpoint.
-- AES-256-GCM secret encryption abstraction and SQLite `SecretStore`.
-- Runtime, job and provider contracts for parallel agent development.
-- API v1 health, system info, auth, jobs and audit endpoints.
-- React/TypeScript/Vite shell with login, protected layout, overview, jobs and audit pages.
-- Reproducible Go/npm dependency locks.
-- Backend/frontend GitHub Actions quality gates.
+- Root `install.ps1` for Windows/WSL discovery, supported-distribution selection, optional Ubuntu installation, WSL systemd enablement, invocation of the Linux installer and GUI/API verification.
+- Root `install.sh` with `--install`, `--status`, `--repair`, `--update`, `--uninstall`, `--help` and optional `--purge` for full data removal.
+- Eight-stage Linux installer output with `[ OK ]`, `[INFO]`, `[WARN]`, `[FAIL]`; ANSI is emitted only to an interactive terminal and never written to installer logs.
+- Detection for Git, Docker, Nginx, MySQL/MariaDB, PHP, Composer, Python, pip, Go, Node.js and npm.
+- Linux/WSL platform detection including distribution metadata, WSL generation and systemd state.
+- Authenticated read-only System Components API at `/api/v1/system/components` and platform API at `/api/v1/system/platform`.
+- Privilege-separated `devbox-helper` with a fixed operation surface for whitelisted package installation, whitelisted service restart, validated Nginx reload and validated DevBox environment-file writes. No arbitrary command execution operation exists.
+- `devbox status` and `devbox doctor` CLI commands.
+- Doctor checks for SQLite, migrations, filesystem write access, Nginx binary/service state, Docker daemon, MySQL/MariaDB service, runtime binaries, DevBox HTTP port and DevBox systemd service.
+- systemd service installation under an unprivileged `devbox` account.
+- Built frontend serving from the Go process when `DEVBOX_FRONTEND_DIR` is configured, allowing the installer to expose one GUI/API address (`http://localhost:8787/`).
+- Uninstall preserves `/var/lib/devbox` by default; `--uninstall --purge` / `-Mode Uninstall -Purge` removes data and the system account.
+- Installer parser/idempotency tests, WSL/os-release parser tests, component detection tests, helper whitelist tests and SPA serving tests.
+- CI validation for Go, shell syntax, shellcheck, shell installer tests and PowerShell parser/tests.
 
-Validation:
+Validation performed before commit:
 
-- GitHub Actions run `36341280870`: successful.
-- Backend: `gofmt` clean, `go vet ./...`, `go test ./...`, `go build ./cmd/devbox` all successful.
-- Frontend: `npm ci`, lint, TypeScript typecheck, Vitest and Vite production build all successful.
-- Tests cover idempotent SQLite migrations, API health + bootstrap-admin login/session/current-user flow, and AES-GCM secret round-trip without plaintext ciphertext leakage.
+- `gofmt` on Agent 8 Go files: clean.
+- `go test ./internal/system ./internal/webui ./cmd/devbox-helper`: successful in the isolated Agent 8 validation module.
+- `bash -n install.sh scripts/test-install.sh`: successful.
+- `scripts/test-install.sh`: successful.
 
-Intentionally not implemented in Agent 1:
+Validation delegated to GitHub Actions because the execution environment has no outbound access to clone the repository and does not provide local `shellcheck` or `pwsh` binaries:
 
-- Full Git provider.
-- Full runtime implementations.
-- Docker provider.
-- MySQL provider.
-- Nginx/reverse-proxy provider.
-- Platform-specific Windows/WSL service implementation.
-- Production job worker implementations.
+- full `go vet ./...`, `go test ./...`, `go build ./cmd/devbox ./cmd/devbox-helper`;
+- frontend lint/typecheck/test/build;
+- shellcheck;
+- PowerShell AST validation and parser tests.
 
-Those modules must implement the published contracts without creating cross-domain dependencies.
+Integration notes:
+
+- No shared provider contract was changed.
+- Component installation over HTTP was intentionally not added: long-running privileged mutations must go through the Job Engine once its durable worker exists.
+- `devbox-helper` is a narrow privileged boundary and never accepts an arbitrary executable, argument vector or target path.
