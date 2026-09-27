@@ -7,7 +7,7 @@ import (
 )
 
 func TestVersionUsesDockerVersionCommand(t *testing.T) {
-	runner := &stubRunner{responses: []runnerResponse{{stdout: "{\"Client\":{\"Version\":\"27.1.0\"},\"Server\":{\"Version\":\"27.1.0\"}}\\n"}}}
+	runner := &stubRunner{responses: []runnerResponse{{stdout: "{\"Client\":{\"Version\":\"27.1.0\"},\"Server\":{\"Version\":\"27.1.0\"}}\n"}}}
 	provider := newCLIProviderWithRunner(runner)
 
 	version, err := provider.Version(context.Background())

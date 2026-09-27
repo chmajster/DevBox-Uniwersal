@@ -33,7 +33,7 @@ func (r *stubRunner) Stream(_ context.Context, args ...string) (io.ReadCloser, e
 }
 
 func TestListContainersParsesDockerJSONLines(t *testing.T) {
-	runner := &stubRunner{responses: []runnerResponse{{stdout: "{\"ID\":\"abc123\",\"Names\":\"web\",\"Image\":\"nginx:latest\",\"State\":\"running\",\"Status\":\"Up 1 minute\",\"Ports\":\"0.0.0.0:8080->80/tcp\",\"CreatedAt\":\"today\"}\\n"}}}
+	runner := &stubRunner{responses: []runnerResponse{{stdout: "{\"ID\":\"abc123\",\"Names\":\"web\",\"Image\":\"nginx:latest\",\"State\":\"running\",\"Status\":\"Up 1 minute\",\"Ports\":\"0.0.0.0:8080->80/tcp\",\"CreatedAt\":\"today\"}\n"}}}
 	provider := newCLIProviderWithRunner(runner)
 	items, err := provider.ListContainers(context.Background())
 	if err != nil {
@@ -48,13 +48,13 @@ func TestListContainersParsesDockerJSONLines(t *testing.T) {
 }
 
 func TestExecUsesAllowlistAndFixedArguments(t *testing.T) {
-	runner := &stubRunner{responses: []runnerResponse{{stdout: "uid=0(root)\\n"}}}
+	runner := &stubRunner{responses: []runnerResponse{{stdout: "uid=0(root)\n"}}}
 	provider := newCLIProviderWithRunner(runner)
 	out, err := provider.Exec(context.Background(), "container-1", ExecIdentity)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != "uid=0(root)\\n" {
+	if out != "uid=0(root)\n" {
 		t.Fatalf("unexpected output: %q", out)
 	}
 	got := strings.Join(runner.calls[0], "|")
