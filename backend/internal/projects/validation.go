@@ -29,10 +29,14 @@ func ValidateRepositoryURL(raw string) error {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return errors.New("repository URL must use https, ssh or git")
 	}
+	scheme := strings.ToLower(u.Scheme)
 	if u.User != nil {
-		return errors.New("repository URL must not contain embedded credentials")
+		_, hasPassword := u.User.Password()
+		if scheme != "ssh" || hasPassword || u.User.Username() == "" {
+			return errors.New("repository URL must not contain embedded credentials")
+		}
 	}
-	switch strings.ToLower(u.Scheme) {
+	switch scheme {
 	case "https", "ssh", "git":
 		return nil
 	default:
