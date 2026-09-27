@@ -9,6 +9,10 @@ describe('routing contract', () => {
     expect(match?.params.tab).toBe('logs')
   })
 
+  it('uses /apps as the canonical applications route', () => {
+    expect(ROUTES.applications).toBe('/apps')
+  })
+
   it('contains every required project details tab', () => {
     expect(PROJECT_TABS).toEqual([
       'overview',
