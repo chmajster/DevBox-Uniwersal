@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
@@ -51,12 +52,18 @@ func (s *Service) CreateDomain(ctx context.Context, projectID, hostname string, 
 		_ = s.nginx.DeleteSite(ctx, normalized)
 		return DomainMutationResult{}, err
 	}
-	if _, err := s.health.RunAndStore(ctx, projectID, "http", healthTarget(targetPort), s.healthTimeout); err != nil {
+	health, err := s.health.RunAndStore(ctx, projectID, "http", healthTarget(targetPort), s.healthTimeout)
+	if err != nil {
 		_ = s.repo.DeleteDomain(ctx, domain.ID)
 		_ = s.nginx.DeleteSite(ctx, normalized)
 		return DomainMutationResult{}, err
 	}
-	hostsResult, err := s.hosts.Ensure(ctx, normalized, "127.0.0.1")
+	if health.Status != "healthy" {
+		_ = s.repo.DeleteDomain(ctx, domain.ID)
+		_ = s.nginx.DeleteSite(ctx, normalized)
+		return DomainMutationResult{}, fmt.Errorf("healthcheck failed for %s: %s", normalized, health.Error)
+	}
+	hostsResult, err := s.ensureHosts(ctx, normalized)
 	if err != nil {
 		return DomainMutationResult{}, err
 	}
@@ -115,11 +122,15 @@ func (s *Service) UpdateDomain(ctx context.Context, id string, hostname *string,
 		_ = s.nginx.Apply(ctx, oldRoute)
 		return DomainMutationResult{}, err
 	}
-	if _, err := s.health.RunAndStore(ctx, updated.ProjectID, "http", healthTarget(updated.TargetPort), s.healthTimeout); err != nil {
+	health, err := s.health.RunAndStore(ctx, updated.ProjectID, "http", healthTarget(updated.TargetPort), s.healthTimeout)
+	if err != nil {
 		return DomainMutationResult{}, err
 	}
+	if health.Status != "healthy" {
+		return DomainMutationResult{}, fmt.Errorf("healthcheck failed for %s: %s", updated.Hostname, health.Error)
+	}
 
-	hostsResult, err := s.hosts.Ensure(ctx, updated.Hostname, "127.0.0.1")
+	hostsResult, err := s.ensureHosts(ctx, updated.Hostname)
 	if err != nil {
 		return DomainMutationResult{}, err
 	}
@@ -150,6 +161,37 @@ func (s *Service) DeleteDomain(ctx context.Context, id string) (Domain, HostChan
 		return Domain{}, HostChange{}, err
 	}
 	return current, hostsResult, nil
+}
+
+func (s *Service) EnsureProjectRoute(ctx context.Context, projectID, hostname string, targetPort int) error {
+	if strings.TrimSpace(projectID) == "" {
+		return fmt.Errorf("%w: project_id is required", ErrInvalidInput)
+	}
+	if strings.TrimSpace(hostname) == "" {
+		return fmt.Errorf("%w: hostname is required", ErrInvalidInput)
+	}
+	domains, err := s.repo.ListDomains(ctx)
+	if err != nil {
+		return err
+	}
+	for _, current := range domains {
+		if current.ProjectID != projectID {
+			continue
+		}
+		nextHostname := hostname
+		nextPort := targetPort
+		_, err := s.UpdateDomain(ctx, current.ID, &nextHostname, &nextPort)
+		return err
+	}
+	_, err = s.CreateDomain(ctx, projectID, hostname, targetPort)
+	return err
+}
+
+func (s *Service) ensureHosts(ctx context.Context, hostname string) (HostChange, error) {
+	if strings.HasSuffix(strings.ToLower(hostname), ".localhost") || strings.EqualFold(hostname, "localhost") {
+		return HostChange{Applied: true, Instruction: "localhost names resolve to loopback without hosts-file changes"}, nil
+	}
+	return s.hosts.Ensure(ctx, hostname, "127.0.0.1")
 }
 
 func (s *Service) TestRoute(ctx context.Context, hostname string, targetPort int) error {
