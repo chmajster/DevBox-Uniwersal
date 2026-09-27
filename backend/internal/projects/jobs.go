@@ -172,13 +172,13 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	currentStage := DeploymentPreparing
 	commitAfter := commitBefore
 	var (
-		allocatedPort    int
-		startedRuntime   runtimes.Runtime
+		allocatedPort     int
+		startedRuntime    runtimes.Runtime
 		startedRuntimeCtx runtimes.ProjectContext
-		startedNew       bool
-		composeStarted   bool
-		composeDir       string
-		composeName      string
+		startedNew        bool
+		composeStarted    bool
+		composeDir        string
+		composeName       string
 	)
 	defer func() {
 		if runErr == nil {
