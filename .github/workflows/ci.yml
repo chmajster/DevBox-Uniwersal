@@ -22,7 +22,7 @@ jobs:
         with:
           go-version-file: backend/go.mod
       - name: Format
-        run: test -z "$(gofmt -l .)"
+        run: gofmt -w . && git diff --exit-code
       - name: Vet
         run: go vet ./...
       - name: Test
