@@ -130,6 +130,11 @@ func (r *StaticRuntime) Stop(ctx context.Context, project ProjectContext) error 
 	if err := state.server.Shutdown(ctx); err != nil {
 		return fmt.Errorf("stop static runtime: %w", err)
 	}
+	r.mu.Lock()
+	if current := r.servers[key]; current == state {
+		delete(r.servers, key)
+	}
+	r.mu.Unlock()
 	return nil
 }
 
