@@ -25,14 +25,14 @@
 - Per-project Python virtual environments with pip, uv and Poetry workflows.
 - Controlled Go build output under `.devbox/build`.
 - npm/pnpm/yarn lockfile-aware Node.js install/build/start workflows.
-- Loopback-only built-in static HTTP serving for reverse-proxy integration.
+- Loopback-only built-in static HTTP serving for reverse-proxy integration, including deterministic listener shutdown/restart.
 - Runtime ProjectContext resolver and SecretStore-backed environment resolution with secret masking.
 - Runtime REST API for listing providers, detecting project runtimes, reading project runtime state and validation.
 - Runtime Manager UI and reusable project Runtime configuration section.
-- Fixture-based runtime detector coverage.
+- Fixture-based runtime detector coverage plus lifecycle/log-tail/secret-masking tests.
 
 ### Validation
 
 - Foundation GitHub Actions run `36341280870` passed all backend quality gates: formatting, vet, tests and build.
 - Foundation GitHub Actions run `36341280870` passed all frontend quality gates: `npm ci`, lint, typecheck, tests and production build.
-- Runtime Engine branch CI result will be recorded after final verification.
+- Runtime Engine GitHub Actions run `36343299084` passed backend formatting, vet, tests and build plus frontend install, lint, typecheck, tests and production build.
