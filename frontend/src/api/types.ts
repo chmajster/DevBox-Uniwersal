@@ -159,3 +159,53 @@ export interface ComposeProcess {
   health?: string
   image?: string
 }
+
+export interface DatabaseRecord {
+  id: string
+  project_id?: string
+  application_name?: string
+  provider: string
+  engine: string
+  name: string
+  status: string
+  user?: string
+  size_bytes?: number
+  created_at: string
+  updated_at: string
+}
+
+export interface DatabaseBackup {
+  id: string
+  database_id: string
+  file_name: string
+  status: string
+  size_bytes: number
+  error?: string
+  created_at: string
+  completed_at?: string
+}
+
+export interface MySQLStatus {
+  version?: string
+  running: boolean
+  connection_state: string
+}
+
+export interface PHPMyAdminStatus {
+  installed: boolean
+  running: boolean
+  state: string
+  url: string
+}
+
+export interface ProvisionResult {
+  database: DatabaseRecord
+  credential: {
+    engine: string
+    host: string
+    port: number
+    database: string
+    username: string
+    password: string
+  }
+}

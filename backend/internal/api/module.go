@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
@@ -16,4 +17,10 @@ type Module interface {
 type ModuleMiddleware struct {
 	Authenticate func(http.Handler) http.Handler
 	RequireRole  func(domain.Role, http.Handler) http.Handler
+}
+
+// CurrentUser exposes the authenticated principal to domain modules without
+// leaking the middleware context key across package boundaries.
+func CurrentUser(ctx context.Context) (domain.User, bool) {
+	return currentUser(ctx)
 }

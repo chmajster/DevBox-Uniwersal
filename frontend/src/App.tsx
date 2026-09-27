@@ -3,6 +3,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppLayout } from './layout/AppLayout'
 import { AuditPage } from './pages/AuditPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { DatabasesPage } from './pages/DatabasesPage'
 import { DockerPage } from './pages/DockerPage'
 import { JobsPage } from './pages/JobsPage'
 import { LoginPage } from './pages/LoginPage'
@@ -15,6 +16,7 @@ export function App() {
     <Route element={<ProtectedRoute />}>
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
+        <Route path="databases" element={<DatabasesPage />} />
         <Route path="docker" element={<DockerPage />} />
         <Route path="runtimes" element={<RuntimeManagerPage />} />
         <Route path="projects/:projectId/runtime" element={<ProjectRuntimePage />} />
