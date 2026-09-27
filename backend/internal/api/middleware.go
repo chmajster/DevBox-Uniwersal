@@ -46,6 +46,10 @@ func currentUser(ctx context.Context) (domain.User, bool) {
 	return u, ok
 }
 
+func CurrentUser(ctx context.Context) (domain.User, bool) {
+	return currentUser(ctx)
+}
+
 func withSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
