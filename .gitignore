@@ -1,0 +1,18 @@
+# Go
+backend/devbox
+backend/data/
+*.test
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local state
+.env
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+.vscode/
+.idea/
