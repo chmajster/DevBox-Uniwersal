@@ -1,3 +1,44 @@
 # DevBox Universal
 
-Repository bootstrap. Development is performed on feature branches.
+DevBox Universal is a local control plane for installing, running and managing heterogeneous development applications from a web UI. The foundation intentionally separates orchestration contracts from concrete Git, runtime, Docker, database, reverse-proxy and Windows/WSL implementations.
+
+## Foundation stack
+
+- Backend: Go REST API, SQLite, ordered SQL migrations.
+- Authentication: opaque server-side sessions, Admin/Operator/Viewer RBAC.
+- Secrets: AES-256-GCM abstraction; plaintext secrets are never persisted.
+- Frontend: React, TypeScript, Vite.
+- Extension model: runtime/provider interfaces and per-domain API modules.
+
+## Quick start
+
+Requirements: Go 1.23+, Node.js 22+, npm.
+
+```bash
+export DEVBOX_BOOTSTRAP_ADMIN_USERNAME=admin
+export DEVBOX_BOOTSTRAP_ADMIN_PASSWORD='replace-with-a-long-password'
+export DEVBOX_MASTER_KEY="$(openssl rand -base64 32)"
+./scripts/dev.sh
+```
+
+Backend: `http://127.0.0.1:8787`  
+Frontend: `http://127.0.0.1:5173`
+
+The bootstrap admin is created only when the users table is empty. Do not store production credentials in shell history or repository files.
+
+## API
+
+All stable endpoints are versioned under `/api/v1`.
+
+- `GET /api/v1/health`
+- `GET /api/v1/system/info`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
+- `GET /api/v1/jobs`
+- `GET /api/v1/jobs/{id}`
+- `GET /api/v1/audit`
+
+Success envelope: `{ "data": ..., "meta": ... }`. Error envelope: `{ "error": { "code": "...", "message": "...", "details": ... } }`.
+
+See `ARCHITECTURE.md`, `AGENTS.md` and `docs/adr/` before adding a module.
