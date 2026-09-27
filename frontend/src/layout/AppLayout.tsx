@@ -18,6 +18,7 @@ export function AppLayout() {
           <NavLink to="/">Overview</NavLink>
           <NavLink to="/runtimes">Runtimes</NavLink>
           <NavLink to="/docker">Docker</NavLink>
+          <NavLink to="/databases">Bazy danych</NavLink>
           <NavLink to="/jobs">Jobs</NavLink>
           {user?.role !== 'viewer' && <NavLink to="/audit">Audit</NavLink>}
         </nav>

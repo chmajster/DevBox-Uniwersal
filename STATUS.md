@@ -45,3 +45,9 @@ Validation:
 - Docker API is protected by RBAC and audited for privileged mutations.
 - Frontend exposes Containers, Images, Volumes, Networks and Compose Projects.
 - Agent 4 validation run: 36342877670.
+
+## Database module
+
+- MySQL/MariaDB provisioning, users, grants, backup/restore and phpMyAdmin are implemented.
+- Project credentials are generated securely and persisted only through SecretStore.
+- Agent 5 validation run: 36343337782.

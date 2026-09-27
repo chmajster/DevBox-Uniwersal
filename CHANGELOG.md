@@ -44,3 +44,10 @@
 - Docker/DockerCompose project detection and project-root path validation.
 - RBAC/audit-protected Docker API and frontend management page.
 - Docker operations use controlled CLI arguments without arbitrary shell execution.
+
+### Agent 5 — Databases
+
+- MySQL/MariaDB provider, database/user/grant lifecycle and per-project provisioning.
+- Secure generated application credentials stored through SecretStore.
+- Backup/restore jobs and phpMyAdmin container lifecycle.
+- Database API, RBAC/audit integration and database management frontend.
