@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+if [[ -n "$SCRIPT_SOURCE" && -f "$SCRIPT_SOURCE" ]]; then
+  ROOT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+else
+  ROOT_DIR="$PWD"
+fi
+SOURCE_REPOSITORY="${DEVBOX_SOURCE_REPOSITORY:-https://github.com/chmajster/DevBox-Uniwersal.git}"
+SOURCE_REF="${DEVBOX_SOURCE_REF:-main}"
+SOURCE_TMP_DIR=""
 INSTALL_ROOT="${DEVBOX_INSTALL_ROOT:-/opt/devbox}"
 LIBEXEC_DIR="${DEVBOX_LIBEXEC_DIR:-/usr/local/lib/devbox}"
 BIN_LINK="${DEVBOX_BIN_LINK:-/usr/local/bin/devbox}"
@@ -67,6 +75,7 @@ DevBox Universal installer
 
 Usage:
   ./install.sh --install
+  curl -fsSL https://raw.githubusercontent.com/chmajster/DevBox-Uniwersal/main/install.sh | sudo bash -s -- --install
   ./install.sh --status
   ./install.sh --repair
   ./install.sh --update
@@ -232,6 +241,30 @@ install_packages() {
   emit " OK " "Pakiety systemowe zainstalowane."
 }
 
+cleanup_source_tree() {
+  if [[ -n "$SOURCE_TMP_DIR" && -d "$SOURCE_TMP_DIR" ]]; then
+    rm -rf "$SOURCE_TMP_DIR"
+  fi
+}
+
+ensure_source_tree() {
+  if [[ -f "$ROOT_DIR/backend/go.mod" && -f "$ROOT_DIR/frontend/package-lock.json" ]]; then
+    return 0
+  fi
+
+  command -v git >/dev/null 2>&1 || fail "Git jest wymagany do pobrania źródeł DevBox."
+  SOURCE_TMP_DIR="$(mktemp -d)"
+  emit INFO "Pobieram źródła DevBox Universal (${SOURCE_REF})..."
+  if ! git clone --depth 1 --branch "$SOURCE_REF" "$SOURCE_REPOSITORY" "$SOURCE_TMP_DIR/source" >>"$LOG_FILE" 2>&1; then
+    fail "Nie udało się pobrać źródeł z $SOURCE_REPOSITORY (ref: $SOURCE_REF)."
+  fi
+  ROOT_DIR="$SOURCE_TMP_DIR/source"
+
+  [[ -f "$ROOT_DIR/backend/go.mod" ]] || fail "Pobrane źródła nie zawierają backend/go.mod."
+  [[ -f "$ROOT_DIR/frontend/package-lock.json" ]] || fail "Pobrane źródła nie zawierają frontend/package-lock.json."
+  emit " OK " "Źródła DevBox Universal pobrane."
+}
+
 ensure_user_and_dirs() {
   if ! id devbox >/dev/null 2>&1; then
     useradd --system --home-dir "$DATA_DIR" --create-home --shell /usr/sbin/nologin devbox
@@ -384,9 +417,10 @@ run_install() {
   wsl="$(wsl_version)"
   emit " OK " "System: ${pretty:-Linux}; WSL=${wsl}; systemd=$(systemd_available && printf yes || printf no)"
 
-  stage 2 "Komponenty systemowe"
+  stage 2 "Komponenty systemowe i źródła"
   install_packages
   show_components
+  ensure_source_tree
 
   stage 3 "Build backendu i helpera"
   build_backend
@@ -483,6 +517,7 @@ run_uninstall() {
 
 main() {
   init_log
+  trap cleanup_source_tree EXIT
   if ! parse_args "$@"; then
     usage >&2
     exit 2
@@ -495,6 +530,6 @@ main() {
   esac
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+if [[ "${BASH_SOURCE[0]:-$0}" == "$0" ]]; then
   main "$@"
 fi
