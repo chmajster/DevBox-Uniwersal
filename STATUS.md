@@ -38,3 +38,10 @@ Validation:
 
 - GitHub Actions run `36343299084` passed backend formatting, `go vet ./...`, `go test ./...` and `go build ./cmd/devbox`.
 - GitHub Actions run `36343299084` passed frontend `npm ci`, lint, typecheck, tests and production build.
+
+## Docker module
+
+- Docker provider, Compose support and deployment-mode detection are implemented.
+- Docker API is protected by RBAC and audited for privileged mutations.
+- Frontend exposes Containers, Images, Volumes, Networks and Compose Projects.
+- Agent 4 validation run: 36342877670.

@@ -15,6 +15,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/auth"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/config"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
+	dockermodule "github.com/chmajster/DevBox-Uniwersal/backend/internal/docker"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
@@ -64,6 +65,10 @@ func main() {
 		secretStore,
 	)
 
+	dockerProvider := dockermodule.NewCLIProvider()
+	dockerService := dockermodule.NewService(dockerProvider, auditService, cfg.ProjectsRoot)
+	dockerModule := dockermodule.NewModule(dockerService)
+
 	handler := api.New(api.Dependencies{
 		DB:           db,
 		Auth:         authService,
@@ -71,7 +76,7 @@ func main() {
 		Jobs:         jobsRepo,
 		Version:      cfg.AppVersion,
 		CookieSecure: cfg.CookieSecure,
-		Modules:      []api.Module{runtimeModule},
+		Modules:      []api.Module{runtimeModule, dockerModule},
 	})
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
