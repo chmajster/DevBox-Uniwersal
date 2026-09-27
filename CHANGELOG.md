@@ -51,3 +51,10 @@
 - Secure generated application credentials stored through SecretStore.
 - Backup/restore jobs and phpMyAdmin container lifecycle.
 - Database API, RBAC/audit integration and database management frontend.
+
+### Agent 6 — Networking / Nginx
+
+- Central port allocator with DB and live-socket collision checks.
+- Nginx provider with candidate validation, activation, reload and rollback.
+- Domains, hosts-file integration and HTTP/TCP health checks.
+- Networking API, RBAC/audit integration and Domains/Ports frontend.

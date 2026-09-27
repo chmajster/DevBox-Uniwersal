@@ -19,6 +19,8 @@ export function AppLayout() {
           <NavLink to="/runtimes">Runtimes</NavLink>
           <NavLink to="/docker">Docker</NavLink>
           <NavLink to="/databases">Bazy danych</NavLink>
+          <NavLink to="/domains">Domeny i Proxy</NavLink>
+          <NavLink to="/ports">Porty</NavLink>
           <NavLink to="/jobs">Jobs</NavLink>
           {user?.role !== 'viewer' && <NavLink to="/audit">Audit</NavLink>}
         </nav>

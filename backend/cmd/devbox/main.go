@@ -16,6 +16,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/config"
 	controldb "github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/databases"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/proxy"
 	dockermodule "github.com/chmajster/DevBox-Uniwersal/backend/internal/docker"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
@@ -98,6 +99,18 @@ func main() {
 	}
 	databaseModule := databases.NewModule(databaseService)
 
+	networkRepo := proxy.NewSQLiteRepository(db)
+	portManager := proxy.NewPortManager(db, cfg.PortRangeStart, cfg.PortRangeEnd)
+	nginxProvider := proxy.NewNginxProvider(proxy.NginxOptions{
+		Binary:         cfg.NginxBinary,
+		SitesAvailable: cfg.NginxSitesAvailable,
+		SitesEnabled:   cfg.NginxSitesEnabled,
+	})
+	hostsManager := proxy.NewFileHostsManager(proxy.DefaultHostsPath(cfg.HostsFile))
+	healthChecker := proxy.NewHealthChecker(networkRepo)
+	networkService := proxy.NewService(networkRepo, nginxProvider, hostsManager, healthChecker, cfg.HealthTimeout)
+	networkModule := proxy.NewModule(networkService, portManager, healthChecker, nginxProvider, auditService, cfg.HealthTimeout)
+
 	handler := api.New(api.Dependencies{
 		DB:           db,
 		Auth:         authService,
@@ -105,7 +118,7 @@ func main() {
 		Jobs:         jobsRepo,
 		Version:      cfg.AppVersion,
 		CookieSecure: cfg.CookieSecure,
-		Modules:      []api.Module{runtimeModule, dockerModule, databaseModule},
+		Modules:      []api.Module{runtimeModule, dockerModule, databaseModule, networkModule},
 	})
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
