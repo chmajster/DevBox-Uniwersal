@@ -66,7 +66,7 @@ func TestGitStateParsingAndSecretMasking(t *testing.T) {
 		t.Fatalf("secret was not masked: %q", masked)
 	}
 	urlSecret := "https://user:token-value@example.com/repo.git"
-	maskedURL := MaskSecrets("fatal: remote "+urlSecret)
+	maskedURL := MaskSecrets("fatal: remote " + urlSecret)
 	if strings.Contains(maskedURL, "token-value") || !strings.Contains(maskedURL, "https://***@example.com/repo.git") {
 		t.Fatalf("URL credential was not masked: %q", maskedURL)
 	}
