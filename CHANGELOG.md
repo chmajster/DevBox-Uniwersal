@@ -58,3 +58,11 @@
 - Nginx provider with candidate validation, activation, reload and rollback.
 - Domains, hosts-file integration and HTTP/TCP health checks.
 - Networking API, RBAC/audit integration and Domains/Ports frontend.
+
+### Agent 7 — UI / Operations / Monitoring
+
+- Host CPU/RAM/disk/process monitoring with authenticated snapshot and SSE stream.
+- Central log registry with project, deployment, job and DevBox log sources.
+- Operations dashboard, applications list, project details, logs viewer and job progress UI.
+- Persistent light/dark theme and responsive operations layout.
+- Existing Runtime, Docker, Database and Networking routes remain available.

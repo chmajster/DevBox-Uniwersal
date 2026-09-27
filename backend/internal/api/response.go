@@ -40,6 +40,11 @@ func WriteJSON(w http.ResponseWriter, status int, data any) {
 	writeJSON(w, status, data)
 }
 
+// WriteJSONMeta exposes the shared API envelope with pagination/metadata to modules.
+func WriteJSONMeta(w http.ResponseWriter, status int, data any, meta map[string]any) {
+	writeJSONMeta(w, status, data, meta)
+}
+
 // WriteError exposes the common API error envelope to domain modules.
 func WriteError(w http.ResponseWriter, status int, code, message string, details any) {
 	writeError(w, status, code, message, details)
