@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -8,6 +10,8 @@ import (
 
 	authsvc "github.com/chmajster/DevBox-Uniwersal/backend/internal/auth"
 )
+
+const csrfCookieName = "devbox_csrf"
 
 type loginRequest struct {
 	Username string `json:"username"`
@@ -32,7 +36,15 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "login failed", nil)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: token, Path: "/", HttpOnly: true, Secure: a.cookieSecure, SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt, MaxAge: int(time.Until(session.ExpiresAt).Seconds())})
+	csrfToken, err := newCSRFToken()
+	if err != nil {
+		_ = a.auth.Logout(r.Context(), token)
+		writeError(w, http.StatusInternalServerError, "internal_error", "login failed", nil)
+		return
+	}
+	maxAge := int(time.Until(session.ExpiresAt).Seconds())
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: token, Path: "/", HttpOnly: true, Secure: a.cookieSecure, SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt, MaxAge: maxAge})
+	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: csrfToken, Path: "/", HttpOnly: false, Secure: a.cookieSecure, SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt, MaxAge: maxAge})
 	uid := user.ID
 	_ = a.audit.Record(r.Context(), &uid, "auth.login", "user", &uid, nil, remoteIP(r))
 	writeJSON(w, http.StatusOK, user)
@@ -45,6 +57,7 @@ func (a *API) logout(w http.ResponseWriter, r *http.Request) {
 		_ = a.auth.Logout(r.Context(), cookie.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: a.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: -1, Expires: time.Unix(1, 0)})
+	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: "", Path: "/", HttpOnly: false, Secure: a.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: -1, Expires: time.Unix(1, 0)})
 	uid := user.ID
 	_ = a.audit.Record(r.Context(), &uid, "auth.logout", "user", &uid, nil, remoteIP(r))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
@@ -53,4 +66,12 @@ func (a *API) logout(w http.ResponseWriter, r *http.Request) {
 func (a *API) me(w http.ResponseWriter, r *http.Request) {
 	user, _ := currentUser(r.Context())
 	writeJSON(w, http.StatusOK, user)
+}
+
+func newCSRFToken() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
