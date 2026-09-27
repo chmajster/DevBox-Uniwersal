@@ -302,7 +302,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 
 	runtimeName := strings.TrimSpace(p.Runtime)
 	if runtimeName == "" {
-		runtimeName, err = h.detectRuntime(ctx, workDir)
+		runtimeName, err = h.detectRuntime(ctx, p, workDir)
 		if err != nil {
 			return nil, err
 		}
@@ -411,7 +411,7 @@ func (h *DeploymentHandler) finishSuccess(ctx context.Context, deploymentID, pro
 	}, nil
 }
 
-func (h *DeploymentHandler) detectRuntime(ctx context.Context, workDir string) (string, error) {
+func (h *DeploymentHandler) detectRuntime(ctx context.Context, project Project, workDir string) (string, error) {
 	bestName := ""
 	bestConfidence := -1
 	for _, name := range h.runtimes.List() {
@@ -419,7 +419,7 @@ func (h *DeploymentHandler) detectRuntime(ctx context.Context, workDir string) (
 		if !ok {
 			continue
 		}
-		detection, err := runtimeProvider.Detect(ctx, workDir)
+		detection, err := runtimeProvider.Detect(ctx, runtimeContext(project, workDir))
 		if err != nil || !detection.Detected {
 			continue
 		}
