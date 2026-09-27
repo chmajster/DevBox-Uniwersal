@@ -16,12 +16,13 @@ Implemented:
 - Controlled MySQL CLI execution using a mode-0600 temporary client option file and SQL over stdin; no arbitrary shell endpoint.
 - Persistent database backup metadata migration.
 - `mysqldump` backup and MySQL restore handlers executed as jobs with shared `jobs`/`job_logs` persistence.
-- Backup list/download/delete and restore APIs.
+- Backup list/download/delete and restore APIs; backup downloads require Operator or Admin.
 - Independent phpMyAdmin Docker install/start/stop/restart/status lifecycle.
 - Database API module with Viewer/Operator RBAC, audit events and same-origin checks for mutations.
 - Frontend “Bazy danych” page with required database table, project provisioning, backup/restore controls and phpMyAdmin panel.
 - Configuration for MySQL CLI/admin connection, backup directory and phpMyAdmin container.
 - Tests for identifier validation, secure password generation, database-scoped grants, secret masking, backup job behavior and restore failure handling.
+- Job start/cancel transition is atomic at the SQLite status boundary so a cancelled queued backup/restore is not started afterward.
 
 Schema changes:
 
@@ -33,4 +34,6 @@ Shared additive integration change:
 
 Validation:
 
-- Pending branch CI after commit.
+- GitHub Actions run `36343000426`: successful.
+- Backend: `gofmt`, `go vet ./...`, `go test ./...`, `go build ./cmd/devbox` all successful.
+- Frontend: `npm ci`, lint, TypeScript typecheck, Vitest and Vite production build all successful.

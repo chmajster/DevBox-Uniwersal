@@ -34,6 +34,8 @@
 - MySQL SQL is sent to controlled CLI processes over stdin; HTTP clients cannot supply arbitrary shell commands.
 - Administrative MySQL credentials are written only to a temporary mode-0600 option file for command execution and are not logged.
 - Database passwords and secret references are excluded from list serialization and job payloads.
+- SQL backup downloads require Operator or Admin instead of Viewer access.
+- Queued job cancellation wins the atomic queued-to-running transition, preventing a cancelled backup/restore from starting afterward.
 
 ### Changed
 
@@ -47,4 +49,4 @@
 ### Validation
 
 - Agent 1 GitHub Actions run `36341280870` passed all backend and frontend foundation quality gates.
-- Agent 5 branch validation pending CI.
+- Agent 5 GitHub Actions run `36343000426` passed backend formatting, vet, tests and build plus frontend install, lint, typecheck, tests and production build.
