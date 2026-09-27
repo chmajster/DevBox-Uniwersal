@@ -35,11 +35,11 @@ var allowedServices = map[string]string{
 }
 
 var allowedEnvKeys = map[string]struct{}{
-	"DEVBOX_HTTP_ADDR":      {},
-	"DEVBOX_DATABASE_PATH":  {},
-	"DEVBOX_MIGRATIONS_DIR": {},
-	"DEVBOX_FRONTEND_DIR":   {},
-	"DEVBOX_COOKIE_SECURE":  {},
+	"DEVBOX_HTTP_ADDR":             {},
+	"DEVBOX_DATABASE_PATH":         {},
+	"DEVBOX_MIGRATIONS_DIR":        {},
+	"DEVBOX_FRONTEND_DIR":          {},
+	"DEVBOX_COOKIE_SECURE":         {},
 	"DEVBOX_VERSION":               {},
 	"DEVBOX_NGINX_SITES_AVAILABLE": {},
 	"DEVBOX_NGINX_SITES_ENABLED":   {},
