@@ -9,7 +9,9 @@ if [[ -z "${DEVBOX_BOOTSTRAP_ADMIN_USERNAME:-}" || -z "${DEVBOX_BOOTSTRAP_ADMIN_
 fi
 
 cleanup() {
-  [[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null || true
+  if [[ -n "${BACKEND_PID:-}" ]]; then
+    kill "$BACKEND_PID" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT INT TERM
 
