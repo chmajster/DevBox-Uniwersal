@@ -1,0 +1,23 @@
+export const ROUTES = {
+  dashboard: '/',
+  applications: '/applications',
+  project: '/projects/:projectId/:tab?',
+  logs: '/logs',
+  jobs: '/jobs',
+  audit: '/audit'
+} as const
+
+export const PROJECT_TABS = [
+  'overview',
+  'configuration',
+  'runtime',
+  'git',
+  'deployments',
+  'logs',
+  'environment',
+  'database',
+  'networking',
+  'backups'
+] as const
+
+export type ProjectTab = typeof PROJECT_TABS[number]
