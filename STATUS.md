@@ -1,39 +1,33 @@
 # Status
 
-Branch: `agent/01-foundation`
+Branch: `agent/04-docker`
 
-Foundation implementation is complete and validated.
+Docker implementation is complete pending final CI validation.
 
 Implemented:
 
-- Go HTTP bootstrap and configuration loader.
-- SQLite connection, WAL/foreign-key configuration and ordered transactional migration runner.
-- Initial schema for users, sessions, projects, project sources, runtime configs, ports, domains, databases, database users, deployments, jobs, job logs, secrets, health checks, audit events and settings.
-- Opaque-session authentication with bcrypt passwords and Admin/Operator/Viewer roles.
-- Bootstrap administrator creation with explicit environment credentials.
-- Core audit service and read endpoint.
-- AES-256-GCM secret encryption abstraction and SQLite `SecretStore`.
-- Runtime, job and provider contracts for parallel agent development.
-- API v1 health, system info, auth, jobs and audit endpoints.
-- React/TypeScript/Vite shell with login, protected layout, overview, jobs and audit pages.
-- Reproducible Go/npm dependency locks.
-- Backend/frontend GitHub Actions quality gates.
+- Existing foundation from Agent 1 remains intact.
+- Controlled Docker CLI provider implementing the shared `providers.DockerProvider` contract without invoking a shell.
+- Docker availability/status detection sourced directly from Docker Engine.
+- Container list/inspect/create/start/stop/restart/remove/logs and allow-listed diagnostic exec.
+- Image list/pull/remove/inspect.
+- Volume list/inspect/remove.
+- Network list/inspect.
+- Docker Compose support for `compose.yaml`, `compose.yml`, `docker-compose.yml` and `docker-compose.yaml`.
+- Compose config validation, pull, build, up, down, restart, logs and ps in the provider layer.
+- Compose project discovery constrained to validated children of `DEVBOX_PROJECTS_ROOT`.
+- Authenticated/RBAC-protected Docker API module and audit events for privileged container operations.
+- React Docker page with Containers, Images, Volumes, Networks and Compose Projects sections using only live API data.
+- Docker unit tests and an integration test that skips cleanly when Docker/daemon is unavailable.
+
+Security:
+
+- HTTP callers cannot supply raw Docker CLI argument arrays or shell commands.
+- Container/image/volume/network/project/service identifiers are validated.
+- Container exec is restricted to fixed diagnostic command aliases.
+- Compose filesystem paths are resolved server-side under the configured projects root.
+- Docker state is never inferred from the SQLite database.
 
 Validation:
 
-- GitHub Actions run `36341280870`: successful.
-- Backend: `gofmt` clean, `go vet ./...`, `go test ./...`, `go build ./cmd/devbox` all successful.
-- Frontend: `npm ci`, lint, TypeScript typecheck, Vitest and Vite production build all successful.
-- Tests cover idempotent SQLite migrations, API health + bootstrap-admin login/session/current-user flow, and AES-GCM secret round-trip without plaintext ciphertext leakage.
-
-Intentionally not implemented in Agent 1:
-
-- Full Git provider.
-- Full runtime implementations.
-- Docker provider.
-- MySQL provider.
-- Nginx/reverse-proxy provider.
-- Platform-specific Windows/WSL service implementation.
-- Production job worker implementations.
-
-Those modules must implement the published contracts without creating cross-domain dependencies.
+- Final GitHub Actions validation is pending for the completed Agent 4 branch.
