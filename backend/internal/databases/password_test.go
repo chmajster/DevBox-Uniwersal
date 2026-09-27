@@ -1,9 +1,6 @@
 package databases
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestGeneratePassword(t *testing.T) {
 	first, err := GeneratePassword()
@@ -20,8 +17,10 @@ func TestGeneratePassword(t *testing.T) {
 	if first == second {
 		t.Fatal("generated passwords must be unique")
 	}
-	if strings.ContainsAny(first, "'" 
-	") {
-		t.Fatal("generated password contains unsafe delimiter characters")
+	for _, r := range first {
+		valid := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_'
+		if !valid {
+			t.Fatalf("generated password contains character outside base64url alphabet: %q", r)
+		}
 	}
 }
