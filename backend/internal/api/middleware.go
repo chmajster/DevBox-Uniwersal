@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
@@ -21,9 +22,27 @@ func (a *API) authenticate(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required", nil)
 			return
 		}
+		if requiresCSRF(r.Method) {
+			csrfCookie, csrfErr := r.Cookie(csrfCookieName)
+			csrfHeader := r.Header.Get("X-CSRF-Token")
+			if csrfErr != nil || csrfHeader == "" || subtle.ConstantTimeCompare([]byte(csrfCookie.Value), []byte(csrfHeader)) != 1 {
+				writeError(w, http.StatusForbidden, "csrf_invalid", "CSRF token is missing or invalid", nil)
+				return
+			}
+		}
 		ctx := context.WithValue(r.Context(), userContextKey{}, user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+
+func requiresCSRF(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	default:
+		return true
+	}
 }
 
 func requireRole(min domain.Role, next http.Handler) http.Handler {

@@ -20,6 +20,7 @@ export function AppLayout() {
         <nav>
           <NavLink to={ROUTES.dashboard}>Dashboard</NavLink>
           <NavLink to={ROUTES.applications}>Applications</NavLink>
+          <NavLink to="/apps">Aplikacje</NavLink>
           <NavLink to={ROUTES.logs}>Logs</NavLink>
           <NavLink to="/runtimes">Runtimes</NavLink>
           <NavLink to="/docker">Docker</NavLink>

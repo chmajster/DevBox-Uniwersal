@@ -11,7 +11,10 @@ import { JobsPage } from './pages/JobsPage'
 import { LogsPage } from './pages/LogsPage'
 import { LoginPage } from './pages/LoginPage'
 import { PortsPage } from './pages/PortsPage'
+import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ProjectDetailsPage } from './pages/ProjectDetailsPage'
+import { ProjectWizardPage } from './pages/ProjectWizardPage'
+import { ProjectsPage } from './pages/ProjectsPage'
 import { ROUTES } from './routes'
 import { ProjectRuntimePage } from './pages/ProjectRuntimePage'
 import { RuntimeManagerPage } from './pages/RuntimeManagerPage'
@@ -23,6 +26,9 @@ export function App() {
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path={ROUTES.applications} element={<ApplicationsPage />} />
+        <Route path="apps" element={<ProjectsPage />} />
+        <Route path="apps/new" element={<ProjectWizardPage />} />
+        <Route path="apps/:id" element={<ProjectDetailPage />} />
         <Route path={ROUTES.project} element={<ProjectDetailsPage />} />
         <Route path={ROUTES.logs} element={<LogsPage />} />
         <Route path="databases" element={<DatabasesPage />} />

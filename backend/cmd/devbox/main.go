@@ -16,8 +16,10 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/config"
 	controldb "github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/databases"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/monitoring"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/operations"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/projects"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/proxy"
 	dockermodule "github.com/chmajster/DevBox-Uniwersal/backend/internal/docker"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
@@ -66,8 +68,9 @@ func main() {
 	} else {
 		logger.Warn("DEVBOX_MASTER_KEY is not configured; project database credentials cannot be provisioned")
 	}
+	runtimeRegistry := runtimes.NewDefaultRegistry()
 	runtimeModule := runtimes.NewModule(
-		runtimes.NewDefaultRegistry(),
+		runtimeRegistry,
 		runtimes.NewSQLiteProjectResolver(db),
 		secretStore,
 	)
@@ -114,6 +117,30 @@ func main() {
 	networkService := proxy.NewService(networkRepo, nginxProvider, hostsManager, healthChecker, cfg.HealthTimeout)
 	networkModule := proxy.NewModule(networkService, portManager, healthChecker, nginxProvider, auditService, cfg.HealthTimeout)
 
+	jobRunner := jobs.NewRunner(jobsRepo)
+	gitClient := projects.NewGitClient(secretStore)
+	projectRepo := projects.NewRepository(db)
+	projectService := projects.NewService(projectRepo, gitClient, jobRunner, secretStore, cfg.ProjectsRoot)
+	for _, jobHandler := range []jobs.Handler{
+		projects.NewGitJobHandler(projects.JobClone, projectRepo, gitClient, jobRunner),
+		projects.NewGitJobHandler(projects.JobFetch, projectRepo, gitClient, jobRunner),
+		projects.NewGitJobHandler(projects.JobPull, projectRepo, gitClient, jobRunner),
+		projects.NewGitJobHandler(projects.JobCheckout, projectRepo, gitClient, jobRunner),
+		projects.NewDeploymentHandler(projectRepo, gitClient, runtimeRegistry, jobRunner),
+	} {
+		if err := jobRunner.Register(jobHandler); err != nil {
+			logger.Error("job handler registration failed", "type", jobHandler.Type(), "error", err)
+			os.Exit(1)
+		}
+	}
+	workerCtx, stopWorkers := context.WithCancel(context.Background())
+	defer stopWorkers()
+	if err := jobRunner.Start(workerCtx); err != nil {
+		logger.Error("job runner start failed", "error", err)
+		os.Exit(1)
+	}
+	projectModule := projects.NewModule(projectService, auditService)
+
 	logRegistry := operations.NewRegistry()
 	logSources := []operations.LogSource{
 		devboxLogs,
@@ -129,6 +156,7 @@ func main() {
 	}
 	modules := []api.Module{
 		runtimeModule,
+		projectModule,
 		dockerModule,
 		databaseModule,
 		networkModule,
@@ -164,6 +192,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	stopWorkers()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
