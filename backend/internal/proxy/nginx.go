@@ -187,8 +187,11 @@ func (n *NginxProvider) Apply(ctx context.Context, route providers.ProxyRoute) e
 		return privilegeFailure("activate Nginx site", available, err)
 	}
 	if err := n.enableSite(available, enabled); err != nil {
-		_ = restoreSnapshot(available, oldAvailable)
-		return err
+		restoreErr := errors.Join(
+			restoreSnapshot(available, oldAvailable),
+			restoreSnapshot(enabled, oldEnabled),
+		)
+		return errors.Join(err, restoreErr)
 	}
 
 	if err := n.Validate(ctx); err != nil {
