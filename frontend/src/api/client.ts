@@ -21,8 +21,15 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {})
     }
   })
-
-  const payload = (await response.json()) as Envelope<T>
+  const text = await response.text()
+  let payload: Envelope<T> = {}
+  if (text) {
+    try {
+      payload = JSON.parse(text) as Envelope<T>
+    } catch {
+      throw new ApiClientError('invalid_response', response.ok ? 'API returned invalid JSON' : `HTTP ${response.status}`, response.status)
+    }
+  }
   if (!response.ok || payload.error) {
     const apiError = payload.error
     throw new ApiClientError(apiError?.code ?? 'http_error', apiError?.message ?? `HTTP ${response.status}`, response.status)
