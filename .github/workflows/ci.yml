@@ -60,7 +60,7 @@ jobs:
       - name: Shell syntax and lint
         run: |
           bash -n install.sh scripts/test-install.sh
-          shellcheck install.sh scripts/dev.sh scripts/test-install.sh
+          shellcheck -x install.sh scripts/dev.sh scripts/test-install.sh
       - name: Shell installer tests
         run: ./scripts/test-install.sh
       - name: PowerShell syntax validation
