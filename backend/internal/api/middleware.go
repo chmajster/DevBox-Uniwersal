@@ -35,7 +35,6 @@ func (a *API) authenticate(next http.Handler) http.Handler {
 	})
 }
 
-
 func requiresCSRF(method string) bool {
 	switch method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
