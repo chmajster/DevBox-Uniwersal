@@ -67,8 +67,12 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
     })
     try {
       const listing = await request<DirectoryListing>(`/projects/directories?path=${encodeURIComponent(path)}`)
-      setListings(current => ({ ...current, [listing.path]: listing.directories ?? [] }))
-      return listing.path
+      setListings(current => ({
+        ...current,
+        [path]: listing.directories ?? [],
+        [listing.path]: listing.directories ?? []
+      }))
+      return path
     } catch (error) {
       setErrors(current => ({ ...current, [path]: errorMessage(error) }))
       return null
