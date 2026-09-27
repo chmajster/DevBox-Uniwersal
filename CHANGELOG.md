@@ -43,6 +43,7 @@
 - Temporary SSH key files are created with restrictive permissions and removed after use.
 - Pull operations use `git pull --ff-only`; Agent 2 never performs `git reset --hard`.
 - Missing runtime/Docker providers return explicit `provider unavailable` failures instead of fake success.
+- Authenticated browser mutations require a double-submit CSRF token; login issues a readable CSRF cookie while the session cookie remains HttpOnly.
 
 ### Validation
 
