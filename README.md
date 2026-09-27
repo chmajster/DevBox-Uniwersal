@@ -13,8 +13,16 @@ DevBox Universal is a local control plane for installing, running and managing h
 
 ## Installers
 
+Linux / WSL — one-line install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/DevBox-Uniwersal/main/install.sh | sudo bash -s -- --install
+```
+
 - Windows / WSL: [install.ps1](https://github.com/chmajster/DevBox-Uniwersal/blob/main/install.ps1) — [direct download](https://raw.githubusercontent.com/chmajster/DevBox-Uniwersal/main/install.ps1)
 - Linux / WSL: [install.sh](https://github.com/chmajster/DevBox-Uniwersal/blob/main/install.sh) — [direct download](https://raw.githubusercontent.com/chmajster/DevBox-Uniwersal/main/install.sh)
+
+The piped installer installs required packages, downloads the current `main` source tree, builds DevBox and installs the system service.
 
 ## Quick start
 
