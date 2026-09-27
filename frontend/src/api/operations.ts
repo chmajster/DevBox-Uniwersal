@@ -20,7 +20,8 @@ type CollectionPayload<T> =
       ports?: T[]
     }
 
-function asCollection<T>(payload: CollectionPayload<T>): T[] {
+function asCollection<T>(payload: CollectionPayload<T> | null | undefined): T[] {
+  if (!payload) return []
   if (Array.isArray(payload)) return payload
   return payload.items ?? payload.projects ?? payload.containers ?? payload.databases ?? payload.ports ?? []
 }
