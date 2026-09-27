@@ -3,6 +3,7 @@ package runtimes
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -126,6 +127,9 @@ func (r *StaticRuntime) Stop(ctx context.Context, project ProjectContext) error 
 	r.mu.RUnlock()
 	if !exists {
 		return nil
+	}
+	if err := state.listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		return fmt.Errorf("close static runtime listener: %w", err)
 	}
 	if err := state.server.Shutdown(ctx); err != nil {
 		return fmt.Errorf("stop static runtime: %w", err)
