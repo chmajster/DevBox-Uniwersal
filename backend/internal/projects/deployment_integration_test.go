@@ -115,7 +115,7 @@ func TestDeploymentIntegrationHealthFailureRollsBackNewRuntimeAndPort(t *testing
 func TestDeploymentIntegrationDockerComposeHealthThenRoute(t *testing.T) {
 	repo, project, deploymentID := integrationProject(t, Project{
 		DeploymentMode: "docker",
-		Healthcheck:     "http://127.0.0.1:19090/health",
+		Healthcheck:    "http://127.0.0.1:19090/health",
 	})
 	compose := &integrationCompose{}
 	routes := &integrationRoutes{}
@@ -291,7 +291,7 @@ func (r *integrationRoutes) EnsureProjectRoute(_ context.Context, projectID, hos
 }
 
 type integrationCompose struct {
-	validated     bool
+	validated      bool
 	pulled         bool
 	built          bool
 	started        bool
