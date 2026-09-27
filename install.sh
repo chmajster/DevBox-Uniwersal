@@ -17,6 +17,9 @@ CONFIG_DIR="${DEVBOX_CONFIG_DIR:-/etc/devbox}"
 ENV_FILE="${DEVBOX_ENV_FILE:-$CONFIG_DIR/devbox.env}"
 DATA_DIR="${DEVBOX_DATA_DIR:-/var/lib/devbox}"
 SERVICE_FILE="${DEVBOX_SERVICE_FILE:-/etc/systemd/system/devbox.service}"
+SUDOERS_FILE="${DEVBOX_SUDOERS_FILE:-/etc/sudoers.d/devbox}"
+NGINX_INCLUDE_FILE="${DEVBOX_NGINX_INCLUDE_FILE:-/etc/nginx/conf.d/devbox.conf}"
+NGINX_STATE_DIR="${DEVBOX_NGINX_STATE_DIR:-$DATA_DIR/nginx}"
 LOG_FILE="${DEVBOX_INSTALL_LOG:-/var/log/devbox-installer.log}"
 MODE=""
 PURGE=0
@@ -271,6 +274,7 @@ ensure_user_and_dirs() {
   fi
   install -d -m 0755 "$INSTALL_ROOT" "$LIBEXEC_DIR"
   install -d -m 0750 -o devbox -g devbox "$DATA_DIR"
+  install -d -m 0750 -o devbox -g devbox "$NGINX_STATE_DIR" "$NGINX_STATE_DIR/sites-available" "$NGINX_STATE_DIR/sites-enabled"
   install -d -m 0750 -o root -g devbox "$CONFIG_DIR"
   if getent group docker >/dev/null 2>&1; then
     usermod -aG docker devbox || true
@@ -311,9 +315,49 @@ install_artifacts() {
   upsert_env_file "$ENV_FILE" DEVBOX_FRONTEND_DIR "$INSTALL_ROOT/frontend/dist"
   upsert_env_file "$ENV_FILE" DEVBOX_COOKIE_SECURE "false"
   upsert_env_file "$ENV_FILE" DEVBOX_VERSION "local"
+  upsert_env_file "$ENV_FILE" DEVBOX_NGINX_SITES_AVAILABLE "$NGINX_STATE_DIR/sites-available"
+  upsert_env_file "$ENV_FILE" DEVBOX_NGINX_SITES_ENABLED "$NGINX_STATE_DIR/sites-enabled"
+  upsert_env_file "$ENV_FILE" DEVBOX_PRIVILEGED_HELPER "$LIBEXEC_DIR/devbox-helper"
+  upsert_env_file "$ENV_FILE" DEVBOX_SUDO_BINARY "$(command -v sudo)"
   chown root:devbox "$ENV_FILE"
   chmod 0640 "$ENV_FILE"
   emit " OK " "Pliki aplikacji i konfiguracja zainstalowane."
+}
+
+install_nginx_integration() {
+  local sudo_bin sudoers_tmp
+  sudo_bin="$(command -v sudo || true)"
+  [[ -n "$sudo_bin" ]] || fail "Brak sudo wymaganego do bezpiecznej obsługi Nginx."
+
+  sudoers_tmp="$(mktemp)"
+  cat >"$sudoers_tmp" <<EOF_SUDOERS
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper validate-nginx
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper reload-nginx
+EOF_SUDOERS
+  chmod 0440 "$sudoers_tmp"
+  if ! visudo -cf "$sudoers_tmp" >>"$LOG_FILE" 2>&1; then
+    rm -f "$sudoers_tmp"
+    fail "Nieprawidłowa konfiguracja sudoers dla devbox-helper."
+  fi
+  install -m 0440 -o root -g root "$sudoers_tmp" "$SUDOERS_FILE"
+  rm -f "$sudoers_tmp"
+
+  install -d -m 0755 "$(dirname "$NGINX_INCLUDE_FILE")"
+  cat >"$NGINX_INCLUDE_FILE" <<EOF_NGINX
+# Managed by DevBox Universal.
+# Dynamic site files are writable only inside DevBox state and loaded by root Nginx.
+include $NGINX_STATE_DIR/sites-enabled/*.conf;
+EOF_NGINX
+  chmod 0644 "$NGINX_INCLUDE_FILE"
+
+  if ! nginx -t >>"$LOG_FILE" 2>&1; then
+    fail "Konfiguracja Nginx jest nieprawidłowa po dodaniu integracji DevBox. Szczegóły: $LOG_FILE"
+  fi
+  if systemd_available; then
+    systemctl enable --now nginx.service >>"$LOG_FILE" 2>&1
+    systemctl reload nginx.service >>"$LOG_FILE" 2>&1
+  fi
+  emit " OK " "Nginx używa kontrolowanego include z $NGINX_STATE_DIR; walidacja/reload działa przez devbox-helper."
 }
 
 generate_bootstrap_credentials() {
@@ -346,7 +390,6 @@ EnvironmentFile=$ENV_FILE
 ExecStart=$LIBEXEC_DIR/devbox serve
 Restart=on-failure
 RestartSec=3
-NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
@@ -430,6 +473,7 @@ run_install() {
 
   stage 5 "Instalacja plików i konfiguracji"
   install_artifacts
+  install_nginx_integration
   generate_bootstrap_credentials
 
   stage 6 "Instalacja usługi"
@@ -495,8 +539,12 @@ run_uninstall() {
   rm -rf "$INSTALL_ROOT"
   emit " OK " "$INSTALL_ROOT usunięty."
   stage 5 "Konfiguracja"
+  rm -f "$SUDOERS_FILE" "$NGINX_INCLUDE_FILE"
   rm -rf "$CONFIG_DIR"
-  emit " OK " "$CONFIG_DIR usunięty."
+  if command -v nginx >/dev/null 2>&1 && nginx -t >>"$LOG_FILE" 2>&1 && systemd_available && systemctl is-active --quiet nginx.service; then
+    systemctl reload nginx.service >>"$LOG_FILE" 2>&1 || true
+  fi
+  emit " OK " "Konfiguracja DevBox, sudoers i include Nginx usunięte."
   stage 6 "Dane"
   if (( PURGE == 1 )); then
     rm -rf "$DATA_DIR"
