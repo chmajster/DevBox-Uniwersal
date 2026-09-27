@@ -20,6 +20,7 @@ Implemented:
 - Additive migration `002_projects_git_deployments.sql`.
 - Tests for repository/branch/path validation, real clone and Git-state parsing, deployment state machine/failure persistence and secret masking.
 - Frontend API client now handles non-JSON HTTP failures without throwing an unrelated JSON parse error.
+- Authenticated state-changing requests use a double-submit CSRF token issued with the session and sent as `X-CSRF-Token` by the frontend client.
 
 Provider boundaries:
 
