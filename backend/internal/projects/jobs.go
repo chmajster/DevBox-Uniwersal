@@ -156,6 +156,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	if err != nil {
 		return nil, err
 	}
+	reconcile := payloadBool(job.Payload, "reconcile")
 
 	started := time.Now().UTC()
 	commitBefore := p.CurrentCommit
@@ -223,8 +224,10 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		if !h.git.IsRepository(ctx, p.LocalPath) {
 			return nil, errors.New("provider unavailable: Git repository is not cloned")
 		}
-		if err := h.git.PullWithCredential(ctx, p.LocalPath, CredentialRef(p.CredentialKind, p.ID, "default")); err != nil {
-			return nil, err
+		if !reconcile {
+			if err := h.git.PullWithCredential(ctx, p.LocalPath, CredentialRef(p.CredentialKind, p.ID, "default")); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if h.git.IsRepository(ctx, p.LocalPath) {
@@ -253,14 +256,18 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		if err := setStage(DeploymentDependencies); err != nil {
 			return nil, err
 		}
-		if err := h.integrations.Compose.ComposePull(ctx, composeDir, composeName, ""); err != nil {
-			return nil, fmt.Errorf("docker compose pull: %w", err)
+		if !reconcile {
+			if err := h.integrations.Compose.ComposePull(ctx, composeDir, composeName, ""); err != nil {
+				return nil, fmt.Errorf("docker compose pull: %w", err)
+			}
 		}
 		if err := setStage(DeploymentBuilding); err != nil {
 			return nil, err
 		}
-		if err := h.integrations.Compose.ComposeBuild(ctx, composeDir, composeName, ""); err != nil {
-			return nil, fmt.Errorf("docker compose build: %w", err)
+		if !reconcile {
+			if err := h.integrations.Compose.ComposeBuild(ctx, composeDir, composeName, ""); err != nil {
+				return nil, fmt.Errorf("docker compose build: %w", err)
+			}
 		}
 		if err := setStage(DeploymentStarting); err != nil {
 			return nil, err
@@ -336,14 +343,18 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	if err := setStage(DeploymentDependencies); err != nil {
 		return nil, err
 	}
-	if err := runtimeProvider.InstallDependencies(ctx, runtimeCtx); err != nil {
-		return nil, fmt.Errorf("install dependencies: %w", err)
+	if !reconcile {
+		if err := runtimeProvider.InstallDependencies(ctx, runtimeCtx); err != nil {
+			return nil, fmt.Errorf("install dependencies: %w", err)
+		}
 	}
 	if err := setStage(DeploymentBuilding); err != nil {
 		return nil, err
 	}
-	if err := runtimeProvider.Build(ctx, runtimeCtx); err != nil {
-		return nil, fmt.Errorf("build: %w", err)
+	if !reconcile {
+		if err := runtimeProvider.Build(ctx, runtimeCtx); err != nil {
+			return nil, fmt.Errorf("build: %w", err)
+		}
 	}
 	if err := setStage(DeploymentStarting); err != nil {
 		return nil, err
@@ -495,6 +506,11 @@ func payloadString(payload map[string]any, key string) (string, error) {
 	}
 	return value, nil
 }
+func payloadBool(payload map[string]any, key string) bool {
+	value, _ := payload[key].(bool)
+	return value
+}
+
 func validDeploymentTransition(from, to string) bool {
 	next := map[string]string{DeploymentQueued: DeploymentPreparing, DeploymentPreparing: DeploymentUpdatingSource, DeploymentUpdatingSource: DeploymentDependencies, DeploymentDependencies: DeploymentBuilding, DeploymentBuilding: DeploymentStarting, DeploymentStarting: DeploymentHealthcheck, DeploymentHealthcheck: DeploymentSuccess}
 	return next[from] == to
