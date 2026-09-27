@@ -22,16 +22,15 @@ type execCommandRunner struct{}
 func (execCommandRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)
-	}
-	return string(out), nil
+	return string(out), err
 }
 
 type NginxOptions struct {
 	Binary         string
 	SitesAvailable string
 	SitesEnabled   string
+	HelperBinary   string
+	SudoBinary     string
 }
 
 type NginxProvider struct {
@@ -44,6 +43,9 @@ var _ providers.ReverseProxyProvider = (*NginxProvider)(nil)
 func NewNginxProvider(options NginxOptions) *NginxProvider {
 	if strings.TrimSpace(options.Binary) == "" {
 		options.Binary = "nginx"
+	}
+	if strings.TrimSpace(options.HelperBinary) != "" && strings.TrimSpace(options.SudoBinary) == "" {
+		options.SudoBinary = "sudo"
 	}
 	return &NginxProvider{options: options, runner: execCommandRunner{}}
 }
@@ -70,9 +72,16 @@ func (n *NginxProvider) Version(ctx context.Context) (string, error) {
 }
 
 func (n *NginxProvider) Validate(ctx context.Context) error {
+	if n.usesPrivilegedHelper() {
+		out, err := n.runPrivilegedHelper(ctx, "validate-nginx")
+		if err != nil {
+			return commandFailure("nginx config validation failed", out, err)
+		}
+		return nil
+	}
 	out, err := n.runner.Run(ctx, n.options.Binary, "-t")
 	if err != nil {
-		return fmt.Errorf("nginx config validation failed: %s: %w", strings.TrimSpace(out), err)
+		return commandFailure("nginx config validation failed", out, err)
 	}
 	return nil
 }
@@ -306,11 +315,39 @@ func (n *NginxProvider) Reload(ctx context.Context) error {
 }
 
 func (n *NginxProvider) reloadOnly(ctx context.Context) error {
+	if n.usesPrivilegedHelper() {
+		out, err := n.runPrivilegedHelper(ctx, "reload-nginx")
+		if err != nil {
+			return commandFailure("nginx reload failed", out, err)
+		}
+		return nil
+	}
 	out, err := n.runner.Run(ctx, n.options.Binary, "-s", "reload")
 	if err != nil {
-		return fmt.Errorf("nginx reload failed: %s: %w", strings.TrimSpace(out), err)
+		return commandFailure("nginx reload failed", out, err)
 	}
 	return nil
+}
+
+func (n *NginxProvider) usesPrivilegedHelper() bool {
+	return strings.TrimSpace(n.options.HelperBinary) != ""
+}
+
+func (n *NginxProvider) runPrivilegedHelper(ctx context.Context, action string) (string, error) {
+	switch action {
+	case "validate-nginx", "reload-nginx":
+	default:
+		return "", fmt.Errorf("unsupported privileged nginx action %q", action)
+	}
+	return n.runner.Run(ctx, n.options.SudoBinary, "-n", n.options.HelperBinary, action)
+}
+
+func commandFailure(prefix, output string, err error) error {
+	message := strings.TrimSpace(output)
+	if message == "" {
+		return fmt.Errorf("%s: %w", prefix, err)
+	}
+	return fmt.Errorf("%s: %s: %w", prefix, message, err)
 }
 
 func (n *NginxProvider) availablePath(hostname string) string {
