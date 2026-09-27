@@ -18,10 +18,11 @@
 - Reproducible `go.sum` and `package-lock.json`.
 - CI for backend and frontend quality gates.
 - Architecture, roadmap, agent rules and ADR documentation.
-- Docker provider with engine detection and Docker-backed status reporting.
+- Docker provider with `docker info`, `docker version`, engine detection and Docker-backed status reporting.
 - Container list/inspect/create/start/stop/restart/remove/logs plus allow-listed diagnostic exec.
 - Image list/pull/remove/inspect, volume list/inspect/remove and network list/inspect.
 - Docker Compose support for all common Compose filenames with config validation, pull, build, up, down, restart, logs and ps.
+- `Docker` / `DockerCompose` deployment-mode discovery based on `Dockerfile` and supported Compose files.
 - Validated Compose discovery under `DEVBOX_PROJECTS_ROOT`.
 - Docker API module with Viewer/Operator/Admin RBAC and audit events for privileged actions.
 - Docker frontend with Containers, Images, Volumes, Networks and Compose Projects views.
@@ -37,4 +38,4 @@
 ### Validation
 
 - Foundation GitHub Actions run `36341280870` passed all backend and frontend quality gates.
-- Agent 4 Docker validation pending final branch CI run.
+- Agent 4 GitHub Actions run `36342877670` passed backend formatting, vet, tests and build plus frontend install, lint, typecheck, tests and production build.

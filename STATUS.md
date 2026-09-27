@@ -2,18 +2,19 @@
 
 Branch: `agent/04-docker`
 
-Docker implementation is complete pending final CI validation.
+Docker implementation is complete and validated.
 
 Implemented:
 
 - Existing foundation from Agent 1 remains intact.
 - Controlled Docker CLI provider implementing the shared `providers.DockerProvider` contract without invoking a shell.
-- Docker availability/status detection sourced directly from Docker Engine.
+- `docker info` / `docker version` detection and status sourced directly from Docker Engine.
 - Container list/inspect/create/start/stop/restart/remove/logs and allow-listed diagnostic exec.
 - Image list/pull/remove/inspect.
 - Volume list/inspect/remove.
 - Network list/inspect.
 - Docker Compose support for `compose.yaml`, `compose.yml`, `docker-compose.yml` and `docker-compose.yaml`.
+- Project deployment detection exposes `Docker` for `Dockerfile` and `DockerCompose` for supported Compose files.
 - Compose config validation, pull, build, up, down, restart, logs and ps in the provider layer.
 - Compose project discovery constrained to validated children of `DEVBOX_PROJECTS_ROOT`.
 - Authenticated/RBAC-protected Docker API module and audit events for privileged container operations.
@@ -30,4 +31,5 @@ Security:
 
 Validation:
 
-- Final GitHub Actions validation is pending for the completed Agent 4 branch.
+- GitHub Actions run `36342877670`: backend `gofmt`, `go vet ./...`, `go test ./...` and `go build ./cmd/devbox` all successful.
+- GitHub Actions run `36342877670`: frontend `npm ci`, lint, TypeScript typecheck, Vitest and Vite production build all successful.
