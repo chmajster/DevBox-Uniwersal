@@ -23,7 +23,7 @@
 - Project database provisioning that creates a dedicated database and user, stores the generated password in encrypted `SecretStore`, and returns the credential only from the provisioning response.
 - Database backup metadata and `mysqldump`/restore job handlers integrated with shared jobs/job logs.
 - Backup list/download/delete and restore API operations.
-- Independent phpMyAdmin Docker container lifecycle and frontend controls.
+- Independent phpMyAdmin Docker container lifecycle and frontend controls, with loopback MySQL translated to Docker host-gateway connectivity.
 - “Bazy danych” frontend page with database table, provisioning forms, backup controls, MySQL status and phpMyAdmin status/actions.
 - Same-origin protection for database-module browser mutations and actor-aware audit integration.
 
@@ -49,4 +49,4 @@
 ### Validation
 
 - Agent 1 GitHub Actions run `36341280870` passed all backend and frontend foundation quality gates.
-- Agent 5 GitHub Actions run `36343000426` passed backend formatting, vet, tests and build plus frontend install, lint, typecheck, tests and production build.
+- Agent 5 GitHub Actions run `36343217115` passed backend formatting, vet, tests and build plus frontend install, lint, typecheck, tests and production build.
