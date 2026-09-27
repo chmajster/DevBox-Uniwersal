@@ -11,6 +11,11 @@ DevBox Universal is a local control plane for installing, running and managing h
 - Extension model: runtime/provider interfaces and per-domain API modules.
 - Docker: local Docker Engine inventory/lifecycle plus controlled Docker Compose integration.
 
+## Installers
+
+- Windows / WSL: [install.ps1](https://github.com/chmajster/DevBox-Uniwersal/blob/main/install.ps1) — [direct download](https://raw.githubusercontent.com/chmajster/DevBox-Uniwersal/main/install.ps1)
+- Linux / WSL: [install.sh](https://github.com/chmajster/DevBox-Uniwersal/blob/main/install.sh) — [direct download](https://raw.githubusercontent.com/chmajster/DevBox-Uniwersal/main/install.sh)
+
 ## Quick start
 
 Requirements: Go 1.23+, Node.js 22+, npm. Docker is optional; the backend remains available when Docker is missing.
