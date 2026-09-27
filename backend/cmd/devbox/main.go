@@ -178,6 +178,14 @@ func serve() error {
 		logger.Error("job runner start failed", "error", err)
 		os.Exit(1)
 	}
+	reconciledJobs, err := projectService.ReconcileAutoStart(context.Background())
+	if err != nil {
+		logger.Error("desired-state reconciliation failed", "error", err)
+		os.Exit(1)
+	}
+	if len(reconciledJobs) > 0 {
+		logger.Info("desired-state reconciliation queued", "jobs", len(reconciledJobs))
+	}
 	projectModule := projects.NewModule(projectService, auditService)
 
 	logRegistry := operations.NewRegistry()
