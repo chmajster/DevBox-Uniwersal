@@ -132,6 +132,18 @@ func (r *Repository) UpdateRuntime(ctx context.Context, id, runtime string) erro
 	return err
 }
 
+func (r *Repository) HasActiveDeploymentJob(ctx context.Context, projectID string) (bool, error) {
+	var count int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM jobs
+		WHERE project_id = ? AND type = ? AND status IN ('queued','running')
+	`, projectID, JobDeploy).Scan(&count); err != nil {
+		return false, fmt.Errorf("check active deployment job: %w", err)
+	}
+	return count > 0, nil
+}
+
 func (r *Repository) CreateDeployment(ctx context.Context, d Deployment) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO deployments(id,project_id,revision,status,runtime,metadata_json,created_by,created_at,commit_before,commit_after,duration_ms,current_stage,error_text,job_id) VALUES(?,?,?,?,?,'{}',?,?,?,?,?,?,?,?)`,
 		d.ID, d.ProjectID, nil, d.Status, nil, d.TriggeredBy, d.CreatedAt.UTC().Format(time.RFC3339Nano), nullable(d.CommitBefore), nullable(d.CommitAfter), d.DurationMS, d.Stage, nullable(d.Error), d.JobID)
