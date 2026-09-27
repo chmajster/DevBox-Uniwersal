@@ -12,14 +12,32 @@ export class ApiClientError extends Error {
 
 const apiBase = import.meta.env.VITE_API_BASE ?? '/api/v1'
 
+function readCookie(name: string): string {
+  if (typeof document === 'undefined') return ''
+  const prefix = `${encodeURIComponent(name)}=`
+  for (const part of document.cookie.split(';')) {
+    const value = part.trim()
+    if (value.startsWith(prefix)) return decodeURIComponent(value.slice(prefix.length))
+  }
+  return ''
+}
+
+function isMutation(method: string): boolean {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())
+}
+
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers)
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const method = init?.method ?? 'GET'
+  if (isMutation(method) && path !== '/auth/login') {
+    const csrfToken = readCookie('devbox_csrf')
+    if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
+  }
   const response = await fetch(`${apiBase}${path}`, {
     ...init,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {})
-    }
+    headers
   })
   const text = await response.text()
   let payload: Envelope<T> = {}
