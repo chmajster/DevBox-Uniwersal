@@ -41,3 +41,58 @@ export interface SystemInfo {
   go_version: string
   version: string
 }
+
+export interface PortRecord {
+  id: string
+  project_id?: string
+  application?: string
+  port: number
+  purpose: string
+  state: string
+  socket_available: boolean
+  created_at: string
+  released_at?: string
+}
+
+export interface HealthResult {
+  status: string
+  response_time_ms: number
+  error?: string
+  checked_at: string
+  type?: string
+  target?: string
+  project_id?: string
+}
+
+export interface DomainRecord {
+  id: string
+  project_id: string
+  application?: string
+  hostname: string
+  target_port: number
+  target: string
+  tls_enabled: boolean
+  status: string
+  health?: HealthResult
+  created_at: string
+  updated_at: string
+}
+
+export interface HostChange {
+  applied: boolean
+  requires_privilege: boolean
+  path: string
+  instruction?: string
+}
+
+export interface DomainMutationResult {
+  domain: DomainRecord
+  hosts: HostChange
+}
+
+export interface ProxyStatus {
+  detected: boolean
+  version?: string
+  config_valid: boolean
+  error?: string
+}

@@ -16,6 +16,8 @@ export function AppLayout() {
         <div className="brand">DevBox Universal</div>
         <nav>
           <NavLink to="/">Overview</NavLink>
+          <NavLink to="/domains">Domeny i Proxy</NavLink>
+          <NavLink to="/ports">Porty</NavLink>
           <NavLink to="/jobs">Jobs</NavLink>
           {user?.role !== 'viewer' && <NavLink to="/audit">Audit</NavLink>}
         </nav>

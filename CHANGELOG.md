@@ -18,9 +18,23 @@
 - Reproducible `go.sum` and `package-lock.json`.
 - CI for backend and frontend quality gates.
 - Architecture, roadmap, agent rules and ADR documentation.
+- Central SQLite-backed Port Manager with DB and live-socket collision detection, release/reuse and inspection.
+- Concrete Nginx provider with detect/version, config generation, candidate validation, site lifecycle and validated reload.
+- Transactional-style Nginx activation with file/symlink rollback on failed validation or reload.
+- Hostname validation and Windows/WSL/Linux hosts-file reconciliation without privilege escalation.
+- HTTP/TCP health checks with persisted status, response time, error and timestamp.
+- Networking API for ports, domains, proxy status/test/reload and on-demand health checks.
+- `Domeny i Proxy` and `Porty` frontend pages.
+- ADR-007 for networking and Nginx safety behavior.
+
+### Changed
+
+- API authentication now exposes authenticated user context to domain modules through `api.CurrentUser` so module-owned mutations can preserve audit actor attribution.
+- Runtime configuration accepts the port allocation range, Nginx binary/site paths, hosts-file override and network health timeout.
+- Health-check schema stores `last_response_ms` and `last_error`.
 
 ### Validation
 
-- GitHub Actions run `36341280870` passed all backend quality gates: formatting, vet, tests and build.
-- GitHub Actions run `36341280870` passed all frontend quality gates: `npm ci`, lint, typecheck, tests and production build.
-- Integration coverage validates SQLite migration idempotency, health/auth session flow and AES-GCM secret round-trip.
+- Foundation GitHub Actions run `36341280870` passed all backend quality gates: formatting, vet, tests and build.
+- Foundation GitHub Actions run `36341280870` passed all frontend quality gates: `npm ci`, lint, typecheck, tests and production build.
+- Networking branch adds focused tests for collisions, hostname validation, Nginx rollback, HTTP timeout, TCP checks and hosts-file reconciliation; branch CI runs the full backend and frontend quality gates.
