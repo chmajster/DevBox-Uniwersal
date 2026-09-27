@@ -17,8 +17,8 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
 )
 
-var httpCredentialPattern = regexp.MustCompile(`(?i)((?:https?|git)://)[^/@\\s]+@`)
-var sshPasswordPattern = regexp.MustCompile(`(?i)(ssh://)[^/@\\s:]+:[^/@\\s]+@`)
+var httpCredentialPattern = regexp.MustCompile(`(?i)((?:https?|git)://)[^/@\s]+@`)
+var sshPasswordPattern = regexp.MustCompile(`(?i)(ssh://)[^/@\s:]+:[^/@\s]+@`)
 
 type GitClient struct {
 	store secrets.SecretStore
@@ -253,8 +253,8 @@ func parseCredentialRef(ref string) (kind, scope, name string, err error) {
 }
 
 func MaskSecrets(input string, values ...string) string {
-	masked := httpCredentialPattern.ReplaceAllString(input, "$1***@")
-	masked = sshPasswordPattern.ReplaceAllString(masked, "$1***@")
+	masked := httpCredentialPattern.ReplaceAllString(input, "${1}***@")
+	masked = sshPasswordPattern.ReplaceAllString(masked, "${1}***@")
 	for _, value := range values {
 		if value != "" {
 			masked = strings.ReplaceAll(masked, value, "***")
