@@ -23,13 +23,13 @@ var (
 )
 
 type MySQLConfig struct {
-	Host          string
-	Port          int
-	AdminUser     string
-	AdminPassword string
+	Host            string
+	Port            int
+	AdminUser       string
+	AdminPassword   string
 	ApplicationHost string
-	MySQLBinary   string
-	DumpBinary    string
+	MySQLBinary     string
+	DumpBinary      string
 }
 
 type mysqlExecutor interface {
