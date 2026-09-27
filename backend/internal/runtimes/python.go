@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	goruntime "runtime"
 	"regexp"
+	goruntime "runtime"
 	"strings"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
