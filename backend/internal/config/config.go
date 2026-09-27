@@ -12,6 +12,7 @@ type Config struct {
 	HTTPAddr               string
 	DatabasePath           string
 	MigrationsDir          string
+	ProjectsRoot           string
 	SessionTTL             time.Duration
 	CookieSecure           bool
 	BootstrapAdminUsername string
@@ -38,6 +39,7 @@ func Load() (Config, error) {
 		HTTPAddr:               getEnv("DEVBOX_HTTP_ADDR", "127.0.0.1:8787"),
 		DatabasePath:           getEnv("DEVBOX_DATABASE_PATH", "./data/devbox.db"),
 		MigrationsDir:          getEnv("DEVBOX_MIGRATIONS_DIR", "./migrations"),
+		ProjectsRoot:           getEnv("DEVBOX_PROJECTS_ROOT", "./projects"),
 		SessionTTL:             ttl,
 		CookieSecure:           cookieSecure,
 		BootstrapAdminUsername: strings.TrimSpace(os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_USERNAME")),
@@ -46,8 +48,8 @@ func Load() (Config, error) {
 		AppVersion:             getEnv("DEVBOX_VERSION", "dev"),
 	}
 
-	if cfg.HTTPAddr == "" || cfg.DatabasePath == "" || cfg.MigrationsDir == "" {
-		return Config{}, fmt.Errorf("HTTP address, database path and migrations directory are required")
+	if cfg.HTTPAddr == "" || cfg.DatabasePath == "" || cfg.MigrationsDir == "" || cfg.ProjectsRoot == "" {
+		return Config{}, fmt.Errorf("HTTP address, database path, migrations directory and projects root are required")
 	}
 	if (cfg.BootstrapAdminUsername == "") != (cfg.BootstrapAdminPassword == "") {
 		return Config{}, fmt.Errorf("bootstrap admin username and password must be configured together")
