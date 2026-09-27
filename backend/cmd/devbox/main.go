@@ -84,6 +84,7 @@ func serve() error {
 	users := repository.NewSQLiteUsers(db)
 	sessions := repository.NewSQLiteSessions(db)
 	jobsRepo := repository.NewSQLiteJobs(db)
+	jobRunner := jobs.NewRunner(jobsRepo)
 	auditRepo := repository.NewSQLiteAudit(db)
 	authService := auth.NewService(users, sessions, cfg.SessionTTL)
 	if err := authService.BootstrapAdmin(context.Background(), cfg.BootstrapAdminUsername, cfg.BootstrapAdminPassword); err != nil {
@@ -124,7 +125,6 @@ func serve() error {
 		DumpBinary:      cfg.MySQLDumpBinary,
 	}, secretStore)
 	databaseRepo := databases.NewRepository(db)
-	databaseJobs := databases.NewSQLiteJobRunner(db)
 	phpMyAdmin := databases.NewPHPMyAdminManager(databases.PHPMyAdminConfig{
 		DockerBinary: cfg.PHPMyAdminDockerBinary,
 		Image:        cfg.PHPMyAdminImage,
@@ -133,7 +133,7 @@ func serve() error {
 		MySQLHost:    cfg.MySQLHost,
 		MySQLPort:    cfg.MySQLPort,
 	})
-	databaseService, err := databases.NewService(databaseRepo, mysqlProvider, secretStore, databaseJobs, auditService, phpMyAdmin, cfg.MySQLBackupDir)
+	databaseService, err := databases.NewService(databaseRepo, mysqlProvider, secretStore, jobRunner, auditService, phpMyAdmin, cfg.MySQLBackupDir)
 	if err != nil {
 		logger.Error("database module initialization failed", "error", err)
 		os.Exit(1)
@@ -152,7 +152,6 @@ func serve() error {
 	networkService := proxy.NewService(networkRepo, nginxProvider, hostsManager, healthChecker, cfg.HealthTimeout)
 	networkModule := proxy.NewModule(networkService, portManager, healthChecker, nginxProvider, auditService, cfg.HealthTimeout)
 
-	jobRunner := jobs.NewRunner(jobsRepo)
 	gitClient := projects.NewGitClient(secretStore)
 	projectRepo := projects.NewRepository(db)
 	projectService := projects.NewService(projectRepo, gitClient, jobRunner, secretStore, cfg.ProjectsRoot)
