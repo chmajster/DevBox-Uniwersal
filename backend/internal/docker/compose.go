@@ -143,6 +143,27 @@ func (p *CLIProvider) ComposeLogs(ctx context.Context, directory, projectName, s
 	return p.runner.Stream(ctx, args...)
 }
 
+func (p *CLIProvider) ComposeHealthy(ctx context.Context, directory, projectName string) error {
+	processes, err := p.ComposePS(ctx, directory, projectName)
+	if err != nil {
+		return err
+	}
+	if len(processes) == 0 {
+		return fmt.Errorf("docker compose has no running services")
+	}
+	for _, process := range processes {
+		state := strings.ToLower(strings.TrimSpace(process.State))
+		health := strings.ToLower(strings.TrimSpace(process.Health))
+		if state != "running" {
+			return fmt.Errorf("docker compose service %s is %s", process.Service, process.State)
+		}
+		if health == "unhealthy" {
+			return fmt.Errorf("docker compose service %s is unhealthy", process.Service)
+		}
+	}
+	return nil
+}
+
 func (p *CLIProvider) ComposePS(ctx context.Context, directory, projectName string) ([]ComposeProcess, error) {
 	args, err := composeArgs(directory, projectName)
 	if err != nil {
