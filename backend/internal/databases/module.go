@@ -29,6 +29,9 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	viewer := func(handler http.Handler) http.Handler {
 		return middleware.Authenticate(middleware.RequireRole(domain.RoleViewer, handler))
 	}
+	operatorRead := func(handler http.Handler) http.Handler {
+		return middleware.Authenticate(middleware.RequireRole(domain.RoleOperator, handler))
+	}
 	operator := func(handler http.Handler) http.Handler {
 		return middleware.Authenticate(middleware.RequireRole(domain.RoleOperator, sameOrigin(handler)))
 	}
@@ -48,7 +51,7 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/databases/{id}/backup", operator(http.HandlerFunc(m.backupDatabase)))
 	mux.Handle("GET /api/v1/databases/{id}/backups", viewer(http.HandlerFunc(m.listBackups)))
 	mux.Handle("POST /api/v1/databases/{id}/restore", operator(http.HandlerFunc(m.restoreDatabase)))
-	mux.Handle("GET /api/v1/database-backups/{id}/download", viewer(http.HandlerFunc(m.downloadBackup)))
+	mux.Handle("GET /api/v1/database-backups/{id}/download", operatorRead(http.HandlerFunc(m.downloadBackup)))
 	mux.Handle("DELETE /api/v1/database-backups/{id}", operator(http.HandlerFunc(m.deleteBackup)))
 
 	mux.Handle("GET /api/v1/phpmyadmin/status", viewer(http.HandlerFunc(m.phpMyAdminStatus)))
