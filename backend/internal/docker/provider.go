@@ -160,7 +160,7 @@ func (p *CLIProvider) InspectContainer(ctx context.Context, id string) (Containe
 	item := raw[0]
 	return ContainerDetail{
 		Container: Container{ID: item.ID, Name: strings.TrimPrefix(item.Name, "/"), Image: item.Config.Image, State: item.State.Status, Status: item.State.Status},
-		Running: item.State.Running, StartedAt: item.State.StartedAt, FinishedAt: item.State.FinishedAt, Labels: item.Config.Labels,
+		Running:   item.State.Running, StartedAt: item.State.StartedAt, FinishedAt: item.State.FinishedAt, Labels: item.Config.Labels,
 	}, nil
 }
 
