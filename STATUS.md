@@ -2,7 +2,7 @@
 
 Branch: `agent/03-runtimes`
 
-Agent 3 Runtime Engine implementation is complete pending final CI verification.
+Agent 3 Runtime Engine implementation is complete and verified.
 
 Implemented:
 
@@ -15,6 +15,7 @@ Implemented:
 - Node.js npm/pnpm/yarn lockfile selection with install, build and start behavior.
 - Built-in loopback-only static HTTP serving suitable for reverse-proxy handoff.
 - Local process supervision for direct runtimes with project-scoped logs and lifecycle status.
+- Deterministic Static restart that closes the bound listener before rebinding.
 - Runtime configuration resolver isolated from ProjectService and backed by the Agent 1 project/runtime tables.
 - SecretStore-backed environment resolution with API masking for secret references and secret-like environment keys.
 - Runtime API module:
@@ -24,6 +25,7 @@ Implemented:
   - `POST /api/v1/projects/{id}/runtime/validate`
 - Runtime Manager frontend and reusable project Runtime configuration section.
 - Fixture-based detector tests for Static, Laravel, Symfony, FastAPI, Django, Go, Vite, pip, uv and Poetry.
+- Lifecycle tests for Static restart, runtime log tail behavior and secret masking.
 
 Scope exclusions preserved:
 
@@ -34,4 +36,5 @@ Scope exclusions preserved:
 
 Validation:
 
-- Final GitHub Actions backend/frontend quality gates will be recorded after the branch push.
+- GitHub Actions run `36343299084` passed backend formatting, `go vet ./...`, `go test ./...` and `go build ./cmd/devbox`.
+- GitHub Actions run `36343299084` passed frontend `npm ci`, lint, typecheck, tests and production build.
