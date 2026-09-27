@@ -1,0 +1,30 @@
+.path-picker-field { display: grid; gap: 6px; }
+.path-picker-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.path-picker-row input { margin-top: 0; }
+.path-picker-row button { white-space: nowrap; }
+
+.directory-picker { display: grid; gap: 12px; border: 1px solid var(--border); background: var(--panel); border-radius: 10px; padding: 14px; }
+.directory-picker-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }
+.directory-picker-header > div { display: grid; gap: 4px; }
+.directory-picker-header .muted { font-size: 12px; }
+
+.directory-tree { max-height: 380px; overflow: auto; border: 1px solid var(--border-soft); background: var(--panel-alt); border-radius: 8px; padding: 6px; }
+.directory-tree-node { min-width: max-content; }
+.directory-tree-row { display: grid; grid-template-columns: 28px minmax(180px, 1fr); align-items: center; min-height: 32px; border-radius: 6px; }
+.directory-tree-row:hover, .directory-tree-row.is-selected { background: var(--panel); }
+.directory-tree-toggle, .directory-tree-name { border: 0; background: transparent; color: var(--text); padding: 5px 7px; }
+.directory-tree-toggle { width: 28px; text-align: center; color: var(--muted); }
+.directory-tree-name { min-width: 0; text-align: left; white-space: nowrap; }
+.directory-tree-toggle:disabled { opacity: .6; }
+.directory-tree-error { max-width: 720px; color: var(--error-text); font-size: 12px; padding-top: 3px; padding-bottom: 5px; white-space: normal; }
+.directory-tree-empty { color: var(--muted); font-size: 12px; padding-top: 3px; padding-bottom: 5px; }
+
+.directory-picker-selection { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+.directory-picker-selection > div { display: grid; gap: 4px; min-width: 0; }
+.directory-picker-selection code { overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .path-picker-row { grid-template-columns: 1fr; }
+  .directory-picker-header, .directory-picker-selection { align-items: stretch; flex-direction: column; }
+  .directory-picker-selection button { width: 100%; }
+}
