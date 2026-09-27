@@ -71,3 +71,14 @@ Validation:
 - Deployment jobs share the Runtime Engine registry instead of using a disconnected runtime registry.
 - CSRF protection is enabled for authenticated state-changing requests.
 - Agent 2 project UI is available under /apps alongside the Operations applications UI.
+
+## Windows / WSL / Installer
+
+- Windows PowerShell bootstrap and Linux installer are implemented.
+- WSL/Linux platform and component detection are implemented.
+- Read-only system platform/components API endpoints are authenticated with Viewer-or-higher RBAC.
+- `devbox status` and `devbox doctor` are available.
+- A narrow Linux `devbox-helper` privileged boundary is implemented with fixed allowlists.
+- The Go server can serve the built frontend from `DEVBOX_FRONTEND_DIR`.
+- Installer CI adds Bash syntax/shellcheck tests plus PowerShell parser tests.
+- Agent 8 ADR is integrated as ADR-008 to avoid collision with the existing networking ADR-007.

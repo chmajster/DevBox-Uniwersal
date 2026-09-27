@@ -40,6 +40,8 @@ func New(deps Dependencies) http.Handler {
 	mux.Handle("POST /api/v1/auth/logout", a.authenticate(http.HandlerFunc(a.logout)))
 	mux.Handle("GET /api/v1/auth/me", a.authenticate(http.HandlerFunc(a.me)))
 	mux.Handle("GET /api/v1/system/info", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.systemInfo))))
+	mux.Handle("GET /api/v1/system/platform", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.systemPlatform))))
+	mux.Handle("GET /api/v1/system/components", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.systemComponents))))
 	mux.Handle("GET /api/v1/jobs", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.listJobs))))
 	mux.Handle("GET /api/v1/jobs/{id}", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.getJob))))
 	mux.Handle("GET /api/v1/audit", a.authenticate(requireRole(domain.RoleOperator, http.HandlerFunc(a.listAudit))))

@@ -12,6 +12,7 @@ type Config struct {
 	HTTPAddr               string
 	DatabasePath           string
 	MigrationsDir          string
+	FrontendDir            string
 	ProjectsRoot           string
 	SessionTTL             time.Duration
 	CookieSecure           bool
@@ -87,6 +88,7 @@ func Load() (Config, error) {
 		HTTPAddr:               getEnv("DEVBOX_HTTP_ADDR", "127.0.0.1:8787"),
 		DatabasePath:           getEnv("DEVBOX_DATABASE_PATH", "./data/devbox.db"),
 		MigrationsDir:          getEnv("DEVBOX_MIGRATIONS_DIR", "./migrations"),
+		FrontendDir:            strings.TrimSpace(os.Getenv("DEVBOX_FRONTEND_DIR")),
 		ProjectsRoot:           getEnv("DEVBOX_PROJECTS_ROOT", "./projects"),
 		SessionTTL:             ttl,
 		CookieSecure:           cookieSecure,
