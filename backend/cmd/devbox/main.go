@@ -161,7 +161,11 @@ func serve() error {
 		projects.NewGitJobHandler(projects.JobFetch, projectRepo, gitClient, jobRunner),
 		projects.NewGitJobHandler(projects.JobPull, projectRepo, gitClient, jobRunner),
 		projects.NewGitJobHandler(projects.JobCheckout, projectRepo, gitClient, jobRunner),
-		projects.NewDeploymentHandler(projectRepo, gitClient, runtimeRegistry, jobRunner),
+		projects.NewDeploymentHandler(projectRepo, gitClient, runtimeRegistry, jobRunner, projects.DeploymentIntegrations{
+			Ports:   portManager,
+			Routes:  networkService,
+			Compose: dockerProvider,
+		}),
 	} {
 		if err := jobRunner.Register(jobHandler); err != nil {
 			logger.Error("job handler registration failed", "type", jobHandler.Type(), "error", err)
