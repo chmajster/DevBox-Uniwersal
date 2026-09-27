@@ -65,6 +65,15 @@ func TestGitStateParsingAndSecretMasking(t *testing.T) {
 	if strings.Contains(masked, secret) || !strings.Contains(masked, "***") {
 		t.Fatalf("secret was not masked: %q", masked)
 	}
+	urlSecret := "https://user:token-value@example.com/repo.git"
+	maskedURL := MaskSecrets("fatal: remote "+urlSecret)
+	if strings.Contains(maskedURL, "token-value") || !strings.Contains(maskedURL, "https://***@example.com/repo.git") {
+		t.Fatalf("URL credential was not masked: %q", maskedURL)
+	}
+	sshURL := "ssh://git@example.com/repo.git"
+	if got := MaskSecrets(sshURL); got != sshURL {
+		t.Fatalf("username-only SSH URL should not be masked: %q", got)
+	}
 }
 func runGitTest(t *testing.T, dir string, args ...string) {
 	t.Helper()
