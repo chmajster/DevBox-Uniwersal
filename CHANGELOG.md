@@ -18,9 +18,24 @@
 - Reproducible `go.sum` and `package-lock.json`.
 - CI for backend and frontend quality gates.
 - Architecture, roadmap, agent rules and ADR documentation.
+- Host monitoring API for CPU, RAM, disk, uptime and process statistics with SSE updates.
+- Central log-source registry with source/project/level/search filters and SSE live tail.
+- DevBox, job, project and deployment log sources backed by in-memory structured logs and durable SQLite job logs.
+- Dashboard operational metrics and service-state cards.
+- Applications list and full project details navigation.
+- REST-wired Start/Stop/Restart/Deploy/Open/Logs/Terminal project actions.
+- Job detail UI with stage, progress percentage, elapsed time and live durable logs.
+- Text + icon operational status badges.
+- Persistent light/dark theme and responsive operations UI.
+- UI/provider integration contract for parallel project, Docker, database and proxy agents.
+
+### Changed
+
+- Shared API response helpers are now exported so independently owned modules can use the common success/error envelope.
+- Dashboard/domain integration failures show the concrete backend error instead of a generic message.
 
 ### Validation
 
-- GitHub Actions run `36341280870` passed all backend quality gates: formatting, vet, tests and build.
-- GitHub Actions run `36341280870` passed all frontend quality gates: `npm ci`, lint, typecheck, tests and production build.
-- Integration coverage validates SQLite migration idempotency, health/auth session flow and AES-GCM secret round-trip.
+- Foundation GitHub Actions run `36341280870` passed all backend quality gates: formatting, vet, tests and build.
+- Foundation GitHub Actions run `36341280870` passed all frontend quality gates: `npm ci`, lint, typecheck, tests and production build.
+- Agent 7 validation is pending GitHub Actions on `agent/07-ui-operations`.

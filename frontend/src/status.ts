@@ -4,16 +4,19 @@ const aliases: Record<string, OperationalStatus> = {
   active: 'RUNNING',
   healthy: 'RUNNING',
   ok: 'RUNNING',
+  run: 'RUNNING',
   running: 'RUNNING',
   started: 'RUNNING',
   succeeded: 'RUNNING',
   inactive: 'STOPPED',
   stopped: 'STOPPED',
   cancelled: 'STOPPED',
+  draft: 'STOPPED',
   error: 'FAILED',
   failed: 'FAILED',
   building: 'BUILDING',
   build: 'BUILDING',
+  pending: 'BUILDING',
   queued: 'DEPLOYING',
   deploy: 'DEPLOYING',
   deploying: 'DEPLOYING',
@@ -24,6 +27,5 @@ const aliases: Record<string, OperationalStatus> = {
 
 export function normalizeOperationalStatus(value?: string): OperationalStatus {
   if (!value) return 'UNHEALTHY'
-  const normalized = value.trim().toLowerCase()
-  return aliases[normalized] ?? (normalized === 'run' ? 'RUNNING' : 'UNHEALTHY')
+  return aliases[value.trim().toLowerCase()] ?? 'UNHEALTHY'
 }

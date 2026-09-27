@@ -1,39 +1,31 @@
 # Status
 
-Branch: `agent/01-foundation`
+Branch: `agent/07-ui-operations`
 
-Foundation implementation is complete and validated.
+Agent 7 UI / Operations / Monitoring implementation is complete and awaiting CI validation.
 
 Implemented:
 
-- Go HTTP bootstrap and configuration loader.
-- SQLite connection, WAL/foreign-key configuration and ordered transactional migration runner.
-- Initial schema for users, sessions, projects, project sources, runtime configs, ports, domains, databases, database users, deployments, jobs, job logs, secrets, health checks, audit events and settings.
-- Opaque-session authentication with bcrypt passwords and Admin/Operator/Viewer roles.
-- Bootstrap administrator creation with explicit environment credentials.
-- Core audit service and read endpoint.
-- AES-256-GCM secret encryption abstraction and SQLite `SecretStore`.
-- Runtime, job and provider contracts for parallel agent development.
-- API v1 health, system info, auth, jobs and audit endpoints.
-- React/TypeScript/Vite shell with login, protected layout, overview, jobs and audit pages.
-- Reproducible Go/npm dependency locks.
-- Backend/frontend GitHub Actions quality gates.
+- Real host monitoring module with authenticated `/api/v1/monitoring/snapshot` and SSE stream.
+- Linux/WSL CPU, RAM, disk, host uptime and process-count metrics without Prometheus or an external monitoring daemon.
+- Cross-platform-safe fallback that reports unavailable host metrics instead of fabricating values.
+- Central operational log registry with filters for source, project, level and search.
+- SSE live-tail for central logs plus per-job durable log streaming.
+- Built-in log sources for DevBox, jobs, project-related jobs and deployment-related jobs.
+- Extension contract for Docker/Nginx/provider-owned log sources; Agent 7 does not execute provider commands directly.
+- Dashboard for Applications, Running, Stopped, Failed, Docker containers, Databases, Ports, CPU, RAM, Disk and service state.
+- Applications list and project details tabs: Overview, Configuration, Runtime, Git, Deployments, Logs, Environment, Database, Networking and Backups.
+- Project operations wired to REST API: Start, Stop, Restart, Deploy, Open, Logs and controlled Terminal session.
+- Job UI with stage, numeric progress, elapsed time and logs; no spinner-only progress.
+- Explicit operational statuses with icon + text.
+- Exact backend error rendering.
+- Light/dark theme persisted in local storage.
+- Responsive desktop/smaller-window layouts.
+- Component tests for status/error/job progress and routing tests for project detail tabs.
+- Integration contract in `docs/integration/ui-operations-api.md`.
+
+No migrations were added.
 
 Validation:
 
-- GitHub Actions run `36341280870`: successful.
-- Backend: `gofmt` clean, `go vet ./...`, `go test ./...`, `go build ./cmd/devbox` all successful.
-- Frontend: `npm ci`, lint, TypeScript typecheck, Vitest and Vite production build all successful.
-- Tests cover idempotent SQLite migrations, API health + bootstrap-admin login/session/current-user flow, and AES-GCM secret round-trip without plaintext ciphertext leakage.
-
-Intentionally not implemented in Agent 1:
-
-- Full Git provider.
-- Full runtime implementations.
-- Docker provider.
-- MySQL provider.
-- Nginx/reverse-proxy provider.
-- Platform-specific Windows/WSL service implementation.
-- Production job worker implementations.
-
-Those modules must implement the published contracts without creating cross-domain dependencies.
+- Pending GitHub Actions on `agent/07-ui-operations`.
