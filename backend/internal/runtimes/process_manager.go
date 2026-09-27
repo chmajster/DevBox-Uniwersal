@@ -119,8 +119,9 @@ func (m *LocalProcessManager) Start(ctx context.Context, spec providers.ProcessS
 func (m *LocalProcessManager) Stop(ctx context.Context, name string) error {
 	m.mu.RLock()
 	process, exists := m.processes[name]
+	running := exists && process.state == "running" && process.cmd != nil && process.cmd.Process != nil
 	m.mu.RUnlock()
-	if !exists || process.state != "running" || process.cmd == nil || process.cmd.Process == nil {
+	if !running {
 		return nil
 	}
 
@@ -248,9 +249,15 @@ func tailLines(content []byte, tail int) []byte {
 	if tail <= 0 || len(content) == 0 {
 		return content
 	}
-	lines := bytes.Split(content, []byte("\n"))
+	hasTrailingNewline := bytes.HasSuffix(content, []byte("\n"))
+	trimmed := bytes.TrimSuffix(content, []byte("\n"))
+	lines := bytes.Split(trimmed, []byte("\n"))
 	if len(lines) <= tail {
 		return content
 	}
-	return bytes.Join(lines[len(lines)-tail-1:], []byte("\n"))
+	result := bytes.Join(lines[len(lines)-tail:], []byte("\n"))
+	if hasTrailingNewline {
+		result = append(result, '\n')
+	}
+	return result
 }
