@@ -16,6 +16,8 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/config"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
 )
 
 func main() {
@@ -46,7 +48,31 @@ func main() {
 		os.Exit(1)
 	}
 	auditService := audit.NewService(auditRepo)
-	handler := api.New(api.Dependencies{DB: db, Auth: authService, Audit: auditService, Jobs: jobsRepo, Version: cfg.AppVersion, CookieSecure: cfg.CookieSecure})
+
+	var secretStore secrets.SecretStore
+	if cfg.MasterKeyBase64 != "" {
+		cipher, err := secrets.NewAESGCMFromBase64(cfg.MasterKeyBase64)
+		if err != nil {
+			logger.Error("secret store initialization failed", "error", err)
+			os.Exit(1)
+		}
+		secretStore = secrets.NewSQLiteStore(db, cipher)
+	}
+	runtimeModule := runtimes.NewModule(
+		runtimes.NewDefaultRegistry(),
+		runtimes.NewSQLiteProjectResolver(db),
+		secretStore,
+	)
+
+	handler := api.New(api.Dependencies{
+		DB:           db,
+		Auth:         authService,
+		Audit:        auditService,
+		Jobs:         jobsRepo,
+		Version:      cfg.AppVersion,
+		CookieSecure: cfg.CookieSecure,
+		Modules:      []api.Module{runtimeModule},
+	})
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
 	errCh := make(chan error, 1)

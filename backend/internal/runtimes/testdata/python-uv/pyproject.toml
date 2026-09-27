@@ -1,0 +1,3 @@
+[project]
+name = "uv-fixture"
+dependencies = ["fastapi>=0.115"]
