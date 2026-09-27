@@ -298,6 +298,36 @@ func (s *Service) EnqueueCheckout(ctx context.Context, id, branch string, actor 
 	return s.jobRunner.Enqueue(ctx, jobs.Request{Type: JobCheckout, ProjectID: &p.ID, RequestedBy: actor, Payload: map[string]any{"project_id": p.ID, "branch": branch}})
 }
 func (s *Service) Deploy(ctx context.Context, id string, actor *string) (domain.Job, error) {
+	return s.enqueueDeployment(ctx, id, actor, false)
+}
+
+func (s *Service) ReconcileAutoStart(ctx context.Context) ([]domain.Job, error) {
+	projects, err := s.repo.List(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	enqueued := make([]domain.Job, 0)
+	for _, project := range projects {
+		if !project.AutoStart || project.ArchivedAt != nil {
+			continue
+		}
+		active, err := s.repo.HasActiveDeploymentJob(ctx, project.ID)
+		if err != nil {
+			return enqueued, err
+		}
+		if active {
+			continue
+		}
+		job, err := s.enqueueDeployment(ctx, project.ID, nil, true)
+		if err != nil {
+			return enqueued, fmt.Errorf("reconcile auto-start project %s: %w", project.ID, err)
+		}
+		enqueued = append(enqueued, job)
+	}
+	return enqueued, nil
+}
+
+func (s *Service) enqueueDeployment(ctx context.Context, id string, actor *string, reconcile bool) (domain.Job, error) {
 	p, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return domain.Job{}, err
@@ -309,7 +339,11 @@ func (s *Service) Deploy(ctx context.Context, id string, actor *string) (domain.
 	if err := s.repo.CreateDeployment(ctx, d); err != nil {
 		return domain.Job{}, err
 	}
-	job, err := s.jobRunner.Enqueue(ctx, jobs.Request{Type: JobDeploy, ProjectID: &id, RequestedBy: actor, Payload: map[string]any{"project_id": id, "deployment_id": d.ID}})
+	payload := map[string]any{"project_id": id, "deployment_id": d.ID}
+	if reconcile {
+		payload["reconcile"] = true
+	}
+	job, err := s.jobRunner.Enqueue(ctx, jobs.Request{Type: JobDeploy, ProjectID: &id, RequestedBy: actor, Payload: payload})
 	if err != nil {
 		_ = s.repo.FinishDeployment(ctx, d.ID, DeploymentFailed, DeploymentFailed, "", err.Error(), time.Now().UTC(), 0)
 		return domain.Job{}, err

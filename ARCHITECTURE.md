@@ -8,7 +8,8 @@ DevBox Universal is a local application management control plane. The architectu
 
 ```text
 backend/
-  cmd/devbox/              composition root and HTTP server bootstrap
+  cmd/devbox/              composition root, server bootstrap and operator CLI
+  cmd/devbox-helper/       narrow Linux privileged helper
   internal/api/            core API envelope, middleware, core handlers, Module contract
   internal/auth/           authentication/session service
   internal/config/         environment configuration
@@ -18,7 +19,8 @@ backend/
   internal/jobs/           Job Engine contracts
   internal/audit/          append-only audit service
   internal/secrets/        encryption + SecretStore
-  internal/system/         host information
+  internal/system/         host/WSL detection, component status and doctor
+  internal/webui/          production static frontend serving/fallback
   internal/runtimes/       Runtime contract
   internal/providers/      cross-module provider contracts
   internal/projects/       owned by Git/Projects agent
@@ -43,6 +45,8 @@ Concrete provider implementations may depend on shared contracts and infrastruct
 
 A future integration agent may wire modules in the composition root. Domain agents should keep their implementation self-contained so wiring is a small, reviewable change.
 
+Core host introspection remains under `/api/v1/system/*`. Component/platform endpoints are read-only and require an authenticated Viewer or higher role.
+
 ## Authentication and RBAC
 
 Authentication uses random opaque session tokens. Only a SHA-256 token hash is stored in SQLite. The session token is sent as an HttpOnly, SameSite=Lax cookie. TLS deployments should set `DEVBOX_COOKIE_SECURE=true`.
@@ -62,6 +66,8 @@ Provider configuration should store references to secrets, never raw secret valu
 ## Jobs
 
 Potentially slow or external mutations should execute through `jobs.JobRunner`. HTTP handlers should enqueue work and return a job identity instead of invoking long-running processes directly. Handlers are registered by job type. Implementations must support durable state and logs through the `jobs` and `job_logs` tables.
+
+Privileged component installation is not exposed synchronously through the System Components HTTP API. Privileged mutations must use audited jobs and the typed privileged-helper boundary.
 
 ## Runtime model
 
@@ -83,6 +89,14 @@ Stable contracts live in `backend/internal/providers/contracts.go`:
 
 The types next to those interfaces are transport-neutral orchestration DTOs. Provider-specific settings belong inside the provider module rather than expanding shared types for every implementation detail.
 
+## Windows / WSL and installation
+
+Windows uses WSL as the Linux execution boundary. `install.ps1` detects WSL and supported Ubuntu/Debian distributions, can bootstrap Ubuntu explicitly, verifies/enables WSL systemd when required and delegates installation to `install.sh` inside the selected distribution.
+
+The Linux installer builds backend and frontend, installs the control plane under `/opt/devbox` and `/usr/local/lib/devbox`, stores mutable data under `/var/lib/devbox` and installs `devbox.service` under the unprivileged `devbox` account. `DEVBOX_FRONTEND_DIR` lets the Go process serve the built SPA and API on one listener.
+
 ## Privilege boundary
 
-The HTTP API should run unprivileged. Future operating-system operations requiring elevation must be delegated through a narrow, auditable system-service boundary rather than running the entire API as Administrator/root. See ADR-006.
+The HTTP API runs unprivileged. Operations requiring Administrator/root privileges must be delegated through a narrow, auditable system-service boundary rather than running the entire API as Administrator/root. See ADR-006 and ADR-008.
+
+`devbox-helper` exposes only typed, whitelisted operations. It cannot execute an arbitrary executable/argument vector, cannot write an arbitrary path and cannot install a package name supplied directly by a caller without allowlist mapping.

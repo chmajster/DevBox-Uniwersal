@@ -74,3 +74,19 @@
 - Durable project jobs and deployment state machine with deployment history.
 - Project wizard, project list and Git/deployment detail views under /apps.
 - Double-submit CSRF protection for authenticated mutations.
+
+### Agent 8 — Windows / WSL / Installer
+
+- Windows/WSL bootstrap installer (`install.ps1`) with distribution detection, optional Ubuntu installation, systemd handling and Linux-installer handoff.
+- Linux installer (`install.sh`) with install/status/repair/update/uninstall/help modes, staged logging and data-preserving uninstall by default.
+- Host component and platform detection for Git, Docker, Nginx, MySQL/MariaDB, PHP, Composer, Python, pip, Go, Node.js and npm.
+- Authenticated `/api/v1/system/components` and `/api/v1/system/platform` status endpoints.
+- `devbox status` and `devbox doctor` operator commands.
+- Whitelisted `devbox-helper` privilege boundary without arbitrary command execution.
+- Production SPA serving from the Go process through `DEVBOX_FRONTEND_DIR`.
+- Shell/PowerShell installer tests and CI validation.
+
+Security:
+- privileged helper package/service/config operations are allowlisted;
+- bootstrap credentials are not written to installer logs;
+- uninstall preserves application data unless purge is explicitly requested.

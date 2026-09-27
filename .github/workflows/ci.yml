@@ -22,13 +22,18 @@ jobs:
         with:
           go-version-file: backend/go.mod
       - name: Format
-        run: test -z "$(gofmt -l .)"
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [[ -n "$unformatted" ]]; then
+            printf 'Unformatted Go files:\n%s\n' "$unformatted"
+            exit 1
+          fi
       - name: Vet
         run: go vet ./...
       - name: Test
         run: go test ./...
       - name: Build
-        run: go build ./cmd/devbox
+        run: go build ./cmd/devbox ./cmd/devbox-helper
 
   frontend:
     runs-on: ubuntu-latest
@@ -50,3 +55,22 @@ jobs:
         run: npm run test
       - name: Build
         run: npm run build
+
+  installer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Shell syntax and lint
+        run: |
+          bash -n install.sh scripts/test-install.sh
+          shellcheck -x install.sh scripts/dev.sh scripts/test-install.sh
+      - name: Shell installer tests
+        run: ./scripts/test-install.sh
+      - name: PowerShell syntax validation
+        shell: pwsh
+        run: ./scripts/validate-powershell.ps1
+      - name: PowerShell parser and WSL metadata tests
+        shell: pwsh
+        run: ./scripts/test-install.ps1

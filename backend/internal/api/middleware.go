@@ -35,7 +35,6 @@ func (a *API) authenticate(next http.Handler) http.Handler {
 	})
 }
 
-
 func requiresCSRF(method string) bool {
 	switch method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
@@ -65,16 +64,13 @@ func currentUser(ctx context.Context) (domain.User, bool) {
 	return u, ok
 }
 
-// CurrentUser lets authenticated domain modules attribute privileged operations without duplicating auth context handling.
-func CurrentUser(ctx context.Context) (domain.User, bool) {
-	return currentUser(ctx)
-}
-
 func withSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		next.ServeHTTP(w, r)
 	})
 }
