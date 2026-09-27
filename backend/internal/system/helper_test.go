@@ -16,6 +16,17 @@ func TestHelperRejectsUnknownPackageAndService(t *testing.T) {
 	}
 }
 
+func TestValidateNginx(t *testing.T) {
+	h := NewPrivilegedHelperWithRunner(fakeRunner{
+		paths:   map[string]string{"nginx": "/usr/sbin/nginx"},
+		outputs: map[string]string{"/usr/sbin/nginx": "configuration file is valid\n"},
+		errors:  map[string]error{},
+	})
+	if err := h.ValidateNginx(context.Background()); err != nil {
+		t.Fatalf("ValidateNginx() error = %v", err)
+	}
+}
+
 func TestValidateDevBoxEnv(t *testing.T) {
 	good := "DEVBOX_HTTP_ADDR=127.0.0.1:8787\nDEVBOX_DATABASE_PATH=/var/lib/devbox/devbox.db\n"
 	if err := ValidateDevBoxEnv(good); err != nil {

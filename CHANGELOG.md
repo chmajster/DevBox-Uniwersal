@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- Consolidated the duplicate Applications/Aplikacje navigation onto the canonical `/apps` workflow and kept `/applications` as a compatibility redirect.
+- Normalized null collection payloads so empty project lists no longer crash with an `items is null` frontend error.
+- Replaced hard-coded dark module panel backgrounds with theme variables, fixing unreadable forms in light mode.
+- Moved installed DevBox Nginx site state under `/var/lib/devbox/nginx` and delegated global Nginx validation/reload to the allowlisted privileged helper, avoiding unprivileged `nginx -t` failures on root-only includes.
+
 ### Added
 
 - Initial DevBox Universal repository architecture.
