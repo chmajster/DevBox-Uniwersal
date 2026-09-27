@@ -15,6 +15,25 @@ func NewRegistry() *MemoryRegistry {
 	return &MemoryRegistry{runtimes: map[string]Runtime{}}
 }
 
+func NewDefaultRegistry() *MemoryRegistry {
+	registry := NewRegistry()
+	processes := NewLocalProcessManager()
+	runner := ExecRunner{}
+	defaults := []Runtime{
+		NewStaticRuntime(),
+		NewPHPRuntime(processes, runner),
+		NewPythonRuntime(processes, runner),
+		NewGoRuntime(processes, runner),
+		NewNodeRuntime(processes, runner),
+	}
+	for _, runtime := range defaults {
+		if err := registry.Register(runtime); err != nil {
+			panic(err)
+		}
+	}
+	return registry
+}
+
 func (r *MemoryRegistry) Register(runtime Runtime) error {
 	if runtime == nil || runtime.Name() == "" {
 		return errors.New("runtime name is required")
