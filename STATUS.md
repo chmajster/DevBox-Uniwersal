@@ -64,3 +64,10 @@ Validation:
 - Dashboard, Applications, Project Details, Logs and enhanced Jobs UI are integrated.
 - Theme switching and responsive operations layout are enabled.
 - Agent 7 validation run: 36342945958.
+
+## Projects / Git / Deployment
+
+- Project management, Git integration and durable deployment jobs are integrated.
+- Deployment jobs share the Runtime Engine registry instead of using a disconnected runtime registry.
+- CSRF protection is enabled for authenticated state-changing requests.
+- Agent 2 project UI is available under /apps alongside the Operations applications UI.

@@ -66,3 +66,11 @@
 - Operations dashboard, applications list, project details, logs viewer and job progress UI.
 - Persistent light/dark theme and responsive operations layout.
 - Existing Runtime, Docker, Database and Networking routes remain available.
+
+### Agent 2 — Projects / Git / Deployment
+
+- Project CRUD/archive and Git/local/empty project sources.
+- Git clone/fetch/pull/checkout/status/history with credential masking and SecretStore integration.
+- Durable project jobs and deployment state machine with deployment history.
+- Project wizard, project list and Git/deployment detail views under /apps.
+- Double-submit CSRF protection for authenticated mutations.
