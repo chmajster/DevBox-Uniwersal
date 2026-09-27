@@ -48,20 +48,29 @@ func NewPHPMyAdminManager(cfg PHPMyAdminConfig) *PHPMyAdminManager {
 
 func (m *PHPMyAdminManager) Install(ctx context.Context) (PHPMyAdminStatus, error) {
 	status, err := m.Status(ctx)
-	if err == nil && status.Installed {
+	if err != nil {
+		return PHPMyAdminStatus{}, err
+	}
+	if status.Installed {
 		return status, nil
 	}
 	if err := m.run(ctx, "pull", m.cfg.Image); err != nil {
 		return PHPMyAdminStatus{}, fmt.Errorf("pull phpMyAdmin image: %w", err)
 	}
+	mysqlHost, addHostGateway := dockerMySQLTarget(m.cfg.MySQLHost)
 	args := []string{
 		"create",
 		"--name", m.cfg.Container,
 		"-p", "127.0.0.1:" + strconv.Itoa(m.cfg.HostPort) + ":80",
-		"-e", "PMA_HOST=" + m.cfg.MySQLHost,
-		"-e", "PMA_PORT=" + strconv.Itoa(m.cfg.MySQLPort),
-		m.cfg.Image,
 	}
+	if addHostGateway {
+		args = append(args, "--add-host", "host.docker.internal:host-gateway")
+	}
+	args = append(args,
+		"-e", "PMA_HOST="+mysqlHost,
+		"-e", "PMA_PORT="+strconv.Itoa(m.cfg.MySQLPort),
+		m.cfg.Image,
+	)
 	if err := m.run(ctx, args...); err != nil {
 		return PHPMyAdminStatus{}, fmt.Errorf("create phpMyAdmin container: %w", err)
 	}
@@ -91,6 +100,9 @@ func (m *PHPMyAdminManager) Restart(ctx context.Context) (PHPMyAdminStatus, erro
 
 func (m *PHPMyAdminManager) Status(ctx context.Context) (PHPMyAdminStatus, error) {
 	url := "http://127.0.0.1:" + strconv.Itoa(m.cfg.HostPort)
+	if err := m.run(ctx, "version", "--format", "{{.Server.Version}}"); err != nil {
+		return PHPMyAdminStatus{}, fmt.Errorf("docker is unavailable: %w", err)
+	}
 	var stdout bytes.Buffer
 	cmd := exec.CommandContext(ctx, m.cfg.DockerBinary, "inspect", "--format", "{{.State.Status}}", m.cfg.Container)
 	cmd.Stdout = &stdout
@@ -114,4 +126,13 @@ func (m *PHPMyAdminManager) run(ctx context.Context, args ...string) error {
 		return fmt.Errorf("docker command failed: %w", err)
 	}
 	return nil
+}
+
+func dockerMySQLTarget(host string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(host)) {
+	case "127.0.0.1", "localhost", "::1":
+		return "host.docker.internal", true
+	default:
+		return host, false
+	}
 }
