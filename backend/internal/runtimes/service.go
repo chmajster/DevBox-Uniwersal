@@ -22,18 +22,18 @@ type DetectionView struct {
 }
 
 type ProjectRuntimeView struct {
-	ProjectID      string           `json:"project_id"`
-	Runtime        string           `json:"runtime"`
-	Framework      string           `json:"framework"`
-	Confidence     int              `json:"confidence"`
-	DetectedFiles  []string         `json:"detected_files"`
-	Version        string           `json:"version,omitempty"`
-	Availability   string           `json:"availability"`
-	Dependencies   []DependencyInfo `json:"dependencies,omitempty"`
-	BuildCommand   string           `json:"build_command,omitempty"`
-	StartCommand   string           `json:"start_command,omitempty"`
-	Environment    map[string]string `json:"environment,omitempty"`
-	ConfiguredRuntime string        `json:"configured_runtime,omitempty"`
+	ProjectID         string            `json:"project_id"`
+	Runtime           string            `json:"runtime"`
+	Framework         string            `json:"framework"`
+	Confidence        int               `json:"confidence"`
+	DetectedFiles     []string          `json:"detected_files"`
+	Version           string            `json:"version,omitempty"`
+	Availability      string            `json:"availability"`
+	Dependencies      []DependencyInfo  `json:"dependencies,omitempty"`
+	BuildCommand      string            `json:"build_command,omitempty"`
+	StartCommand      string            `json:"start_command,omitempty"`
+	Environment       map[string]string `json:"environment,omitempty"`
+	ConfiguredRuntime string            `json:"configured_runtime,omitempty"`
 }
 
 type RuntimeValidationView struct {
