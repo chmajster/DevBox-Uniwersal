@@ -57,3 +57,10 @@ Validation:
 - Port Manager, Nginx reverse proxy, domains and health checks are implemented.
 - Nginx changes follow validate → activate → validate → reload with rollback on failure.
 - Networking frontend exposes Domeny i Proxy and Porty.
+
+## UI / Operations / Monitoring
+
+- Monitoring and central operations log modules are registered alongside all existing domain modules.
+- Dashboard, Applications, Project Details, Logs and enhanced Jobs UI are integrated.
+- Theme switching and responsive operations layout are enabled.
+- Agent 7 validation run: 36342945958.
