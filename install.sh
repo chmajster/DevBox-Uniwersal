@@ -341,8 +341,7 @@ wait_for_health() {
     emit WARN "Pominięto healthcheck usługi, ponieważ systemd nie działa."
     return 0
   fi
-  local i
-  for i in {1..30}; do
+  for _ in {1..30}; do
     if curl -fsS --max-time 2 http://127.0.0.1:8787/api/v1/health >/dev/null 2>&1; then
       emit " OK " "Healthcheck API zakończony powodzeniem."
       if grep -q '^DEVBOX_BOOTSTRAP_ADMIN_USERNAME=' "$ENV_FILE" 2>/dev/null || grep -q '^DEVBOX_BOOTSTRAP_ADMIN_PASSWORD=' "$ENV_FILE" 2>/dev/null; then
@@ -428,9 +427,17 @@ run_status() {
   stage 4 "Usługa DevBox"
   if systemd_available && systemctl is-active --quiet devbox.service; then emit " OK " "devbox.service active"; else emit WARN "devbox.service nieaktywna"; fi
   stage 5 "Pliki"
-  [[ -x "$LIBEXEC_DIR/devbox" ]] && emit " OK " "$LIBEXEC_DIR/devbox" || emit WARN "Brak binarki DevBox"
+  if [[ -x "$LIBEXEC_DIR/devbox" ]]; then
+    emit " OK " "$LIBEXEC_DIR/devbox"
+  else
+    emit WARN "Brak binarki DevBox"
+  fi
   stage 6 "Dane"
-  [[ -d "$DATA_DIR" ]] && emit " OK " "$DATA_DIR" || emit WARN "Brak katalogu danych"
+  if [[ -d "$DATA_DIR" ]]; then
+    emit " OK " "$DATA_DIR"
+  else
+    emit WARN "Brak katalogu danych"
+  fi
   stage 7 "GUI/API"
   if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 2 http://127.0.0.1:8787/api/v1/health >/dev/null 2>&1; then emit " OK " "http://localhost:8787/"; else emit WARN "API nie odpowiada"; fi
   stage 8 "Doctor"
