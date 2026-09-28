@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 	"regexp"
 	"strings"
 )
@@ -68,7 +69,19 @@ func (h *PrivilegedHelper) InstallPackage(ctx context.Context, component string)
 	if !ok {
 		return fmt.Errorf("%w: package %q", ErrOperationNotAllowed, component)
 	}
-	return h.run(ctx, "apt-get", "install", "-y", "--", pkg)
+
+	// Package metadata can be absent or stale on fresh Debian/Ubuntu/WSL
+	// installations. Refresh it before installing a whitelisted component.
+	if err := h.runWithEnv(ctx, []string{"DEBIAN_FRONTEND=noninteractive"}, "apt-get", "update"); err != nil {
+		return fmt.Errorf("refresh apt package lists: %w", err)
+	}
+	if err := h.runWithEnv(ctx, []string{"DEBIAN_FRONTEND=noninteractive"}, "apt-get",
+		"-o", "Dpkg::Options::=--force-confdef",
+		"-o", "Dpkg::Options::=--force-confold",
+		"install", "-y", "--no-install-recommends", "--", pkg); err != nil {
+		return fmt.Errorf("install %s (%s): %w", component, pkg, err)
+	}
+	return nil
 }
 
 func (h *PrivilegedHelper) RestartService(ctx context.Context, service string) error {
@@ -165,17 +178,51 @@ func ValidateDevBoxEnv(raw string) error {
 }
 
 func (h *PrivilegedHelper) run(ctx context.Context, command string, args ...string) error {
+	return h.runWithEnv(ctx, nil, command, args...)
+}
+
+func (h *PrivilegedHelper) runWithEnv(ctx context.Context, env []string, command string, args ...string) error {
 	path, err := h.runner.LookPath(command)
 	if err != nil {
 		return fmt.Errorf("find %s: %w", command, err)
 	}
-	out, err := h.runner.CombinedOutput(ctx, path, args...)
-	if err != nil {
-		message := ParseVersionOutput(string(out))
-		if message == "" {
-			message = err.Error()
+
+	// CommandRunner intentionally has a narrow interface. For apt, use env(1)
+	// to set non-interactive mode without expanding the privileged helper API.
+	execPath := path
+	execArgs := args
+	if len(env) > 0 {
+		envPath, lookupErr := h.runner.LookPath("env")
+		if lookupErr != nil {
+			return fmt.Errorf("find env: %w", lookupErr)
 		}
-		return fmt.Errorf("%s failed: %s", command, message)
+		execPath = envPath
+		execArgs = append(append(append([]string{}, env...), path), args...)
+	}
+
+	var out []byte
+	for attempt := 1; attempt <= 3; attempt++ {
+		out, err = h.runner.CombinedOutput(ctx, execPath, execArgs...)
+		if err == nil {
+			return nil
+		}
+		message := strings.TrimSpace(string(out))
+		lower := strings.ToLower(message)
+		transient := strings.Contains(lower, "could not get lock") ||
+			strings.Contains(lower, "unable to acquire the dpkg frontend lock") ||
+			strings.Contains(lower, "temporary failure resolving") ||
+			strings.Contains(lower, "failed to fetch")
+		if !transient || attempt == 3 {
+			if message == "" {
+				message = err.Error()
+			}
+			return fmt.Errorf("%s failed: %s", command, message)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt*2) * time.Second):
+		}
 	}
 	return nil
 }
