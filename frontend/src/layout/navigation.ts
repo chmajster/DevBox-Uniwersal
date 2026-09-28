@@ -13,6 +13,7 @@ export interface NavigationItem {
 const items: NavigationItem[] = [
   { to: ROUTES.dashboard, label: 'Przegląd', icon: 'dashboard', group: 'Workspace' },
   { to: ROUTES.applications, label: 'Aplikacje', icon: 'apps', group: 'Workspace' },
+  { to: ROUTES.credentials, label: 'Poświadczenia', icon: 'lock', group: 'Workspace', roles: ['admin', 'operator'] },
   { to: '/runtimes', label: 'Runtime', icon: 'code', group: 'Infrastruktura' },
   { to: '/docker', label: 'Docker', icon: 'box', group: 'Infrastruktura' },
   { to: '/databases', label: 'Bazy danych', icon: 'database', group: 'Infrastruktura' },
