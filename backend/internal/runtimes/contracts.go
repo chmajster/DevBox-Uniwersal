@@ -62,6 +62,10 @@ type Runtime interface {
 	HealthCheck(ctx context.Context, project ProjectContext) (HealthResult, error)
 }
 
+type ExecutionResolver interface {
+	ResolveExecution(ctx context.Context, projectID, runtimeType string) (ExecutionSelection, error)
+}
+
 type Registry interface {
 	Register(runtime Runtime) error
 	Get(name string) (Runtime, bool)
