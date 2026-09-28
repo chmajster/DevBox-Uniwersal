@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,9 +79,7 @@ func repositoryMigrations(t *testing.T) string {
 	return path
 }
 
-func assertTableExists(t *testing.T, db interface {
-	QueryRow(query string, args ...any) *sql.Row
-}, table string) {
+func assertTableExists(t *testing.T, db *sql.DB, table string) {
 	t.Helper()
 	var count int
 	if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&count); err != nil {
