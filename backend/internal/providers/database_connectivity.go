@@ -46,6 +46,7 @@ type DockerInfrastructureProvider interface {
 	EnsureVolume(ctx context.Context, name string) error
 	EnsureImage(ctx context.Context, image string) error
 	EnsureContainer(ctx context.Context, spec ContainerSpec) (ContainerInfo, error)
+	ConnectNetwork(ctx context.Context, container, network string) error
 }
 
 type ComposeDatabaseConfig struct {
