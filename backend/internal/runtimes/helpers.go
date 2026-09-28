@@ -331,6 +331,23 @@ func mergedEnvironment(overrides map[string]string) []string {
 	return result
 }
 
+func projectEnvironmentFor(project ProjectContext, runtimeType string) map[string]string {
+	environment := copyStringMap(project.Environment)
+	if project.Executables == nil {
+		return environment
+	}
+	executable := strings.TrimSpace(project.Executables[runtimeType])
+	if executable == "" || !filepath.IsAbs(executable) {
+		return environment
+	}
+	current := environment["PATH"]
+	if current == "" {
+		current = os.Getenv("PATH")
+	}
+	environment["PATH"] = filepath.Dir(executable) + string(os.PathListSeparator) + current
+	return environment
+}
+
 func copyStringMap(source map[string]string) map[string]string {
 	result := make(map[string]string, len(source))
 	for key, value := range source {
