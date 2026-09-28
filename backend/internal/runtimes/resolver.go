@@ -86,16 +86,46 @@ func (r *SQLiteProjectResolver) Resolve(ctx context.Context, projectID string) (
 		config = decoded
 	}
 
-	return ResolvedProject{
-		Context: ProjectContext{
-			ProjectID:   projectID,
-			ProjectName: name,
-			WorkDir:     workDir.String,
-			Environment: copyStringMap(config.Environment),
-			Config:      cloneAnyMap(config.Raw),
-		},
-		Config: config,
-	}, nil
+	projectContext := ProjectContext{
+		ProjectID:       projectID,
+		ProjectName:     name,
+		WorkDir:         workDir.String,
+		Environment:     copyStringMap(config.Environment),
+		Config:          cloneAnyMap(config.Raw),
+		Executables:     make(map[string]string),
+		RuntimeVersions: make(map[string]string),
+	}
+	if err := r.applyAssignments(ctx, projectID, &projectContext); err != nil {
+		return ResolvedProject{}, err
+	}
+	return ResolvedProject{Context: projectContext, Config: config}, nil
+}
+
+func (r *SQLiteProjectResolver) applyAssignments(ctx context.Context, projectID string, project *ProjectContext) error {
+	rows, err := r.db.QueryContext(ctx, "SELECT a.runtime_type,a.resolved_version,i.executable_path,i.metadata_json FROM project_runtime_assignments a JOIN runtime_installations i ON i.id=a.runtime_installation_id WHERE a.project_id=? AND i.status='installed'", projectID)
+	if err != nil {
+		return fmt.Errorf("resolve runtime assignments: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var runtimeType, version, executablePath, metadataJSON string
+		if err := rows.Scan(&runtimeType, &version, &executablePath, &metadataJSON); err != nil {
+			return err
+		}
+		project.Executables[runtimeType] = executablePath
+		project.RuntimeVersions[runtimeType] = version
+		var metadata struct {
+			Tools map[string]string `json:"tools"`
+		}
+		if json.Unmarshal([]byte(metadataJSON), &metadata) == nil {
+			for key, value := range metadata.Tools {
+				if strings.TrimSpace(value) != "" {
+					project.Executables[key] = value
+				}
+			}
+		}
+	}
+	return rows.Err()
 }
 
 func decodeRuntimeConfig(runtimeName, configJSON, projectID string) (RuntimeConfig, error) {
