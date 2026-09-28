@@ -13,15 +13,23 @@ import (
 )
 
 type CLIProvider struct {
-	runner commandRunner
+	runner              commandRunner
+	legacyComposeRunner commandRunner
 }
 
 func NewCLIProvider() *CLIProvider {
-	return &CLIProvider{runner: execRunner{binary: "docker"}}
+	return &CLIProvider{
+		runner:              execRunner{binary: "docker"},
+		legacyComposeRunner: execRunner{binary: "docker-compose"},
+	}
 }
 
 func newCLIProviderWithRunner(r commandRunner) *CLIProvider {
 	return &CLIProvider{runner: r}
+}
+
+func newCLIProviderWithComposeRunners(dockerRunner, legacyComposeRunner commandRunner) *CLIProvider {
+	return &CLIProvider{runner: dockerRunner, legacyComposeRunner: legacyComposeRunner}
 }
 
 var _ providers.DockerProvider = (*CLIProvider)(nil)

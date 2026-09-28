@@ -37,10 +37,12 @@ type DeploymentSpec struct {
 	ContainerName  string
 	HostPort       int
 	ContainerPort  int
-	Environment    map[string]string
-	Labels         map[string]string
-	Fingerprint    string
-	ReadOnly       bool
+	Environment	map[string]string
+	BindMounts	map[string]string
+	AnonymousVolumes	[]string
+	Labels		map[string]string
+	Fingerprint	string
+	ReadOnly	bool
 }
 
 type moduleDef struct {
@@ -206,16 +208,40 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 	if err != nil {
 		return DeploymentSpec{}, err
 	}
+
+	bindMounts := map[string]string{}
+	anonymousVolumes := []string{}
+	switch runtime {
+	case "php":
+		bindMounts[abs] = "/app"
+		if info, statErr := os.Stat(filepath.Join(abs, "composer.json")); statErr == nil && info.Mode().IsRegular() {
+			anonymousVolumes = append(anonymousVolumes, "/app/vendor")
+		}
+	case "node":
+		bindMounts[abs] = "/app"
+		if info, statErr := os.Stat(filepath.Join(abs, "package.json")); statErr == nil && info.Mode().IsRegular() {
+			anonymousVolumes = append(anonymousVolumes, "/app/node_modules")
+		}
+	case "python":
+		bindMounts[abs] = "/app"
+	case "static":
+		bindMounts[abs] = "/usr/share/nginx/html"
+	}
+
+	labels := map[string]string{
+		"io.devbox.managed":     "true",
+		"io.devbox.project":     projectID,
+		"io.devbox.runtime":     runtime,
+		"io.devbox.fingerprint": fingerprint,
+	}
+	if len(bindMounts) > 0 {
+		labels["io.devbox.live-source"] = "true"
+	}
 	return DeploymentSpec{
 		ProjectID: projectID, Runtime: runtime, Version: version, ContextDir: abs, Dockerfile: dockerfile,
 		Image: image, ContainerName: name, HostPort: hostPort, ContainerPort: port,
-		Environment: env,
-		Labels: map[string]string{
-			"io.devbox.managed":     "true",
-			"io.devbox.project":     projectID,
-			"io.devbox.runtime":     runtime,
-			"io.devbox.fingerprint": fingerprint,
-		},
+		Environment: env, BindMounts: bindMounts, AnonymousVolumes: anonymousVolumes,
+		Labels: labels,
 		Fingerprint: fingerprint, ReadOnly: readOnly,
 	}, nil
 }

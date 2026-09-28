@@ -29,6 +29,36 @@ func TestGenerateManagedPHPModules(t *testing.T) {
 	}
 }
 
+func TestGenerateManagedAddsLiveSourceMounts(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("<?php echo 'ok';"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "composer.json"), []byte("{\"require\":{}}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := GenerateManaged("project-live", dir, "php", "8.3", nil, "abc123", 18080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := spec.BindMounts[dir]; got != "/app" {
+		t.Fatalf("expected live source bind %s -> /app, got %q", dir, got)
+	}
+	foundVendor := false
+	for _, target := range spec.AnonymousVolumes {
+		if target == "/app/vendor" {
+			foundVendor = true
+			break
+		}
+	}
+	if !foundVendor {
+		t.Fatalf("expected /app/vendor dependency volume, got %#v", spec.AnonymousVolumes)
+	}
+	if spec.Labels["io.devbox.live-source"] != "true" {
+		t.Fatalf("expected live-source label, got %#v", spec.Labels)
+	}
+}
+
 func TestGenerateManagedRejectsUnknownModule(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("ok"), 0o600); err != nil {
