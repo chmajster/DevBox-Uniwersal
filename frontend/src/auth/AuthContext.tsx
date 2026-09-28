@@ -33,7 +33,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     async logout() {
       await request<{ status: string }>('/auth/logout', { method: 'POST' })
-      setUser(null)
+      try {
+        setUser(await request<User>('/auth/me'))
+      } catch {
+        setUser(null)
+      }
     }
   }), [user, loading])
 
