@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/apphealth"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/auth"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/config"
@@ -153,6 +154,8 @@ func serve() error {
 	healthChecker := proxy.NewHealthChecker(networkRepo)
 	networkService := proxy.NewService(networkRepo, nginxProvider, hostsManager, healthChecker, cfg.HealthTimeout)
 	networkModule := proxy.NewModule(networkService, portManager, healthChecker, nginxProvider, auditService, cfg.HealthTimeout)
+	appHealthService := apphealth.NewService(db, cfg.HealthMonitorInterval, cfg.HealthTimeout, cfg.HealthHistoryRetentionDays)
+	appHealthModule := apphealth.NewModule(appHealthService, auditService)
 
 	gitClient := projects.NewGitClient(secretStore)
 	projectRepo := projects.NewRepository(db)
@@ -179,6 +182,7 @@ func serve() error {
 		logger.Error("job runner start failed", "error", err)
 		os.Exit(1)
 	}
+	go appHealthService.Run(workerCtx)
 	reconciledJobs, err := projectService.ReconcileAutoStart(context.Background())
 	if err != nil {
 		logger.Error("desired-state reconciliation failed", "error", err)
@@ -195,6 +199,13 @@ func serve() error {
 		operations.NewSQLLogSource("project", db, operations.LogModeProject),
 		operations.NewSQLLogSource("deployment", db, operations.LogModeDeployment),
 		operations.NewSQLLogSource("job", db, operations.LogModeJob),
+		dockermodule.NewOperationsLogSource(dockerProvider),
+	}
+	if cfg.NginxLogPath != "" {
+		logSources = append(logSources, operations.NewFileLogSource("nginx", cfg.NginxLogPath))
+	}
+	if cfg.MySQLLogPath != "" {
+		logSources = append(logSources, operations.NewFileLogSource("mysql", cfg.MySQLLogPath))
 	}
 	for _, source := range logSources {
 		if err := logRegistry.Register(source); err != nil {
@@ -202,12 +213,17 @@ func serve() error {
 			os.Exit(1)
 		}
 	}
+	if err := logRegistry.Register(operations.NewAggregateLogSource(logRegistry)); err != nil {
+		logger.Error("register aggregate log source failed", "error", err)
+		os.Exit(1)
+	}
 	modules := []api.Module{
 		runtimeModule,
 		projectModule,
 		dockerModule,
 		databaseModule,
 		networkModule,
+		appHealthModule,
 		monitoring.NewModule(monitoring.NewCollector()),
 		operations.NewModule(logRegistry),
 	}
