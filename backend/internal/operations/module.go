@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
@@ -28,6 +29,7 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("GET /api/v1/logs/sources", viewer(http.HandlerFunc(m.listSources)))
 	mux.Handle("GET /api/v1/logs", viewer(http.HandlerFunc(m.listLogs)))
 	mux.Handle("GET /api/v1/logs/stream", viewer(http.HandlerFunc(m.streamLogs)))
+	mux.Handle("GET /api/v1/logs/export", viewer(http.HandlerFunc(m.exportLogs)))
 	mux.Handle("GET /api/v1/jobs/{id}/logs", viewer(http.HandlerFunc(m.listJobLogs)))
 	mux.Handle("GET /api/v1/jobs/{id}/logs/stream", viewer(http.HandlerFunc(m.streamJobLogs)))
 }
@@ -53,6 +55,29 @@ func (m *Module) listLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.WriteJSONMeta(w, http.StatusOK, items, map[string]any{"source": sourceName, "limit": filter.Limit})
+}
+
+func (m *Module) exportLogs(w http.ResponseWriter, r *http.Request) {
+	sourceName := r.URL.Query().Get("source")
+	if sourceName == "" {
+		sourceName = "all"
+	}
+	source, ok := m.registry.Source(sourceName)
+	if !ok {
+		api.WriteError(w, http.StatusNotFound, "source_unavailable", "log source is not available: "+sourceName, nil)
+		return
+	}
+	filter := filterFromRequest(r)
+	items, err := source.List(r.Context(), filter)
+	if err != nil {
+		api.WriteError(w, http.StatusInternalServerError, "logs_failed", err.Error(), nil)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=devbox-logs-"+time.Now().UTC().Format("20060102T150405Z")+".log")
+	for _, item := range items {
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", item.CreatedAt.UTC().Format(time.RFC3339Nano), item.Source, item.Level, item.Message)
+	}
 }
 
 func (m *Module) listJobLogs(w http.ResponseWriter, r *http.Request) {
@@ -143,12 +168,32 @@ func filterFromRequest(r *http.Request) LogFilter {
 	query := r.URL.Query()
 	limit, _ := strconv.Atoi(query.Get("limit"))
 	after, _ := strconv.ParseInt(query.Get("after"), 10, 64)
+	since := parseTimeFilter(query.Get("since"))
+	until := parseTimeFilter(query.Get("until"))
 	return LogFilter{
 		ProjectID:   query.Get("project"),
 		JobID:       query.Get("job"),
 		Level:       query.Get("level"),
 		Search:      query.Get("search"),
 		AfterCursor: after,
+		Since:       since,
+		Until:       until,
 		Limit:       normalizeLimit(limit),
 	}
+}
+
+func parseTimeFilter(value string) *time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		parsed, err = time.Parse(time.RFC3339, value)
+	}
+	if err != nil {
+		return nil
+	}
+	parsed = parsed.UTC()
+	return &parsed
 }

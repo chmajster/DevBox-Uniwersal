@@ -17,6 +17,8 @@ type LogFilter struct {
 	Level       string
 	Search      string
 	AfterCursor int64
+	Since       *time.Time
+	Until       *time.Time
 	Limit       int
 }
 
@@ -102,6 +104,12 @@ func matchesFilter(entry LogEntry, filter LogFilter) bool {
 		return false
 	}
 	if filter.Search != "" && !strings.Contains(strings.ToLower(entry.Message), strings.ToLower(filter.Search)) {
+		return false
+	}
+	if filter.Since != nil && entry.CreatedAt.Before(*filter.Since) {
+		return false
+	}
+	if filter.Until != nil && entry.CreatedAt.After(*filter.Until) {
 		return false
 	}
 	return true

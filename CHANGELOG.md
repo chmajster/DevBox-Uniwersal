@@ -4,7 +4,8 @@
 
 ### Fixed
 
-- Hardened the local-directory browser against symlink escapes and recursive symlink cycles; directory traversal is restricted to configured roots and capped at 500 entries per listing.
+- Hardened the local-directory browser against symlink escapes and recursive symlink cycles; traversal is restricted to configured roots and capped at 500 entries.
+- Reconciled STATUS/TODO documentation with the integrated implementation so completed foundation work is no longer presented as outstanding.
 - Consolidated the duplicate Applications/Aplikacje navigation onto the canonical `/apps` workflow and kept `/applications` as a compatibility redirect.
 - Normalized null collection payloads so empty project lists no longer crash with an `items is null` frontend error.
 - Replaced hard-coded dark module panel backgrounds with theme variables, fixing unreadable forms in light mode.
@@ -12,7 +13,12 @@
 
 ### Added
 
-- Operator-only local-directory tree browser with configurable browse roots via `DEVBOX_DIRECTORY_BROWSE_ROOTS` and audited browse activity.
+- Operator-only local-directory tree browser with configurable roots via `DEVBOX_DIRECTORY_BROWSE_ROOTS` and audited browse activity.
+- Scheduled application HTTP/TCP health monitoring with current state, persisted history and configurable retention.
+- Aggregate central log source with live SSE tail, time/search/level/project filters, text export and Docker log ingestion.
+- Optional Nginx/MySQL file log sources configured explicitly by path.
+- OpenAPI 3.1 contract at `/api/v1/openapi.json` and authenticated API index at `/api/v1/docs`.
+- MIT license.
 - Initial DevBox Universal repository architecture.
 - Go backend bootstrap, environment configuration and graceful HTTP shutdown.
 - SQLite bootstrap and ordered SQL migration engine.

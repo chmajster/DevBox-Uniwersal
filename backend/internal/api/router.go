@@ -45,6 +45,8 @@ func New(deps Dependencies) http.Handler {
 	mux.Handle("GET /api/v1/jobs", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.listJobs))))
 	mux.Handle("GET /api/v1/jobs/{id}", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.getJob))))
 	mux.Handle("GET /api/v1/audit", a.authenticate(requireRole(domain.RoleOperator, http.HandlerFunc(a.listAudit))))
+	mux.Handle("GET /api/v1/openapi.json", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.openAPI))))
+	mux.Handle("GET /api/v1/docs", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.apiDocs))))
 
 	middleware := ModuleMiddleware{Authenticate: a.authenticate, RequireRole: requireRole}
 	for _, module := range deps.Modules {

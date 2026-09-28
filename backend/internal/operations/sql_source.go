@@ -63,6 +63,14 @@ func (s *SQLLogSource) List(ctx context.Context, filter LogFilter) ([]LogEntry, 
 		clauses = append(clauses, "jl.id > ?")
 		args = append(args, filter.AfterCursor)
 	}
+	if filter.Since != nil {
+		clauses = append(clauses, "jl.created_at >= ?")
+		args = append(args, filter.Since.UTC().Format(time.RFC3339Nano))
+	}
+	if filter.Until != nil {
+		clauses = append(clauses, "jl.created_at <= ?")
+		args = append(args, filter.Until.UTC().Format(time.RFC3339Nano))
+	}
 
 	args = append(args, normalizeLimit(filter.Limit))
 	query := `SELECT jl.id,j.id,j.project_id,jl.level,jl.message,jl.fields_json,jl.created_at

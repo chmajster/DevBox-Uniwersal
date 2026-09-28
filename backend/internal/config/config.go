@@ -36,15 +36,19 @@ type Config struct {
 	PHPMyAdminContainer    string
 	PHPMyAdminHostPort     int
 
-	PortRangeStart      int
-	PortRangeEnd        int
-	NginxBinary         string
-	NginxSitesAvailable string
-	NginxSitesEnabled   string
-	NginxHelperBinary   string
-	SudoBinary          string
-	HostsFile           string
-	HealthTimeout       time.Duration
+	PortRangeStart             int
+	PortRangeEnd               int
+	NginxBinary                string
+	NginxSitesAvailable        string
+	NginxSitesEnabled          string
+	NginxHelperBinary          string
+	SudoBinary                 string
+	HostsFile                  string
+	HealthTimeout              time.Duration
+	HealthMonitorInterval      time.Duration
+	HealthHistoryRetentionDays int
+	NginxLogPath               string
+	MySQLLogPath               string
 }
 
 func Load() (Config, error) {
@@ -86,41 +90,59 @@ func Load() (Config, error) {
 	if healthTimeout <= 0 || healthTimeout > 60*time.Second {
 		return Config{}, fmt.Errorf("DEVBOX_HEALTH_TIMEOUT must be greater than zero and at most 60s")
 	}
+	healthInterval, err := time.ParseDuration(getEnv("DEVBOX_HEALTH_INTERVAL", "30s"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse DEVBOX_HEALTH_INTERVAL: %w", err)
+	}
+	if healthInterval < 5*time.Second {
+		return Config{}, fmt.Errorf("DEVBOX_HEALTH_INTERVAL must be at least 5s")
+	}
+	healthRetention, err := getEnvInt("DEVBOX_HEALTH_HISTORY_RETENTION_DAYS", 30)
+	if err != nil {
+		return Config{}, err
+	}
+	if healthRetention < 1 || healthRetention > 3650 {
+		return Config{}, fmt.Errorf("DEVBOX_HEALTH_HISTORY_RETENTION_DAYS must be between 1 and 3650")
+	}
 
 	cfg := Config{
-		HTTPAddr:               getEnv("DEVBOX_HTTP_ADDR", "127.0.0.1:8787"),
-		DatabasePath:           getEnv("DEVBOX_DATABASE_PATH", "./data/devbox.db"),
-		MigrationsDir:          getEnv("DEVBOX_MIGRATIONS_DIR", "./migrations"),
-		FrontendDir:            strings.TrimSpace(os.Getenv("DEVBOX_FRONTEND_DIR")),
-		ProjectsRoot:           getEnv("DEVBOX_PROJECTS_ROOT", "./projects"),
-		DirectoryBrowseRoots:   parsePathList(os.Getenv("DEVBOX_DIRECTORY_BROWSE_ROOTS")),
-		SessionTTL:             ttl,
-		CookieSecure:           cookieSecure,
-		BootstrapAdminUsername: strings.TrimSpace(os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_USERNAME")),
-		BootstrapAdminPassword: os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_PASSWORD"),
-		MasterKeyBase64:        strings.TrimSpace(os.Getenv("DEVBOX_MASTER_KEY")),
-		AppVersion:             getEnv("DEVBOX_VERSION", "dev"),
-		MySQLHost:              getEnv("DEVBOX_MYSQL_HOST", "127.0.0.1"),
-		MySQLPort:              mysqlPort,
-		MySQLAdminUser:         getEnv("DEVBOX_MYSQL_ADMIN_USER", "devbox_admin"),
-		MySQLAdminPassword:     os.Getenv("DEVBOX_MYSQL_ADMIN_PASSWORD"),
-		MySQLAppHost:           getEnv("DEVBOX_MYSQL_APP_HOST", "%"),
-		MySQLBinary:            getEnv("DEVBOX_MYSQL_BIN", "mysql"),
-		MySQLDumpBinary:        getEnv("DEVBOX_MYSQLDUMP_BIN", "mysqldump"),
-		MySQLBackupDir:         getEnv("DEVBOX_MYSQL_BACKUP_DIR", "./data/backups/mysql"),
-		PHPMyAdminDockerBinary: getEnv("DEVBOX_DOCKER_BIN", "docker"),
-		PHPMyAdminImage:        getEnv("DEVBOX_PHPMYADMIN_IMAGE", "phpmyadmin:5.2-apache"),
-		PHPMyAdminContainer:    getEnv("DEVBOX_PHPMYADMIN_CONTAINER", "devbox-phpmyadmin"),
-		PHPMyAdminHostPort:     phpMyAdminPort,
-		PortRangeStart:         portStart,
-		PortRangeEnd:           portEnd,
-		NginxBinary:            getEnv("DEVBOX_NGINX_BINARY", "nginx"),
-		NginxSitesAvailable:    getEnv("DEVBOX_NGINX_SITES_AVAILABLE", "/etc/nginx/sites-available"),
-		NginxSitesEnabled:      getEnv("DEVBOX_NGINX_SITES_ENABLED", "/etc/nginx/sites-enabled"),
-		NginxHelperBinary:      strings.TrimSpace(os.Getenv("DEVBOX_PRIVILEGED_HELPER")),
-		SudoBinary:             getEnv("DEVBOX_SUDO_BINARY", "sudo"),
-		HostsFile:              strings.TrimSpace(os.Getenv("DEVBOX_HOSTS_FILE")),
-		HealthTimeout:          healthTimeout,
+		HTTPAddr:                   getEnv("DEVBOX_HTTP_ADDR", "127.0.0.1:8787"),
+		DatabasePath:               getEnv("DEVBOX_DATABASE_PATH", "./data/devbox.db"),
+		MigrationsDir:              getEnv("DEVBOX_MIGRATIONS_DIR", "./migrations"),
+		FrontendDir:                strings.TrimSpace(os.Getenv("DEVBOX_FRONTEND_DIR")),
+		ProjectsRoot:               getEnv("DEVBOX_PROJECTS_ROOT", "./projects"),
+		DirectoryBrowseRoots:       parsePathList(os.Getenv("DEVBOX_DIRECTORY_BROWSE_ROOTS")),
+		SessionTTL:                 ttl,
+		CookieSecure:               cookieSecure,
+		BootstrapAdminUsername:     strings.TrimSpace(os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_USERNAME")),
+		BootstrapAdminPassword:     os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_PASSWORD"),
+		MasterKeyBase64:            strings.TrimSpace(os.Getenv("DEVBOX_MASTER_KEY")),
+		AppVersion:                 getEnv("DEVBOX_VERSION", "dev"),
+		MySQLHost:                  getEnv("DEVBOX_MYSQL_HOST", "127.0.0.1"),
+		MySQLPort:                  mysqlPort,
+		MySQLAdminUser:             getEnv("DEVBOX_MYSQL_ADMIN_USER", "devbox_admin"),
+		MySQLAdminPassword:         os.Getenv("DEVBOX_MYSQL_ADMIN_PASSWORD"),
+		MySQLAppHost:               getEnv("DEVBOX_MYSQL_APP_HOST", "%"),
+		MySQLBinary:                getEnv("DEVBOX_MYSQL_BIN", "mysql"),
+		MySQLDumpBinary:            getEnv("DEVBOX_MYSQLDUMP_BIN", "mysqldump"),
+		MySQLBackupDir:             getEnv("DEVBOX_MYSQL_BACKUP_DIR", "./data/backups/mysql"),
+		PHPMyAdminDockerBinary:     getEnv("DEVBOX_DOCKER_BIN", "docker"),
+		PHPMyAdminImage:            getEnv("DEVBOX_PHPMYADMIN_IMAGE", "phpmyadmin:5.2-apache"),
+		PHPMyAdminContainer:        getEnv("DEVBOX_PHPMYADMIN_CONTAINER", "devbox-phpmyadmin"),
+		PHPMyAdminHostPort:         phpMyAdminPort,
+		PortRangeStart:             portStart,
+		PortRangeEnd:               portEnd,
+		NginxBinary:                getEnv("DEVBOX_NGINX_BINARY", "nginx"),
+		NginxSitesAvailable:        getEnv("DEVBOX_NGINX_SITES_AVAILABLE", "/etc/nginx/sites-available"),
+		NginxSitesEnabled:          getEnv("DEVBOX_NGINX_SITES_ENABLED", "/etc/nginx/sites-enabled"),
+		NginxHelperBinary:          strings.TrimSpace(os.Getenv("DEVBOX_PRIVILEGED_HELPER")),
+		SudoBinary:                 getEnv("DEVBOX_SUDO_BINARY", "sudo"),
+		HostsFile:                  strings.TrimSpace(os.Getenv("DEVBOX_HOSTS_FILE")),
+		HealthTimeout:              healthTimeout,
+		HealthMonitorInterval:      healthInterval,
+		HealthHistoryRetentionDays: healthRetention,
+		NginxLogPath:               strings.TrimSpace(os.Getenv("DEVBOX_NGINX_LOG_PATH")),
+		MySQLLogPath:               strings.TrimSpace(os.Getenv("DEVBOX_MYSQL_LOG_PATH")),
 	}
 
 	if cfg.HTTPAddr == "" || cfg.DatabasePath == "" || cfg.MigrationsDir == "" || cfg.ProjectsRoot == "" {

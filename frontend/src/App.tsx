@@ -7,6 +7,7 @@ import { DatabasesPage } from './pages/DatabasesPage'
 import { DockerPage } from './pages/DockerPage'
 import { DomainsPage } from './pages/DomainsPage'
 import { JobsPage } from './pages/JobsPage'
+import { HealthPage } from './pages/HealthPage'
 import { LogsPage } from './pages/LogsPage'
 import { LoginPage } from './pages/LoginPage'
 import { PortsPage } from './pages/PortsPage'
@@ -30,6 +31,7 @@ export function App() {
         <Route path="apps/:id" element={<ProjectDetailPage />} />
         <Route path={ROUTES.project} element={<ProjectDetailsPage />} />
         <Route path={ROUTES.logs} element={<LogsPage />} />
+        <Route path={ROUTES.health} element={<HealthPage />} />
         <Route path="databases" element={<DatabasesPage />} />
         <Route path="domains" element={<DomainsPage />} />
         <Route path="ports" element={<PortsPage />} />
