@@ -12,6 +12,7 @@ DevBox Universal is an integrated local development control plane.
 
 ## Workspace UI
 
+- Recovered the approved logo from the valid favicon frame, replaced the truncated inline PNG with a bundled binary asset, and moved the unchanged ICO into the asset pipeline; integrity and production-browser regression checks cover both themes and mobile navigation. See `docs/branding.md` for provenance and test scope.
 - Selected dark operator-console layout with compact grouped sidebar, host/version information and API-backed component health.
 - Dashboard CPU/RAM/disk circular gauges, service states, recent application/job tables, filtered log preview and session-history chart with metric/range selection.
 - Serialized, abortable polling: inventory/statuses every 30 seconds, dashboard metrics every 10 seconds, dashboard logs every 5 seconds; hidden-tab suspension and explicit unavailable/error states.
@@ -38,7 +39,7 @@ DevBox Universal is an integrated local development control plane.
 - Static, PHP, Python, Go and Node.js project detection remains available without requiring those runtimes on the host.
 - Application runtimes execute in Docker; native host execution is no longer a supported deployment mode.
 - Per-project runtime version and allowlisted image modules are persisted and editable from the application configuration.
-- PHP managed images support selectable extensions including PDO MySQL, MySQLi, mbstring, intl, GD, cURL, ZIP, BCMath, OPcache, XML, SOAP, sockets, PCNTL and EXIF.
+- PHP managed images expose per-project module selection in the project Runtime configuration. Available container extensions include PDO MySQL, MySQLi, PostgreSQL, SQLite3, mbstring, intl, GD, Imagick, cURL, ZIP, BCMath, GMP, OPcache, XML, SOAP, LDAP, Redis, Memcached, Xdebug, sockets, PCNTL and EXIF.
 - Node.js, Python and Go managed images support controlled build dependencies while application dependencies continue to come from package-lock/pnpm/yarn, requirements/pyproject and go.mod.
 - Generated images are keyed by deterministic build fingerprints; unchanged images are reused and explicit rebuilds are supported.
 - Dedicated `Runtime containers` GitHub Actions workflow verifies backend tests/vet/build and frontend lint/typecheck/tests/build for managed-container changes.

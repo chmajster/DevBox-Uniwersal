@@ -98,7 +98,7 @@ func (p *deploymentPortPlan) reserve(ctx context.Context, purpose string, reques
 	var err error
 	reused := false
 	if sequential, ok := p.allocator.(providers.SequentialPortAllocator); ok {
-		reservation, reserveErr := sequential.ReserveFrom(ctx, p.projectID, purpose, requested)
+		reservation, reserveErr := sequential.ReserveFromOwned(ctx, p.projectID, purpose, requested)
 		lease, err, reused = reservation.PortLease, reserveErr, reservation.Reused
 	} else {
 		// Third-party allocators keep their exact-port semantics. DevBox's

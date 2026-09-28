@@ -16,7 +16,7 @@ import (
 
 // Extend the existing deployment fixture with the real allocator's optional
 // contract; fixture ports remain deterministic independently of host sockets.
-func (p *integrationPorts) ReserveFrom(ctx context.Context, projectID, purpose string, _ int) (providers.PortReservation, error) {
+func (p *integrationPorts) ReserveFromOwned(ctx context.Context, projectID, purpose string, _ int) (providers.PortReservation, error) {
 	lease, err := p.Reserve(ctx, projectID, purpose, nil)
 	return providers.PortReservation{PortLease: lease}, err
 }
@@ -28,10 +28,10 @@ func (p *ownedPortFixture) Reserve(ctx context.Context, projectID, purpose strin
 	if preferred != nil {
 		start = *preferred
 	}
-	reservation, err := p.ReserveFrom(ctx, projectID, purpose, start)
+	reservation, err := p.ReserveFromOwned(ctx, projectID, purpose, start)
 	return reservation.PortLease, err
 }
-func (p *ownedPortFixture) ReserveFrom(_ context.Context, projectID, purpose string, start int) (providers.PortReservation, error) {
+func (p *ownedPortFixture) ReserveFromOwned(_ context.Context, projectID, purpose string, start int) (providers.PortReservation, error) {
 	for port := start; port <= 65535; port++ {
 		if existing, ok := p.leases[port]; ok && existing.ProjectID == projectID && existing.Purpose == purpose {
 			return providers.PortReservation{PortLease: existing, Reused: true}, nil
@@ -239,4 +239,9 @@ func TestProjectPrimaryPortDoesNotBecomeHTTPS(t *testing.T) {
 	if err != nil || got.Port == nil || *got.Port != 8080 {
 		t.Fatalf("primary port became HTTPS: %+v, %v", got.Port, err)
 	}
+}
+
+func (p *ownedPortFixture) ReserveFrom(ctx context.Context, projectID, purpose string, start int) (providers.PortLease, error) {
+	reservation, err := p.ReserveFromOwned(ctx, projectID, purpose, start)
+	return reservation.PortLease, err
 }

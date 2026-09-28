@@ -10,8 +10,17 @@
 - Added managed-listener reconfiguration, multi-port Docker publication and opt-in Compose overrides stored outside application repositories.
 - Added migration `008_project_port_publishing.sql`, shared optional provider contracts, ADR-010 and regression/integration tests.
 
+### Brand image rendering fix
+
+- Replaced the truncated hand-copied PNG data URL with the intact 32x32 frame extracted from the existing approved favicon; the sidebar, login and host-summary logo consumers retain their layout.
+- Stored the original ICO and recovered PNG as binary assets emitted with content-hashed, same-origin URLs rather than inline base64 strings.
+- Added five standard-library asset-integrity tests and Chromium production-bundle decoding checks for both themes, collapsed sidebar and mobile drawer, including a same-origin-only image CSP.
+- Documented asset provenance and native resolution in `docs/branding.md`. No backend contract, database migration or runtime dependency changes.
+
 ### Managed runtime containers
 
+- Moved PHP module selection out of the global Plugins page into each project's Runtime configuration; the selector is shown only when PHP is selected and selected extensions are built into that project's managed PHP container.
+- Expanded the managed PHP container catalog with PostgreSQL, SQLite3, LDAP, GMP, Imagick, Redis, Memcached and Xdebug in addition to the existing PHP extensions; PECL-backed extensions are installed and enabled inside the image.
 - Removed native host runtime deployment for applications. PHP, Node.js, Python, Go and static projects now execute through Docker.
 - Added automatic managed image generation when an application does not provide its own Compose file or Dockerfile; project-owned container definitions take precedence.
 - Added per-application runtime version, container policy and allowlisted runtime module configuration with dedicated API and UI.
@@ -40,7 +49,7 @@
 
 - Replaced the basic shell with grouped, icon-based navigation, persistent compact sidebar, mobile drawer and role-aware Ctrl/Cmd+K navigation search.
 - Redesigned the dashboard into application/resource summaries, CPU/RAM/disk meters, service states and application shortcuts; unavailable API data is no longer presented as zero.
-- Added searchable card/table application views with persistent view preference, status filtering, archive confirmation and deployment queue feedback while preserving existing API actions and CSRF handling.
+- Added searchable card/table application views with persistent view preference, status filtering, deployment queue feedback and archive confirmation.
 - Redesigned the login page and unified light/dark tokens across shared module forms, tables, statuses and log viewers; no new frontend runtime dependencies or external assets.
 - Added native modal focus handling, visible keyboard focus, reduced-motion support and graceful operation when browser preference storage is blocked.
 - Added navigation/filter unit coverage and a Chromium smoke workflow producing screenshots and a report. Browser fixtures are synthetic; real Docker, database, proxy and deployment integration testing remains a separate requirement.
@@ -66,14 +75,13 @@
 - MIT license.
 - Initial DevBox Universal repository architecture.
 - Go backend bootstrap, environment configuration and graceful HTTP shutdown.
-- SQLite bootstrap and ordered SQL migration engine.
 - Complete initial schema for users, sessions, projects, project sources, runtime configs, ports, domains, databases, database users, deployments, jobs, job logs, secrets, health checks, audit events and settings.
 - Authentication foundation with opaque sessions, bcrypt passwords and Admin/Operator/Viewer RBAC.
 - Versioned `/api/v1` endpoints and normalized success/error envelopes.
 - Audit event foundation.
 - AES-256-GCM encryption and `SecretStore` abstraction.
 - Job Engine and Runtime contracts.
-- Git, process, Docker, database, reverse proxy, port allocator and system service provider contracts.
+- Git, process, Docker, database, reverse-proxy, port and system service provider contracts.
 - React/TypeScript/Vite frontend shell, login flow and protected layout.
 - Reproducible `go.sum` and `package-lock.json`.
 - CI for backend and frontend quality gates.

@@ -19,7 +19,7 @@ type PortReservation struct {
 // SequentialPortAllocator extends exact reservations without changing the
 // semantics of PortAllocator.Reserve or the networking module's manual API.
 type SequentialPortAllocator interface {
-	ReserveFrom(ctx context.Context, projectID, purpose string, start int) (PortReservation, error)
+	ReserveFromOwned(ctx context.Context, projectID, purpose string, start int) (PortReservation, error)
 }
 
 // PortLeaseOwner protects reuse and cleanup from releasing another project's lease.

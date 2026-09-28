@@ -53,6 +53,57 @@ func TestPortManagerDetectsDatabaseAndSocketCollisions(t *testing.T) {
 	}
 }
 
+func TestPortManagerReserveFromIncrementsForNextProject(t *testing.T) {
+	db := testNetworkingDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, "INSERT INTO projects(id,name,slug) VALUES('p1','Project One','project-one'),('p2','Project Two','project-two')"); err != nil {
+		t.Fatal(err)
+	}
+
+	base := temporaryFreePort(t)
+	manager := NewPortManager(db, base, base+3)
+	manager.probe = func(port int) (bool, error) { return true, nil }
+
+	first, err := manager.ReserveFrom(ctx, "p1", "application", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := manager.ReserveFrom(ctx, "p2", "application", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Port != base {
+		t.Fatalf("first project port = %d, want %d", first.Port, base)
+	}
+	if second.Port != base+1 {
+		t.Fatalf("second project port = %d, want %d", second.Port, base+1)
+	}
+}
+
+func TestPortManagerReserveFromSkipsBusySocket(t *testing.T) {
+	db := testNetworkingDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, "INSERT INTO projects(id,name,slug) VALUES('p1','Project One','project-one')"); err != nil {
+		t.Fatal(err)
+	}
+
+	base := temporaryFreePort(t)
+	manager := NewPortManager(db, base, base+2)
+	manager.probe = func(port int) (bool, error) {
+		return port != base, nil
+	}
+
+	lease, err := manager.ReserveFrom(ctx, "p1", "application", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.Port != base+1 {
+		t.Fatalf("lease port = %d, want %d after busy base port", lease.Port, base+1)
+	}
+}
+
 func TestPortManagerReleaseAllowsReuse(t *testing.T) {
 	db := testNetworkingDB(t)
 	defer db.Close()

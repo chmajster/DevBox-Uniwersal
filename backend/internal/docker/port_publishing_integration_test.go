@@ -105,7 +105,7 @@ func TestPublishedPortsDockerIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := provider.ComposeUp(ctx, composeDir, projectName, ""); err != nil {
+	if err := provider.ComposeUp(ctx, composeDir, projectName, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.CheckPublishedHTTP(ctx, composeHost); err != nil {

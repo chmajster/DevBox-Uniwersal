@@ -22,15 +22,15 @@ func TestReserveFromSkipsLeasesAndBusySocketsAndSurvivesRestart(t *testing.T) {
 	}
 	manager := NewPortManager(db, 20000, 20100)
 	manager.probe = func(port int) (bool, error) { return port != 8082, nil }
-	first, err := manager.ReserveFrom(ctx, "first", "application", 8080)
+	first, err := manager.ReserveFromOwned(ctx, "first", "application", 8080)
 	if err != nil || first.Port != 8080 {
 		t.Fatalf("first = %+v, %v", first, err)
 	}
-	second, err := manager.ReserveFrom(ctx, "second", "application", 8080)
+	second, err := manager.ReserveFromOwned(ctx, "second", "application", 8080)
 	if err != nil || second.Port != 8081 {
 		t.Fatalf("second = %+v, %v", second, err)
 	}
-	third, err := manager.ReserveFrom(ctx, "third", "application", 8080)
+	third, err := manager.ReserveFromOwned(ctx, "third", "application", 8080)
 	if err != nil || third.Port != 8083 {
 		t.Fatalf("third = %+v, %v", third, err)
 	}
@@ -49,7 +49,7 @@ func TestReserveFromSkipsLeasesAndBusySocketsAndSurvivesRestart(t *testing.T) {
 	if err := manager.ReleaseOwned(ctx, "first", "application", 8080); err != nil {
 		t.Fatal(err)
 	}
-	reused, err := manager.ReserveFrom(ctx, "third", "application-https", 8080)
+	reused, err := manager.ReserveFromOwned(ctx, "third", "application-https", 8080)
 	if err != nil || reused.Port != 8080 {
 		t.Fatalf("reuse = %+v, %v", reused, err)
 	}
@@ -74,7 +74,7 @@ func TestReserveFromConcurrentProjectsGetDistinctConsecutivePorts(t *testing.T) 
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			lease, err := manager.ReserveFrom(context.Background(), fmt.Sprintf("project-%d", i), "application", 8443)
+			lease, err := manager.ReserveFromOwned(context.Background(), fmt.Sprintf("project-%d", i), "application", 8443)
 			if err != nil {
 				errs <- err
 				return
@@ -110,21 +110,21 @@ func TestReserveFromRangeCancellationAndRealErrors(t *testing.T) {
 	}
 	manager := NewPortManager(db, 8000, 9000)
 	manager.probe = func(int) (bool, error) { return false, nil }
-	if _, err := manager.ReserveFrom(context.Background(), "p", "application", 65535); !errors.Is(err, ErrNoPorts) {
+	if _, err := manager.ReserveFromOwned(context.Background(), "p", "application", 65535); !errors.Is(err, ErrNoPorts) {
 		t.Fatalf("exhaustion: %v", err)
 	}
 	for _, port := range []int{0, -1, 65536} {
-		if _, err := manager.ReserveFrom(context.Background(), "p", "application", port); !errors.Is(err, ErrInvalidInput) {
+		if _, err := manager.ReserveFromOwned(context.Background(), "p", "application", port); !errors.Is(err, ErrInvalidInput) {
 			t.Fatalf("range %d: %v", port, err)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := manager.ReserveFrom(ctx, "p", "application", 8080); !errors.Is(err, context.Canceled) {
+	if _, err := manager.ReserveFromOwned(ctx, "p", "application", 8080); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation: %v", err)
 	}
 	manager.probe = func(int) (bool, error) { return false, syscall.EACCES }
-	if _, err := manager.ReserveFrom(context.Background(), "p", "application", 8080); !errors.Is(err, syscall.EACCES) {
+	if _, err := manager.ReserveFromOwned(context.Background(), "p", "application", 8080); !errors.Is(err, syscall.EACCES) {
 		t.Fatalf("permission error was hidden: %v", err)
 	}
 }

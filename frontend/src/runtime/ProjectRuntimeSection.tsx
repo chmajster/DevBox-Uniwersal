@@ -50,15 +50,16 @@ export function ProjectRuntimeSection({ projectId }: Props) {
   }, [projectId])
 
   useEffect(() => {
-    if (!config.runtime) {
+    if (config.runtime !== 'php') {
       setCatalog([])
+      setQuery('')
       return
     }
-    request<RuntimeModuleOption[]>(`/runtimes/${encodeURIComponent(config.runtime)}/modules`)
+    request<RuntimeModuleOption[]>('/runtimes/php/modules')
       .then((items) => setCatalog(items ?? []))
       .catch((reason: unknown) => {
         setCatalog([])
-        setError(reason instanceof Error ? reason.message : 'Nie udało się wczytać listy modułów')
+        setError(reason instanceof Error ? reason.message : 'Nie udało się wczytać listy modułów PHP')
       })
   }, [config.runtime])
 
@@ -109,7 +110,7 @@ export function ProjectRuntimeSection({ projectId }: Props) {
   return <><section className="runtime-section panel">
     <div className="section-heading">
       <div>
-        <h2>Runtime i moduły</h2>
+        <h2>Runtime i kontener</h2>
         <p className="muted">Runtime aplikacji działa wyłącznie w Dockerze. DevBox nie instaluje PHP, Go, Node.js ani Pythona na hoście.</p>
       </div>
       {!readOnly && <button type="button" onClick={() => void saveAndRebuild()} disabled={busy}>
@@ -161,15 +162,16 @@ export function ProjectRuntimeSection({ projectId }: Props) {
       <div><dt>Fingerprint</dt><dd><code>{config.build_fingerprint?.slice(0, 16) || '—'}</code></dd></div>
     </dl>}
 
-    {config.runtime && <div className="runtime-modules">
+    {config.runtime === 'php' && <div className="runtime-modules">
       <div className="section-heading">
         <div>
-          <h3>Moduły obrazu</h3>
-          <p className="muted">Zaznaczone elementy są instalowane podczas budowania obrazu, wewnątrz kontenera.</p>
+          <h3>Moduły PHP w kontenerze</h3>
+          <p className="muted">Wybierz rozszerzenia wymagane przez tę aplikację. DevBox instaluje je podczas budowania obrazu PHP wewnątrz kontenera; PHP na hoście nie jest modyfikowane.</p>
+          <p className="muted small">Wybrane moduły: <strong>{selected.size}</strong>. Zmiana listy wymaga przebudowania kontenera.</p>
         </div>
         <input
-          aria-label="Szukaj modułów runtime"
-          placeholder="Szukaj modułu…"
+          aria-label="Szukaj modułów PHP"
+          placeholder="Szukaj modułu PHP…"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -184,7 +186,7 @@ export function ProjectRuntimeSection({ projectId }: Props) {
           />
           <span><strong>{item.label}</strong><code>{item.name}</code><small>{item.description}</small></span>
         </label>)}
-        {filteredCatalog.length === 0 && <p className="muted">Brak dodatkowych modułów dla wybranego runtime albo brak wyników wyszukiwania.</p>}
+        {filteredCatalog.length === 0 && <p className="muted">Brak modułów PHP pasujących do wyszukiwania.</p>}
       </div>
     </div>}
   </section><ProjectPortsSection key={projectId} projectId={projectId} /></>

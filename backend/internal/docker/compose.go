@@ -7,8 +7,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 )
 
 type composeRunner struct {
@@ -136,11 +139,21 @@ func (p *CLIProvider) ComposeBuild(ctx context.Context, directory, projectName, 
 	return p.composeCommand(ctx, directory, projectName, service, "build")
 }
 
-func (p *CLIProvider) ComposeUp(ctx context.Context, directory, projectName, service string) error {
+func (p *CLIProvider) ComposeUp(ctx context.Context, directory, projectName, service string, binding *providers.ComposePortBinding) error {
 	args, err := composeArgs(directory, projectName)
 	if err != nil {
 		return err
 	}
+	cleanup := func() {}
+	if binding != nil {
+		effectiveConfig, effectiveCleanup, configErr := p.composeEffectiveConfig(ctx, directory, projectName, *binding)
+		if configErr != nil {
+			return configErr
+		}
+		cleanup = effectiveCleanup
+		args = []string{"compose", "-p", projectName, "-f", effectiveConfig}
+	}
+	defer cleanup()
 	if err := validateServiceName(service); err != nil {
 		return err
 	}
@@ -150,6 +163,210 @@ func (p *CLIProvider) ComposeUp(ctx context.Context, directory, projectName, ser
 	}
 	_, _, err = p.runCompose(ctx, args...)
 	return err
+}
+
+func (p *CLIProvider) ComposePortBinding(ctx context.Context, directory, projectName string) (providers.ComposePortBinding, error) {
+	data, err := p.composeConfigJSON(ctx, directory, projectName)
+	if err != nil {
+		return providers.ComposePortBinding{}, err
+	}
+	return selectComposePortBinding(data)
+}
+
+func (p *CLIProvider) composeConfigJSON(ctx context.Context, directory, projectName string) ([]byte, error) {
+	args, err := composeArgs(directory, projectName)
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, "config", "--format", "json")
+	out, _, err := p.runCompose(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("read normalized compose config as JSON: %w", err)
+	}
+	if len(strings.TrimSpace(string(out))) == 0 {
+		return nil, fmt.Errorf("docker compose returned an empty normalized config")
+	}
+	return out, nil
+}
+
+func selectComposePortBinding(data []byte) (providers.ComposePortBinding, error) {
+	var config struct {
+		Services map[string]struct {
+			Ports []struct {
+				Target    int             `json:"target"`
+				Published json.RawMessage `json:"published"`
+				Protocol  string          `json:"protocol"`
+			} `json:"ports"`
+		} `json:"services"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return providers.ComposePortBinding{}, fmt.Errorf("decode normalized compose config: %w", err)
+	}
+	type candidate struct {
+		binding providers.ComposePortBinding
+		score   int
+	}
+	candidates := make([]candidate, 0)
+	for serviceName, service := range config.Services {
+		for _, port := range service.Ports {
+			published := composeJSONPort(port.Published)
+			if published < 1 || published > 65535 || port.Target < 1 || port.Target > 65535 {
+				continue
+			}
+			protocol := strings.ToLower(strings.TrimSpace(port.Protocol))
+			if protocol == "" {
+				protocol = "tcp"
+			}
+			if protocol != "tcp" {
+				continue
+			}
+			candidates = append(candidates, candidate{
+				binding: providers.ComposePortBinding{
+					Service:           serviceName,
+					RequestedHostPort: published,
+					HostPort:          published,
+					ContainerPort:     port.Target,
+					Protocol:          protocol,
+				},
+				score: composePortScore(serviceName, port.Target),
+			})
+		}
+	}
+	if len(candidates) == 0 {
+		return providers.ComposePortBinding{}, fmt.Errorf("no published TCP port found in compose config; publish the HTTP service port")
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].score == candidates[j].score {
+			if candidates[i].binding.RequestedHostPort == candidates[j].binding.RequestedHostPort {
+				return candidates[i].binding.ContainerPort < candidates[j].binding.ContainerPort
+			}
+			return candidates[i].binding.RequestedHostPort < candidates[j].binding.RequestedHostPort
+		}
+		return candidates[i].score > candidates[j].score
+	})
+	if len(candidates) > 1 && candidates[0].score == candidates[1].score {
+		return providers.ComposePortBinding{}, fmt.Errorf(
+			"multiple compose ports are equally likely for reverse proxy: %s:%d and %s:%d; configure a project port or healthcheck URL",
+			candidates[0].binding.Service, candidates[0].binding.RequestedHostPort,
+			candidates[1].binding.Service, candidates[1].binding.RequestedHostPort,
+		)
+	}
+	return candidates[0].binding, nil
+}
+
+func composeJSONPort(raw json.RawMessage) int {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0
+	}
+	var number int
+	if err := json.Unmarshal(raw, &number); err == nil {
+		return number
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		value, _ := strconv.Atoi(strings.TrimSpace(text))
+		return value
+	}
+	return 0
+}
+
+func (p *CLIProvider) composeEffectiveConfig(ctx context.Context, directory, projectName string, binding providers.ComposePortBinding) (string, func(), error) {
+	if binding.HostPort < 1 || binding.HostPort > 65535 || binding.ContainerPort < 1 || binding.ContainerPort > 65535 {
+		return "", func() {}, fmt.Errorf("%w: invalid compose port binding", ErrInvalidInput)
+	}
+	data, err := p.composeConfigJSON(ctx, directory, projectName)
+	if err != nil {
+		return "", func() {}, err
+	}
+	rewritten, err := rewriteComposePublishedPort(data, binding)
+	if err != nil {
+		return "", func() {}, err
+	}
+	file, err := os.CreateTemp("", "devbox-compose-effective-*.json")
+	if err != nil {
+		return "", func() {}, fmt.Errorf("create effective compose config: %w", err)
+	}
+	name := file.Name()
+	cleanup := func() { _ = os.Remove(name) }
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		cleanup()
+		return "", func() {}, fmt.Errorf("secure effective compose config: %w", err)
+	}
+	if _, err := file.Write(rewritten); err != nil {
+		_ = file.Close()
+		cleanup()
+		return "", func() {}, fmt.Errorf("write effective compose config: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("close effective compose config: %w", err)
+	}
+	return name, cleanup, nil
+}
+
+func rewriteComposePublishedPort(data []byte, binding providers.ComposePortBinding) ([]byte, error) {
+	var root map[string]any
+	if err := json.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("decode normalized compose config for port rewrite: %w", err)
+	}
+	services, ok := root["services"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("normalized compose config has no services")
+	}
+	service, ok := services[binding.Service].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("compose service %q was not found in normalized config", binding.Service)
+	}
+	ports, ok := service["ports"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("compose service %q has no published ports", binding.Service)
+	}
+	updated := false
+	for _, entry := range ports {
+		port, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		target := composeAnyPort(port["target"])
+		published := composeAnyPort(port["published"])
+		protocol, _ := port["protocol"].(string)
+		protocol = strings.ToLower(strings.TrimSpace(protocol))
+		if protocol == "" {
+			protocol = "tcp"
+		}
+		if target == binding.ContainerPort && published == binding.RequestedHostPort && protocol == binding.Protocol {
+			port["published"] = strconv.Itoa(binding.HostPort)
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		return nil, fmt.Errorf(
+			"compose port mapping %s:%d->%d/%s was not found in normalized config",
+			binding.Service, binding.RequestedHostPort, binding.ContainerPort, binding.Protocol,
+		)
+	}
+	out, err := json.Marshal(root)
+	if err != nil {
+		return nil, fmt.Errorf("encode effective compose config: %w", err)
+	}
+	return out, nil
+}
+
+func composeAnyPort(value any) int {
+	switch typed := value.(type) {
+	case float64:
+		return int(typed)
+	case json.Number:
+		parsed, _ := strconv.Atoi(typed.String())
+		return parsed
+	case string:
+		parsed, _ := strconv.Atoi(strings.TrimSpace(typed))
+		return parsed
+	default:
+		return 0
+	}
 }
 
 func (p *CLIProvider) ComposeDown(ctx context.Context, directory, projectName string) error {
@@ -263,6 +480,140 @@ func (p *CLIProvider) ComposePS(ctx context.Context, directory, projectName stri
 		items = append(items, ComposeProcess{Name: item.Name, Service: item.Service, State: item.State, Health: item.Health, Image: item.Image})
 	}
 	return items, nil
+}
+
+type composePortCandidate struct {
+	service       string
+	containerPort int
+	hostPort      int
+	score         int
+}
+
+func (p *CLIProvider) ComposeTargetPort(ctx context.Context, directory, projectName string) (int, error) {
+	args, err := composeArgs(directory, projectName)
+	if err != nil {
+		return 0, err
+	}
+	args = append(args, "ps", "-q")
+	out, _, err := p.runCompose(ctx, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	ids := strings.Fields(string(out))
+	if len(ids) == 0 {
+		return 0, fmt.Errorf("docker compose has no containers to inspect for published ports")
+	}
+
+	byHostPort := map[int]composePortCandidate{}
+	for _, id := range ids {
+		if err := validateContainerRef(id); err != nil {
+			return 0, err
+		}
+		inspect, _, err := p.runner.Run(ctx, "container", "inspect", id)
+		if err != nil {
+			return 0, err
+		}
+		var raw []struct {
+			Config struct {
+				Labels map[string]string `json:"Labels"`
+			} `json:"Config"`
+			NetworkSettings struct {
+				Ports map[string][]struct {
+					HostIP   string `json:"HostIp"`
+					HostPort string `json:"HostPort"`
+				} `json:"Ports"`
+			} `json:"NetworkSettings"`
+		}
+		if err := json.Unmarshal(inspect, &raw); err != nil || len(raw) != 1 {
+			if err == nil {
+				err = fmt.Errorf("expected one container")
+			}
+			return 0, fmt.Errorf("decode docker compose port inspect: %w", err)
+		}
+
+		service := raw[0].Config.Labels["com.docker.compose.service"]
+		for containerKey, bindings := range raw[0].NetworkSettings.Ports {
+			containerPortText := strings.SplitN(containerKey, "/", 2)[0]
+			containerPort, convErr := strconv.Atoi(containerPortText)
+			if convErr != nil || containerPort < 1 || containerPort > 65535 {
+				continue
+			}
+			for _, binding := range bindings {
+				hostPort, convErr := strconv.Atoi(strings.TrimSpace(binding.HostPort))
+				if convErr != nil || hostPort < 1 || hostPort > 65535 {
+					continue
+				}
+				candidate := composePortCandidate{
+					service:       service,
+					containerPort: containerPort,
+					hostPort:      hostPort,
+					score:         composePortScore(service, containerPort),
+				}
+				if current, exists := byHostPort[hostPort]; !exists || candidate.score > current.score {
+					byHostPort[hostPort] = candidate
+				}
+			}
+		}
+	}
+
+	if len(byHostPort) == 0 {
+		return 0, fmt.Errorf("no published host port found in running Compose containers; publish the HTTP service port in compose.yaml")
+	}
+	candidates := make([]composePortCandidate, 0, len(byHostPort))
+	for _, candidate := range byHostPort {
+		candidates = append(candidates, candidate)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].score == candidates[j].score {
+			return candidates[i].hostPort < candidates[j].hostPort
+		}
+		return candidates[i].score > candidates[j].score
+	})
+	if len(candidates) == 1 || candidates[0].score > candidates[1].score {
+		return candidates[0].hostPort, nil
+	}
+
+	ports := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		ports = append(ports, strconv.Itoa(candidate.hostPort))
+	}
+	return 0, fmt.Errorf("multiple published host ports are equally likely for reverse proxy: %s; configure a project port or healthcheck URL", strings.Join(ports, ", "))
+}
+
+func composePortScore(service string, containerPort int) int {
+	score := 0
+	switch strings.ToLower(strings.TrimSpace(service)) {
+	case "web":
+		score += 100
+	case "app":
+		score += 90
+	case "api":
+		score += 80
+	case "frontend":
+		score += 70
+	case "www":
+		score += 60
+	case "server":
+		score += 50
+	}
+	switch containerPort {
+	case 80:
+		score += 50
+	case 8080:
+		score += 45
+	case 8000:
+		score += 40
+	case 3000:
+		score += 35
+	case 5000:
+		score += 30
+	case 443:
+		score += 20
+	case 8443:
+		score += 15
+	}
+	return score
 }
 
 func composeInvocationUnsupported(err error) bool {

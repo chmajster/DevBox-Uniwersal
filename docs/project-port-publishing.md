@@ -46,3 +46,13 @@ Odpowiedź w istniejącej kopercie `data` zawiera `settings`, `configured` i opc
 ## Dostęp spoza hosta
 
 Publikowanie zachowuje standardową politykę wiązania interfejsów Dockera. Potrzebne mogą być dodatkowe reguły firewalla i przekierowanie routera/NAT lub WSL. DevBox nie zmienia automatycznie tych zabezpieczeń. Adresy w panelu wykorzystują nazwę hosta, przez którą otwarto DevBox; przy niestandardowym reverse proxy użyj rzeczywistego adresu hosta Dockera. Aplikacja powinna mieć odpowiednie uwierzytelnienie przed udostępnieniem publicznym.
+
+
+### Integration with automatic Compose port allocation
+
+Projects without explicit port settings keep the automatic primary HTTP binding
+discovery introduced on main. Their requested host port is allocated sequentially
+and reused on redeploy; default 80/443 requests start at 8080/8443. Saving the port
+form switches to the persistent, explicit service/internal/HTTP/HTTPS override.
+The existing public ReserveFrom provider contract is retained; ReserveFromOwned
+adds ownership-aware rollback without changing external callers.

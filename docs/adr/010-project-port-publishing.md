@@ -25,3 +25,13 @@ Application authentication, firewall rules, router/NAT/WSL forwarding, Docker's 
 ## Verification
 
 Unit/regression coverage includes ranges, defaults, consecutive/cross-project allocation, ownership, restart persistence, IPv6 occupancy, invalid-input/busy API responses, generated/custom listeners, fingerprints, read-only UI, URL construction and override rollback. `DEVBOX_TEST_DOCKER_PORTS=1 go test ./internal/docker -run TestPublishedPortsDockerIntegration -v` additionally exercises real Docker publication, a non-default nginx listener, multiple published ports, live source edits and Compose remapping.
+
+
+### Integration with automatic Compose port allocation
+
+Projects without explicit port settings keep the automatic primary HTTP binding
+discovery introduced on main. Their requested host port is allocated sequentially
+and reused on redeploy; default 80/443 requests start at 8080/8443. Saving the port
+form switches to the persistent, explicit service/internal/HTTP/HTTPS override.
+The existing public ReserveFrom provider contract is retained; ReserveFromOwned
+adds ownership-aware rollback without changing external callers.

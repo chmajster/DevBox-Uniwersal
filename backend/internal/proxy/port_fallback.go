@@ -11,10 +11,10 @@ import (
 var _ providers.SequentialPortAllocator = (*PortManager)(nil)
 var _ providers.PortLeaseOwner = (*PortManager)(nil)
 
-// ReserveFrom uses the requested port as a lower bound, then tries +1. The
+// ReserveFromOwned uses the requested port as a lower bound, then tries +1. The
 // unique database reservation, not the preliminary socket probe, arbitrates
 // concurrent DevBox deployments. Non-collision errors must not be swallowed.
-func (m *PortManager) ReserveFrom(ctx context.Context, projectID, purpose string, start int) (providers.PortReservation, error) {
+func (m *PortManager) ReserveFromOwned(ctx context.Context, projectID, purpose string, start int) (providers.PortReservation, error) {
 	if start < 1 || start > 65535 {
 		return providers.PortReservation{}, fmt.Errorf("%w: starting port must be between 1 and 65535", ErrInvalidInput)
 	}
