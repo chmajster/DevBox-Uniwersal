@@ -308,6 +308,11 @@ export interface MySQLStatus {
   version?: string
   running: boolean
   connection_state: string
+  admin_host?: string
+  admin_port?: number
+  application_host?: string
+  application_port?: number
+  network?: string
 }
 
 export interface PHPMyAdminStatus {
