@@ -90,6 +90,7 @@ func (m *ManagedMySQLManager) Ensure(ctx context.Context) error {
 		}},
 		SensitiveEnvironment: map[string]string{
 			"MYSQL_ROOT_PASSWORD": string(password),
+			"MYSQL_ROOT_HOST":     "%",
 		},
 	}
 	item, err := m.docker.EnsureContainer(ctx, spec)
