@@ -124,9 +124,13 @@ func TestDeploymentIntegrationDockerComposeHealthThenRoute(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project.LocalPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	compose := &integrationCompose{}
+	compose := &integrationCompose{binding: providers.ComposePortBinding{
+		Service: "app", RequestedHostPort: 8080, HostPort: 8080, ContainerPort: 80, Protocol: "tcp",
+	}}
+	ports := &integrationPorts{port: 19090}
 	routes := &integrationRoutes{}
 	handler := NewDeploymentHandler(repo, NewGitClient(nil), runtimes.NewRegistry(), &testJobLogger{}, DeploymentIntegrations{
+		Ports:   ports,
 		Routes:  routes,
 		Compose: compose,
 	})
@@ -149,22 +153,26 @@ func TestDeploymentIntegrationDockerComposeHealthThenRoute(t *testing.T) {
 	}
 }
 
-func TestDeploymentIntegrationDockerComposeDetectsPublishedPortForRoute(t *testing.T) {
+func TestDeploymentIntegrationDockerComposeAllocatesNextFreePublishedPort(t *testing.T) {
 	repo, project, deploymentID := integrationProject(t, Project{
 		ContainerPolicy: ContainerPolicyAuto,
 	})
 	if err := os.WriteFile(filepath.Join(project.LocalPath, "compose.yaml"), []byte("services:\n  web:\n    image: nginx:alpine\n    ports:\n      - \"8080:80\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	compose := &integrationCompose{targetPort: 8080}
+	compose := &integrationCompose{binding: providers.ComposePortBinding{
+		Service: "web", RequestedHostPort: 8080, HostPort: 8080, ContainerPort: 80, Protocol: "tcp",
+	}}
+	ports := &integrationPorts{port: 8081}
 	routes := &integrationRoutes{}
 	handler := NewDeploymentHandler(repo, NewGitClient(nil), runtimes.NewRegistry(), &testJobLogger{}, DeploymentIntegrations{
+		Ports:   ports,
 		Routes:  routes,
 		Compose: compose,
 	})
 
 	_, err := handler.Run(context.Background(), domain.Job{
-		ID: "integration-compose-detected-port",
+		ID: "integration-compose-next-port",
 		Payload: map[string]any{
 			"project_id":    project.ID,
 			"deployment_id": deploymentID,
@@ -173,11 +181,63 @@ func TestDeploymentIntegrationDockerComposeDetectsPublishedPortForRoute(t *testi
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if !compose.targetPortChecked {
-		t.Fatal("expected Compose target port detection")
+	if ports.reserveFromCalls != 1 || ports.reserveFromStart != 8080 {
+		t.Fatalf("unexpected sequential reservation: %+v", ports)
 	}
-	if routes.calls != 1 || routes.port != 8080 {
-		t.Fatalf("proxy did not receive detected Compose target port: %+v", routes)
+	if compose.upBinding == nil || compose.upBinding.HostPort != 8081 || compose.upBinding.ContainerPort != 80 {
+		t.Fatalf("Compose up did not receive remapped stable port: %+v", compose.upBinding)
+	}
+	if routes.calls != 1 || routes.port != 8081 {
+		t.Fatalf("proxy did not receive assigned Compose target port: %+v", routes)
+	}
+	if ports.released != 0 {
+		t.Fatalf("successful Compose deployment released persistent port %d", ports.released)
+	}
+}
+
+func TestDeploymentIntegrationDockerComposeReusesExistingProjectPort(t *testing.T) {
+	repo, project, deploymentID := integrationProject(t, Project{
+		ContainerPolicy: ContainerPolicyAuto,
+	})
+	if err := os.WriteFile(filepath.Join(project.LocalPath, "compose.yaml"), []byte("services:\n  web:\n    image: nginx:alpine\n    ports:\n      - \"8080:80\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := repo.db.ExecContext(context.Background(),
+		"INSERT INTO ports(id,project_id,port,purpose,state,created_at) VALUES(?,?,?,?, 'reserved', ?)",
+		NewID(), project.ID, 8082, "application", now); err != nil {
+		t.Fatal(err)
+	}
+
+	compose := &integrationCompose{binding: providers.ComposePortBinding{
+		Service: "web", RequestedHostPort: 8080, HostPort: 8080, ContainerPort: 80, Protocol: "tcp",
+	}}
+	ports := &integrationPorts{port: 8999}
+	routes := &integrationRoutes{}
+	handler := NewDeploymentHandler(repo, NewGitClient(nil), runtimes.NewRegistry(), &testJobLogger{}, DeploymentIntegrations{
+		Ports:   ports,
+		Routes:  routes,
+		Compose: compose,
+	})
+
+	_, err := handler.Run(context.Background(), domain.Job{
+		ID: "integration-compose-stable-port",
+		Payload: map[string]any{
+			"project_id":    project.ID,
+			"deployment_id": deploymentID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if ports.reserveFromCalls != 0 {
+		t.Fatalf("existing project port must be reused without a new reservation: %+v", ports)
+	}
+	if compose.upBinding == nil || compose.upBinding.HostPort != 8082 {
+		t.Fatalf("Compose did not reuse persisted host port 8082: %+v", compose.upBinding)
+	}
+	if routes.port != 8082 {
+		t.Fatalf("reverse proxy port = %d, want stable port 8082", routes.port)
 	}
 }
 
@@ -295,8 +355,10 @@ func (r *integrationRuntime) HealthCheck(context.Context, runtimes.ProjectContex
 }
 
 type integrationPorts struct {
-	port     int
-	released int
+	port             int
+	released         int
+	reserveFromCalls int
+	reserveFromStart int
 }
 
 func (p *integrationPorts) Reserve(_ context.Context, projectID, purpose string, preferred *int) (providers.PortLease, error) {
@@ -305,6 +367,12 @@ func (p *integrationPorts) Reserve(_ context.Context, projectID, purpose string,
 		port = *preferred
 	}
 	return providers.PortLease{Port: port, ProjectID: projectID, Purpose: purpose}, nil
+}
+
+func (p *integrationPorts) ReserveFrom(_ context.Context, projectID, purpose string, start int) (providers.PortLease, error) {
+	p.reserveFromCalls++
+	p.reserveFromStart = start
+	return providers.PortLease{Port: p.port, ProjectID: projectID, Purpose: purpose}, nil
 }
 
 func (p *integrationPorts) Release(_ context.Context, port int) error {
@@ -357,15 +425,16 @@ func (m *integrationManaged) ReplaceManaged(_ context.Context, spec containerspe
 }
 
 type integrationCompose struct {
-	validated         bool
-	pulled            bool
-	built             bool
-	started           bool
-	stopped           bool
-	healthyChecked    bool
-	targetPortChecked bool
-	targetPort        int
-	targetPortErr     error
+	validated      bool
+	pulled         bool
+	built          bool
+	started        bool
+	stopped        bool
+	healthyChecked bool
+	bindingChecked bool
+	binding        providers.ComposePortBinding
+	bindingErr     error
+	upBinding      *providers.ComposePortBinding
 }
 
 func (c *integrationCompose) Available(context.Context) error { return nil }
@@ -385,8 +454,17 @@ func (c *integrationCompose) ComposeBuild(context.Context, string, string, strin
 	return nil
 }
 
-func (c *integrationCompose) ComposeUp(context.Context, string, string, string) error {
+func (c *integrationCompose) ComposePortBinding(context.Context, string, string) (providers.ComposePortBinding, error) {
+	c.bindingChecked = true
+	return c.binding, c.bindingErr
+}
+
+func (c *integrationCompose) ComposeUp(_ context.Context, _, _, _ string, binding *providers.ComposePortBinding) error {
 	c.started = true
+	if binding != nil {
+		copy := *binding
+		c.upBinding = &copy
+	}
 	return nil
 }
 
@@ -401,6 +479,8 @@ func (c *integrationCompose) ComposeHealthy(context.Context, string, string) err
 }
 
 func (c *integrationCompose) ComposeTargetPort(context.Context, string, string) (int, error) {
-	c.targetPortChecked = true
-	return c.targetPort, c.targetPortErr
+	if c.upBinding != nil {
+		return c.upBinding.HostPort, nil
+	}
+	return 0, c.bindingErr
 }

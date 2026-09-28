@@ -27,10 +27,20 @@ func NewPortManager(db *sql.DB, start, end int) *PortManager {
 }
 
 func (m *PortManager) Allocate(ctx context.Context, projectID, purpose string) (PortRecord, error) {
+	return m.AllocateFrom(ctx, projectID, purpose, m.start)
+}
+
+func (m *PortManager) AllocateFrom(ctx context.Context, projectID, purpose string, start int) (PortRecord, error) {
 	if projectID == "" || purpose == "" {
 		return PortRecord{}, fmt.Errorf("%w: project and purpose are required", ErrInvalidInput)
 	}
-	for port := m.start; port <= m.end; port++ {
+	if start < m.start {
+		start = m.start
+	}
+	if start > m.end {
+		return PortRecord{}, ErrNoPorts
+	}
+	for port := start; port <= m.end; port++ {
 		record, err := m.ReserveExact(ctx, projectID, purpose, port)
 		if err == nil {
 			return record, nil
@@ -51,6 +61,14 @@ func (m *PortManager) Reserve(ctx context.Context, projectID, purpose string, pr
 	} else {
 		record, err = m.ReserveExact(ctx, projectID, purpose, *preferred)
 	}
+	if err != nil {
+		return providers.PortLease{}, err
+	}
+	return providers.PortLease{Port: record.Port, ProjectID: projectID, Purpose: purpose}, nil
+}
+
+func (m *PortManager) ReserveFrom(ctx context.Context, projectID, purpose string, start int) (providers.PortLease, error) {
+	record, err := m.AllocateFrom(ctx, projectID, purpose, start)
 	if err != nil {
 		return providers.PortLease{}, err
 	}
