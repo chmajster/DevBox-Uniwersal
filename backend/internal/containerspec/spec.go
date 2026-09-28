@@ -37,7 +37,9 @@ type DeploymentSpec struct {
 	ContainerName    string
 	HostPort         int
 	ContainerPort    int
-	Environment      map[string]string
+	Environment          map[string]string
+	SensitiveEnvironment map[string]string
+	Networks             []string
 	BindMounts       map[string]string
 	AnonymousVolumes []string
 	Labels           map[string]string
