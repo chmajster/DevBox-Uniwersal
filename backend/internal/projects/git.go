@@ -176,6 +176,17 @@ func CredentialRef(kind, projectID, name string) *string {
 	return &value
 }
 
+func ProjectCredentialRef(project Project) *string {
+	if project.CredentialKind == "" {
+		return nil
+	}
+	if project.CredentialID != "" {
+		value := project.CredentialKind + "|credential/" + project.CredentialID + "|value"
+		return &value
+	}
+	return CredentialRef(project.CredentialKind, project.ID, "default")
+}
+
 func (g *GitClient) run(ctx context.Context, workDir string, credentialRef *string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if workDir != "" {
