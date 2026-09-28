@@ -112,6 +112,7 @@ func (m *Module) createUser(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		DatabaseID string   `json:"database_id"`
 		Username   string   `json:"username"`
+		Password   string   `json:"password"`
 		Privileges []string `json:"privileges"`
 	}
 	if err := decodeBody(w, r, &input); err != nil {
@@ -119,7 +120,7 @@ func (m *Module) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor, remote := requestIdentity(r)
-	user, password, err := m.service.CreateUser(r.Context(), input.DatabaseID, strings.TrimSpace(input.Username), input.Privileges, actor, remote)
+	user, password, err := m.service.CreateUser(r.Context(), input.DatabaseID, strings.TrimSpace(input.Username), input.Password, input.Privileges, actor, remote)
 	if err != nil {
 		writeModuleError(w, err)
 		return
@@ -143,8 +144,17 @@ func (m *Module) deleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) changePassword(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Password string `json:"password"`
+	}
+	if r.ContentLength != 0 {
+		if err := decodeBody(w, r, &input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+			return
+		}
+	}
 	actor, remote := requestIdentity(r)
-	password, err := m.service.ChangeUserPassword(r.Context(), r.PathValue("id"), actor, remote)
+	password, err := m.service.ChangeUserPassword(r.Context(), r.PathValue("id"), input.Password, actor, remote)
 	if err != nil {
 		writeModuleError(w, err)
 		return
