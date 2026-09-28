@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 )
 
 func TestComposeArgsAvoidsProjectDirectoryFlag(t *testing.T) {
@@ -178,5 +180,60 @@ func TestComposeTargetPortRejectsAmbiguousPublishedPorts(t *testing.T) {
 	_, err := provider.ComposeTargetPort(context.Background(), dir, "sample")
 	if err == nil || !strings.Contains(err.Error(), "multiple published host ports") {
 		t.Fatalf("expected ambiguous published port error, got %v", err)
+	}
+}
+
+
+func TestSelectComposePortBindingPrefersWebHTTPPort(t *testing.T) {
+	data := []byte(`{
+		"services": {
+			"db": {"ports": [{"target":3306,"published":"3306","protocol":"tcp"}]},
+			"web": {"ports": [{"target":80,"published":"8080","protocol":"tcp"}]}
+		}
+	}`)
+	binding, err := selectComposePortBinding(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding.Service != "web" || binding.RequestedHostPort != 8080 || binding.ContainerPort != 80 {
+		t.Fatalf("unexpected binding: %+v", binding)
+	}
+}
+
+func TestRewriteComposePublishedPortKeepsContainerPortAndChangesHostPort(t *testing.T) {
+	data := []byte(`{
+		"services": {
+			"web": {
+				"ports": [{"target":80,"published":"8080","protocol":"tcp"}],
+				"volumes": [{"type":"bind","source":"/srv/app","target":"/var/www/html"}]
+			},
+			"db": {"ports": [{"target":3306,"published":"3306","protocol":"tcp"}]}
+		}
+	}`)
+	rewritten, err := rewriteComposePublishedPort(data, providers.ComposePortBinding{
+		Service: "web", RequestedHostPort: 8080, HostPort: 8081, ContainerPort: 80, Protocol: "tcp",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var root map[string]any
+	if err := json.Unmarshal(rewritten, &root); err != nil {
+		t.Fatal(err)
+	}
+	services := root["services"].(map[string]any)
+	web := services["web"].(map[string]any)
+	webPorts := web["ports"].([]any)
+	webPort := webPorts[0].(map[string]any)
+	if got := composeAnyPort(webPort["published"]); got != 8081 {
+		t.Fatalf("rewritten web host port = %d, want 8081", got)
+	}
+	if got := composeAnyPort(webPort["target"]); got != 80 {
+		t.Fatalf("container port changed to %d, want 80", got)
+	}
+	db := services["db"].(map[string]any)
+	dbPorts := db["ports"].([]any)
+	if got := composeAnyPort(dbPorts[0].(map[string]any)["published"]); got != 3306 {
+		t.Fatalf("database port was unexpectedly changed to %d", got)
 	}
 }
