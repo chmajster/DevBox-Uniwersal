@@ -17,6 +17,7 @@
 
 ### Configurable Docker port publishing
 
+- Added a clickable application address to the project Overview, built from the DevBox host used in the browser and the project's active HTTP port; the link opens the running application in a new tab.
 - Added project HTTP/internal and published-port settings, optional HTTPS passthrough, high defaults (8080/8443), sequential collision fallback and durable resolved-port persistence.
 - Kept exact manual port reservations unchanged; added ownership-aware allocation/cleanup and fixed primary-port selection so HTTPS does not replace HTTP.
 - Added a separate configuration UI with validation, save/deploy actions, applied mappings and application links.
