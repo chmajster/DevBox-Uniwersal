@@ -14,6 +14,18 @@ export interface CentralCredential {
   updated_at: string
 }
 
+export interface UpdateStatus {
+  current_version: string
+  latest_version?: string
+  update_available: boolean
+  repository: string
+  ref: string
+  auto_update: boolean
+  schedule: string
+  last_error?: string
+  checked_at: string
+}
+
 export interface User {
   id: string
   username: string
