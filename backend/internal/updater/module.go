@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,8 +20,9 @@ import (
 )
 
 const (
-	defaultRepository = "https://github.com/chmajster/DevBox-Uniwersal.git"
-	defaultRef        = "main"
+	defaultRepository   = "https://github.com/chmajster/DevBox-Uniwersal.git"
+	defaultRef          = "main"
+	defaultProgressFile = "/var/lib/devbox/update-status"
 )
 
 var gitRefPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
@@ -37,21 +40,44 @@ type Status struct {
 	CheckedAt       string `json:"checked_at"`
 }
 
+type Progress struct {
+	State          string `json:"state"`
+	Percent        int    `json:"percent"`
+	Stage          string `json:"stage"`
+	Message        string `json:"message,omitempty"`
+	CurrentVersion string `json:"current_version,omitempty"`
+	TargetVersion  string `json:"target_version,omitempty"`
+	StartedAt      string `json:"started_at,omitempty"`
+	UpdatedAt      string `json:"updated_at,omitempty"`
+	FinishedAt     string `json:"finished_at,omitempty"`
+	Error          string `json:"error,omitempty"`
+}
+
+func (p Progress) Active() bool {
+	return p.State == "starting" || p.State == "running"
+}
+
 type Service struct {
 	currentVersion string
 	helperBinary   string
 	sudoBinary     string
 	repository     string
 	ref            string
+	progressFile   string
 }
 
 func NewService(currentVersion, helperBinary, sudoBinary string) *Service {
+	progressFile := strings.TrimSpace(os.Getenv("DEVBOX_UPDATE_PROGRESS_FILE"))
+	if progressFile == "" {
+		progressFile = defaultProgressFile
+	}
 	return &Service{
 		currentVersion: strings.TrimSpace(currentVersion),
 		helperBinary:   strings.TrimSpace(helperBinary),
 		sudoBinary:     strings.TrimSpace(sudoBinary),
 		repository:     defaultRepository,
 		ref:            defaultRef,
+		progressFile:   progressFile,
 	}
 }
 
@@ -78,6 +104,41 @@ func (s *Service) Status(ctx context.Context) Status {
 	return status
 }
 
+func (s *Service) Progress(ctx context.Context) Progress {
+	progress, err := readProgressFile(s.progressFile)
+	if err == nil {
+		if updateServiceActive(ctx) && !progress.Active() {
+			progress.State = "starting"
+			progress.Stage = "starting"
+			progress.Percent = 1
+			progress.Message = "Usługa aktualizacji została uruchomiona i przygotowuje wykonanie."
+			progress.FinishedAt = ""
+			progress.Error = ""
+			progress.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return progress
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		if updateServiceActive(ctx) {
+			return Progress{
+				State:          "starting",
+				Percent:        1,
+				Stage:          "starting",
+				Message:        "Usługa aktualizacji została uruchomiona i przygotowuje wykonanie.",
+				CurrentVersion: s.currentVersion,
+				UpdatedAt:      time.Now().UTC().Format(time.RFC3339),
+			}
+		}
+		return Progress{State: "idle", Stage: "idle", CurrentVersion: s.currentVersion}
+	}
+	return Progress{
+		State:          "unknown",
+		Stage:          "unknown",
+		CurrentVersion: s.currentVersion,
+		Error:          err.Error(),
+	}
+}
+
 func (s *Service) Apply(ctx context.Context) error {
 	if s.helperBinary == "" {
 		return errors.New("privileged helper is not configured")
@@ -96,6 +157,59 @@ func (s *Service) Apply(ctx context.Context) error {
 		return fmt.Errorf("start update: %s", message)
 	}
 	return nil
+}
+
+func readProgressFile(path string) (Progress, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return Progress{}, err
+	}
+	defer file.Close()
+
+	values := map[string]string{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		values[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	if err := scanner.Err(); err != nil {
+		return Progress{}, fmt.Errorf("read update progress: %w", err)
+	}
+
+	percent, _ := strconv.Atoi(values["PERCENT"])
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	state := values["STATE"]
+	if state == "" {
+		state = "unknown"
+	}
+	stage := values["STAGE"]
+	if stage == "" {
+		stage = "unknown"
+	}
+	return Progress{
+		State:          state,
+		Percent:        percent,
+		Stage:          stage,
+		Message:        values["MESSAGE"],
+		CurrentVersion: values["CURRENT_VERSION"],
+		TargetVersion:  values["TARGET_VERSION"],
+		StartedAt:      values["STARTED_AT"],
+		UpdatedAt:      values["UPDATED_AT"],
+		FinishedAt:     values["FINISHED_AT"],
+		Error:          values["ERROR"],
+	}, nil
 }
 
 func remoteCommitInfo(ctx context.Context, repository, ref string) (string, string, error) {
@@ -145,6 +259,13 @@ func timerEnabled(ctx context.Context) bool {
 	return cmd.Run() == nil
 }
 
+func updateServiceActive(ctx context.Context) bool {
+	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(checkCtx, "systemctl", "is-active", "--quiet", "devbox-update.service")
+	return cmd.Run() == nil
+}
+
 type Module struct {
 	service *Service
 	audit   *audit.Service
@@ -161,11 +282,16 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 		return middleware.Authenticate(middleware.RequireRole(role, handler))
 	}
 	mux.Handle("GET /api/v1/update/status", secure(domain.RoleAdmin, m.status))
+	mux.Handle("GET /api/v1/update/progress", secure(domain.RoleAdmin, m.progress))
 	mux.Handle("POST /api/v1/update/apply", secure(domain.RoleAdmin, m.apply))
 }
 
 func (m *Module) status(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, m.service.Status(r.Context()))
+}
+
+func (m *Module) progress(w http.ResponseWriter, r *http.Request) {
+	writeData(w, http.StatusOK, m.service.Progress(r.Context()))
 }
 
 func (m *Module) apply(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +303,7 @@ func (m *Module) apply(w http.ResponseWriter, r *http.Request) {
 	_ = m.audit.Record(r.Context(), actor, "system.update.start", "system", nil, map[string]any{"source": defaultRepository, "ref": defaultRef}, nil)
 	writeData(w, http.StatusAccepted, map[string]string{
 		"status":  "started",
-		"message": "Aktualizacja została uruchomiona w tle. Usługa DevBox zrestartuje się po poprawnym wdrożeniu.",
+		"message": "Aktualizacja została uruchomiona w tle. Postęp i aktualny etap są dostępne na tej stronie.",
 	})
 }
 
