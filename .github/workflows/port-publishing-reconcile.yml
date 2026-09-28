@@ -4,31 +4,138 @@ on:
     branches: ['agent/62-port-publishing-prepare']
     paths: ['.github/workflows/port-publishing-reconcile.yml']
 permissions:
-  contents: read
+  contents: write
+concurrency:
+  group: reconcile-port-publishing
+  cancel-in-progress: false
 jobs:
-  inspect:
+  reconcile:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Three-way merge diagnostics
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Reconcile reviewed changes with the current provider contracts
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git checkout --detach 943253b5c26efcc89f9983b5686203c4eadf7956
-          git diff --stat 3c2f3cabe24304f0704ffe87733cd7abc9aa6723 ca66cd3e9b61bffb734d9a4af970ffad8f806d0c
           git merge --no-commit --no-ff ca66cd3e9b61bffb734d9a4af970ffad8f806d0c || true
           python - <<'PY'
-          import re, subprocess
           from pathlib import Path
-          names = subprocess.check_output(['git','diff','--name-only','--diff-filter=U'], text=True).splitlines()
-          for name in names:
-              print('\nCONFLICT FILE:', name)
-              data = Path(name).read_text()
-              for block in re.findall(r'^<<<<<<< .*?^>>>>>>> .*?$', data, re.M | re.S):
-                  print(block)
-          print('\nALL CONFLICTS:', names)
+          import re
+          import subprocess
+          MAIN = 'ca66cd3e9b61bffb734d9a4af970ffad8f806d0c'
+          FEATURE = '943253b5c26efcc89f9983b5686203c4eadf7956'
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True)
+          def change(name, old, new):
+              path = Path(name)
+              text = path.read_text()
+              assert text.count(old) == 1, (name, old[:80], text.count(old))
+              path.write_text(text.replace(old, new))
+          conflicts = set(git('diff','--name-only','--diff-filter=U').splitlines())
+          assert conflicts == {'CHANGELOG.md', 'backend/internal/projects/jobs.go'}, conflicts
+          path = Path('CHANGELOG.md')
+          text, count = re.subn(r'^<<<<<<< [^\n]*\n(.*?)^=======\n(.*?)^>>>>>>> [^\n]*\n', lambda m: m[1]+'\n'+m[2], path.read_text(), flags=re.M|re.S)
+          assert count == 1
+          path.write_text(text)
+          name = 'backend/internal/projects/jobs.go'
+          ours = git('show', FEATURE+':'+name)
+          main = git('show', MAIN+':'+name)
+          a = ours.index('type ComposeDeployer interface {')
+          b = ours.index('\n}', a)+2
+          c = main.index('type ComposeDeployer interface {')
+          d = main.index('\n}', c)+2
+          ours = ours[:a]+main[c:d]+ours[b:]
+          ours = ours.replace('\t\tportPlan               *deploymentPortPlan', '\t\tlegacyBinding          *providers.ComposePortBinding\n\t\tlegacyAllocatedPort    int\n\t\tportPlan               *deploymentPortPlan')
+          ours = ours.replace('ComposeUp(cleanupCtx, composeDir, composeName, "")', 'ComposeUp(cleanupCtx, composeDir, composeName, "", nil)')
+          ours = ours.replace('\t\tportPlan.rollback()', '\t\tportPlan.rollback()\n\t\tif legacyAllocatedPort > 0 && cleanupSafe && !composeCommitted {\n\t\t\t_ = h.integrations.Ports.Release(cleanupCtx, legacyAllocatedPort)\n\t\t}')
+          start = main.index('\t\tbinding, err := h.integrations.Compose.ComposePortBinding(')
+          end = main.index('\t\tif err := setStage(DeploymentStarting);', start)
+          legacy = main[start:end].replace('allocatedPort = lease.Port', 'legacyAllocatedPort = lease.Port')
+          legacy = legacy.replace('\t\t\tstartPort := binding.RequestedHostPort', '\t\t\tstartPort := binding.RequestedHostPort\n\t\t\tswitch startPort {\n\t\t\tcase 80:\n\t\t\t\tstartPort = 8080\n\t\t\tcase 443:\n\t\t\t\tstartPort = 8443\n\t\t\t}')
+          legacy = '\t\tif !network.Configured {\n' + ''.join('\t'+line if line.strip() else line for line in legacy.splitlines(True)) + '\t\t\tlegacyBinding = &binding\n\t\t}\n'
+          marker = '\t\tif err := setStage(DeploymentStarting);'
+          ours = ours.replace(marker, legacy+marker, 1)
+          ours = ours.replace('ComposeUp(ctx, composeDir, composeName, "")', 'ComposeUp(ctx, composeDir, composeName, "", legacyBinding)')
+          ours = ours.replace('\t\tif portPlan != nil {\n\t\t\tpublisher :=', '\t\tif legacyBinding != nil {\n\t\t\ttargetPort = legacyBinding.HostPort\n\t\t}\n\t\tif portPlan != nil {\n\t\t\tpublisher :=')
+          assert 'legacyBinding = &binding' in ours and 'ComposePortBinding(ctx context.Context' in ours
+          Path(name).write_text(ours)
+          for name in ['backend/internal/providers/port_publishing.go', 'backend/internal/proxy/port_fallback.go', 'backend/internal/proxy/port_fallback_test.go', 'backend/internal/projects/port_deployment.go', 'backend/internal/projects/port_config_test.go']:
+              path = Path(name)
+              path.write_text(re.sub(r'\bReserveFrom\b', 'ReserveFromOwned', path.read_text()))
+          name = 'backend/internal/proxy/port_manager.go'
+          path = Path(name)
+          text = path.read_text()
+          a = text.index('func (m *PortManager) ReserveFrom(')
+          b = text.index('\nfunc ', a+1)
+          text = text[:a]+'''func (m *PortManager) ReserveFrom(ctx context.Context, projectID, purpose string, start int) (providers.PortLease, error) {
+              reservation, err := m.ReserveFromOwned(ctx, projectID, purpose, start)
+              return reservation.PortLease, err
+          }
+          '''+text[b:]
+          path.write_text(text)
+          name = 'backend/internal/projects/port_config_test.go'
+          path = Path(name)
+          path.write_text(path.read_text()+'''
+          func (p *ownedPortFixture) ReserveFrom(ctx context.Context, projectID, purpose string, start int) (providers.PortLease, error) {
+              reservation, err := p.ReserveFromOwned(ctx, projectID, purpose, start)
+              return reservation.PortLease, err
+          }
+          ''')
+          change('backend/internal/docker/port_publishing_integration_test.go', 'provider.ComposeUp(ctx, composeDir, projectName, "")', 'provider.ComposeUp(ctx, composeDir, projectName, "", nil)')
+          for name in ['docs/project-port-publishing.md', 'docs/adr/010-project-port-publishing.md']:
+              path = Path(name)
+              path.write_text(path.read_text()+'''\n\n### Integration with automatic Compose port allocation\n\nProjects without explicit port settings keep the automatic primary HTTP binding\ndiscovery introduced on main. Their requested host port is allocated sequentially\nand reused on redeploy; default 80/443 requests start at 8080/8443. Saving the port\nform switches to the persistent, explicit service/internal/HTTP/HTTPS override.\nThe existing public ReserveFrom provider contract is retained; ReserveFromOwned\nadds ownership-aware rollback without changing external callers.\n''')
+          subprocess.run(['gofmt','-w','backend'], check=True)
+          subprocess.run(['git','add','CHANGELOG.md','backend','frontend','docs'], check=True)
+          assert not git('diff','--name-only','--diff-filter=U').strip()
+          assert not git('diff', MAIN, '--', '.github').strip(), 'must retain main workflows unchanged'
+          subprocess.run(['git','diff','--cached','--check'], check=True)
+          print('RECONCILED TREE:', git('write-tree').strip())
           PY
+      - name: Publish isolated reconciled candidate
+        id: candidate
+        shell: bash
+        run: |
+          tree=$(git write-tree)
+          parent=ca66cd3e9b61bffb734d9a4af970ffad8f806d0c
+          if git show-ref --verify --quiet refs/remotes/origin/agent/62-port-publishing-reconciled; then
+            parent=$(git rev-parse refs/remotes/origin/agent/62-port-publishing-reconciled)
+          fi
+          commit=$(git commit-tree "$tree" -p "$parent" -m 'Integrate configurable port publishing with main Compose allocation')
+          git push origin "$commit":refs/heads/agent/62-port-publishing-reconciled
+          echo "Candidate commit: $commit"
+          echo "Candidate tree: $tree"
+      - name: Backend validation
+        id: backend
+        working-directory: backend
+        run: |
+          go vet ./...
+          go test ./...
+          go build ./cmd/devbox ./cmd/devbox-helper
+      - name: Frontend validation
+        if: always() && steps.candidate.outcome == 'success'
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run typecheck
+          npm run test
+          npm run build
+      - name: Real Docker publishing and live-source regression
+        if: always() && steps.backend.outcome == 'success'
+        working-directory: backend
+        env:
+          DEVBOX_TEST_DOCKER_PORTS: '1'
+        run: go test ./internal/docker -run '^TestPublishedPortsDockerIntegration$' -v -count=1
