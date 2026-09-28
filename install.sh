@@ -363,6 +363,7 @@ ensure_user_and_dirs() {
   fi
   install -d -m 0755 "$INSTALL_ROOT" "$LIBEXEC_DIR"
   install -d -m 0750 -o devbox -g devbox "$DATA_DIR"
+  install -d -m 0750 -o devbox -g devbox "$DATA_DIR/projects"
   install -d -m 0750 -o devbox -g devbox "$NGINX_STATE_DIR" "$NGINX_STATE_DIR/sites-available" "$NGINX_STATE_DIR/sites-enabled"
   install -d -m 0750 -o root -g devbox "$CONFIG_DIR"
   if getent group docker >/dev/null 2>&1; then
@@ -404,6 +405,8 @@ install_artifacts() {
   upsert_env_file "$ENV_FILE" DEVBOX_DATABASE_PATH "$DATA_DIR/devbox.db"
   upsert_env_file "$ENV_FILE" DEVBOX_MIGRATIONS_DIR "$INSTALL_ROOT/migrations"
   upsert_env_file "$ENV_FILE" DEVBOX_FRONTEND_DIR "$INSTALL_ROOT/frontend/dist"
+  upsert_env_file "$ENV_FILE" DEVBOX_PROJECTS_ROOT "$DATA_DIR/projects"
+  upsert_env_file "$ENV_FILE" DEVBOX_DIRECTORY_BROWSE_ROOTS "$DATA_DIR/projects"
   upsert_env_file "$ENV_FILE" DEVBOX_COOKIE_SECURE "false"
   local source_version
   source_version="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || printf 'local')"
