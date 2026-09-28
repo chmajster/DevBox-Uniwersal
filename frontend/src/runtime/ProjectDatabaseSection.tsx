@@ -5,6 +5,7 @@ import type {
   DatabaseBinding,
   DatabaseBindingInput,
   DatabaseMode,
+  DatabaseRecord,
   Job,
   PHPMyAdminStatus,
   ProjectRuntimeInfo,
@@ -60,6 +61,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const [composeServices, setComposeServices] = useState<string[]>([])
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeContainerConfig | null>(null)
   const [runtimeInfo, setRuntimeInfo] = useState<ProjectRuntimeInfo | null>(null)
+  const [managedDatabase, setManagedDatabase] = useState<DatabaseRecord | null>(null)
   const [backups, setBackups] = useState<DatabaseBackup[]>([])
   const [showBackups, setShowBackups] = useState(false)
   const [busy, setBusy] = useState('')
@@ -67,15 +69,17 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
-    const [currentBinding, config, runtime] = await Promise.all([
+    const [currentBinding, config, runtime, databases] = await Promise.all([
       request<DatabaseBinding>(`/projects/${encodeURIComponent(projectId)}/database-binding`),
       request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`).catch(() => null),
       request<ProjectRuntimeInfo>(`/projects/${encodeURIComponent(projectId)}/runtime`).catch(() => null),
+      request<DatabaseRecord[]>('/databases').catch(() => []),
     ])
     setBinding(currentBinding)
     setDraft(bindingToDraft(currentBinding))
     setRuntimeConfig(config)
     setRuntimeInfo(runtime)
+    setManagedDatabase(databases.find((item) => item.project_id === projectId) ?? null)
   }, [projectId])
 
   const loadComposeServices = useCallback(async () => {
@@ -127,9 +131,23 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     })
   }
 
+  async function waitForJob(jobId: string, timeoutMs = 120_000) {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const job = await request<Job>(`/jobs/${encodeURIComponent(jobId)}`)
+      const status = job.status.toLowerCase()
+      if (status === 'succeeded') return job
+      if (status === 'failed' || status === 'cancelled' || status === 'canceled') {
+        throw new Error(job.error || `Zadanie ${jobId} zakończyło się statusem ${job.status}`)
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 1000))
+    }
+    throw new Error(`Zadanie ${jobId} nie zakończyło się w wymaganym czasie`)
+  }
+
   async function provisionManaged() {
     await perform('provision', async () => {
-      await request<unknown>(`/projects/${encodeURIComponent(projectId)}/database/provision`, {
+      const job = await request<Job>(`/projects/${encodeURIComponent(projectId)}/database/provision`, {
         method: 'POST',
         body: JSON.stringify({
           engine: draft.engine || 'mysql',
@@ -137,6 +155,8 @@ export function ProjectDatabaseSection({ projectId }: Props) {
           application_service: draft.application_service || '',
         }),
       })
+      setMessage(`Tworzenie bazy dodano do kolejki jako zadanie ${job.id}.`)
+      await waitForJob(job.id)
       await load()
       setMessage('Baza, użytkownik i ograniczone granty zostały utworzone. Poświadczenia zapisano w SecretStore.')
     })
@@ -230,7 +250,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     ? composeServices
     : [draft.application_service, draft.compose_service].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
 
-  const managedExists = binding?.mode === 'managed' && Boolean(binding.database_id)
+  const managedExists = Boolean(managedDatabase?.id)
 
   return <section className="panel runtime-section">
     <div className="section-heading">
@@ -270,11 +290,11 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       </label>}
 
       {modeFields.includes('engine') && draft.mode === 'managed' && <>
-        <label>Silnik<input readOnly value={binding?.engine || draft.engine || 'mysql'} /></label>
-        <label>Nazwa bazy<input readOnly value={binding?.database || '—'} /></label>
-        <label>Użytkownik<input readOnly value={binding?.username || '—'} /></label>
-        <label>Status<input readOnly value={binding?.status || '—'} /></label>
-        <label>Data utworzenia<input readOnly value={binding?.created_at ? new Date(binding.created_at).toLocaleString('pl-PL') : '—'} /></label>
+        <label>Silnik<input readOnly value={managedDatabase?.engine || binding?.engine || draft.engine || 'mysql'} /></label>
+        <label>Nazwa bazy<input readOnly value={managedDatabase?.name || (binding?.mode === 'managed' ? binding.database : '') || '—'} /></label>
+        <label>Użytkownik<input readOnly value={managedDatabase?.user || (binding?.mode === 'managed' ? binding.username : '') || '—'} /></label>
+        <label>Status<input readOnly value={managedDatabase?.status || (binding?.mode === 'managed' ? binding.status : '') || '—'} /></label>
+        <label>Data utworzenia<input readOnly value={managedDatabase?.created_at ? new Date(managedDatabase.created_at).toLocaleString('pl-PL') : binding?.mode === 'managed' && binding.created_at ? new Date(binding.created_at).toLocaleString('pl-PL') : '—'} /></label>
       </>}
 
       {modeFields.includes('compose_service') && <>
