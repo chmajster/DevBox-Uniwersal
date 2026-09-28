@@ -16,6 +16,15 @@ func TestHelperRejectsUnknownPackageAndService(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLPackageAndServiceAreAllowlisted(t *testing.T) {
+	if got := allowedPackages["postgresql"]; got != "postgresql" {
+		t.Fatalf("postgresql package mapping = %q, want postgresql", got)
+	}
+	if got := allowedServices["postgresql"]; got != "postgresql.service" {
+		t.Fatalf("postgresql service mapping = %q, want postgresql.service", got)
+	}
+}
+
 func TestValidateNginx(t *testing.T) {
 	h := NewPrivilegedHelperWithRunner(fakeRunner{
 		paths:   map[string]string{"nginx": "/usr/sbin/nginx"},
