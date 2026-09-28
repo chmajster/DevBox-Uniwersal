@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -21,7 +22,21 @@ type execRunner struct {
 }
 
 func (r execRunner) Run(ctx context.Context, args ...string) ([]byte, []byte, error) {
+	return r.run(ctx, nil, args...)
+}
+
+func (r execRunner) RunEnv(ctx context.Context, environment map[string]string, args ...string) ([]byte, []byte, error) {
+	return r.run(ctx, environment, args...)
+}
+
+func (r execRunner) run(ctx context.Context, environment map[string]string, args ...string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, r.binary, args...)
+	if len(environment) > 0 {
+		cmd.Env = append([]string(nil), os.Environ()...)
+		for key, value := range environment {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
