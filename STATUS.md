@@ -4,6 +4,7 @@ DevBox Universal is an integrated local development control plane.
 
 ## Core
 
+- Admin-only control-plane user management supports account creation, Admin/Operator/Viewer role changes, enable/disable, password change/generation, per-user session revocation and account deletion with last-admin/self-protection safeguards.
 - Go REST API, SQLite migrations, opaque server-side sessions, Admin/Operator/Viewer RBAC, CSRF protection and audit events.
 - AES-256-GCM secret storage abstraction.
 - Durable Job Engine with project/deployment job logs.

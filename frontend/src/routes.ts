@@ -3,6 +3,7 @@ export const ROUTES = {
   applications: '/apps',
   scriptApps: '/script-apps',
   credentials: '/credentials',
+  users: '/users',
   databaseUsers: '/database-users',
   project: '/projects/:projectId/:tab?',
   logs: '/logs',

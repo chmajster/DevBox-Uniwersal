@@ -6,6 +6,7 @@ describe('workspace navigation', () => {
     const paths = navigationForRole('viewer').map((item) => item.to)
     expect(paths).not.toContain('/backups')
     expect(paths).not.toContain('/audit')
+    expect(paths).not.toContain('/users')
     expect(paths).toContain('/apps')
     expect(paths).toContain('/plugins')
     expect(new Set(paths).size).toBe(paths.length)
@@ -13,7 +14,9 @@ describe('workspace navigation', () => {
   it('preserves operator and admin visibility', () => {
     expect(navigationForRole('operator').some((item) => item.to === '/audit')).toBe(true)
     expect(navigationForRole('operator').some((item) => item.to === '/backups')).toBe(false)
+    expect(navigationForRole('operator').some((item) => item.to === '/users')).toBe(false)
     expect(navigationForRole('admin').some((item) => item.to === '/backups')).toBe(true)
+    expect(navigationForRole('admin').some((item) => item.to === '/users')).toBe(true)
     expect(navigationForRole().some((item) => item.roles)).toBe(false)
   })
   it('matches canonical, nested and legacy application routes without matching prefixes', () => {

@@ -12,6 +12,7 @@ func TestOpenAPISpecContainsCoreAndModuleRoutes(t *testing.T) {
 		t.Fatal("paths missing")
 	}
 	for _, path := range []string{
+		"/api/v1/users",
 		"/api/v1/projects",
 		"/api/v1/projects/{id}/ports/config",
 		"/api/v1/docker/containers",

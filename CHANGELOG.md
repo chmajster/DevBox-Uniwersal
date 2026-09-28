@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Control-plane user management
+
+- Added admin-only user management for DevBox accounts: create accounts, assign Admin/Operator/Viewer roles, enable or disable accounts, change or generate passwords, revoke all user sessions and delete accounts.
+- Password changes revoke all sessions for the affected account. Role/status changes also invalidate sessions so permission changes take effect immediately.
+- Added safeguards against deleting, disabling or demoting the current administrator and against removing the final active administrator account.
+- Added an admin-only `Użytkownicy` page and documented `/api/v1/users` management endpoints.
+
 ### Unified project database connectivity
 
 - Fixed the project database mode selector so all four modes render as aligned responsive option cards instead of a stretched browser fieldset/grid layout.
