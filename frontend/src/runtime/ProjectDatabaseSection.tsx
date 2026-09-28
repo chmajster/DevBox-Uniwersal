@@ -45,12 +45,35 @@ function bindingToDraft(binding: DatabaseBinding): DatabaseBindingInput {
 
 function modeLabel(mode: DatabaseMode) {
   switch (mode) {
-    case 'managed': return 'Baza zarządzana przez DevBox'
-    case 'compose': return 'Baza z Docker Compose projektu'
-    case 'external': return 'Zewnętrzna baza danych'
-    default: return 'Brak'
+    case 'managed': return 'Nowa baza w DevBox'
+    case 'compose': return 'Baza z Docker Compose'
+    case 'external': return 'Istniejący host MySQL/MariaDB'
+    default: return 'Brak bazy'
   }
 }
+
+const databaseModeOptions: Array<{ mode: DatabaseMode; title: string; description: string }> = [
+  {
+    mode: 'none',
+    title: 'Brak bazy danych',
+    description: 'Aplikacja nie otrzyma konfiguracji połączenia do bazy.',
+  },
+  {
+    mode: 'managed',
+    title: 'Utwórz nową bazę w DevBox',
+    description: 'DevBox utworzy bazę, użytkownika i hasło na wspólnym MySQL devbox-mysql:3306.',
+  },
+  {
+    mode: 'external',
+    title: 'Użyj istniejącej bazy MySQL/MariaDB',
+    description: 'Podaj host, port, nazwę istniejącej bazy, użytkownika i hasło.',
+  },
+  {
+    mode: 'compose',
+    title: 'Użyj bazy z Docker Compose projektu',
+    description: 'Połącz aplikację z service bazy zdefiniowanym w Compose, np. db:3306.',
+  },
+]
 
 export function ProjectDatabaseSection({ projectId }: Props) {
   const { user } = useAuth()
@@ -236,7 +259,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     <div className="section-heading">
       <div>
         <h2>Baza danych</h2>
-        <p className="muted">DevBox rozwiązuje właściwy endpoint z perspektywy kontenera aplikacji. Hasła są pobierane z SecretStore dopiero podczas uruchomienia.</p>
+        <p className="muted">Wybierz, czy DevBox ma utworzyć nową bazę dla aplikacji, czy aplikacja ma korzystać z już istniejącego hosta MySQL/MariaDB.</p>
       </div>
       <span className="status-chip" data-ok={binding?.status === 'ready' || binding?.status === 'configured' ? 'true' : 'false'}>
         {binding?.mode ? modeLabel(binding.mode) : 'Ładowanie'}
@@ -249,15 +272,10 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     <fieldset disabled={readOnly || busy !== ''} className="database-mode-selector">
       <legend>Tryb bazy danych</legend>
       <div className="database-mode-options">
-        {([
-          ['none', 'Brak'],
-          ['managed', 'Baza zarządzana przez DevBox'],
-          ['compose', 'Baza z Docker Compose projektu'],
-          ['external', 'Zewnętrzna baza danych'],
-        ] as Array<[DatabaseMode, string]>).map(([mode, label]) =>
+        {databaseModeOptions.map(({ mode, title, description }) =>
           <label className="database-mode-option" data-selected={draft.mode === mode ? 'true' : 'false'} key={mode}>
             <input type="radio" name={`database-mode-${projectId}`} checked={draft.mode === mode} onChange={() => setDraft({ ...emptyDraft, mode, application_service: draft.application_service })} />
-            <span>{label}</span>
+            <span className="database-mode-copy"><strong>{title}</strong><small>{description}</small></span>
           </label>
         )}
       </div>
@@ -272,10 +290,14 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       </label>}
 
       {modeFields.includes('engine') && draft.mode === 'managed' && <>
+        <div className="validation-box span-2">
+          <strong>DevBox utworzy bazę automatycznie.</strong>
+          <span>Powstanie nowa baza na wspólnym serwerze <code>devbox-mysql:3306</code>, osobny użytkownik oraz hasło zapisane w SecretStore. To jest najprostszy wariant np. dla nowej instalacji WordPress.</span>
+        </div>
         <label>Silnik<input readOnly value={binding?.engine || draft.engine || 'mysql'} /></label>
-        <label>Nazwa bazy<input readOnly value={binding?.database || '—'} /></label>
-        <label>Użytkownik<input readOnly value={binding?.username || '—'} /></label>
-        <label>Status<input readOnly value={binding?.status || '—'} /></label>
+        <label>Nazwa bazy<input readOnly value={binding?.database || 'zostanie utworzona automatycznie'} /></label>
+        <label>Użytkownik<input readOnly value={binding?.username || 'zostanie utworzony automatycznie'} /></label>
+        <label>Status<input readOnly value={binding?.status || 'jeszcze nie utworzono'} /></label>
         <label>Data utworzenia<input readOnly value={binding?.created_at ? new Date(binding.created_at).toLocaleString('pl-PL') : '—'} /></label>
       </>}
 
@@ -295,13 +317,20 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       </>}
 
       {modeFields.includes('host') && draft.mode === 'external' && <>
-        <label>Host<input disabled={readOnly || busy !== ''} value={draft.host ?? ''} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="mysql.example.internal" /></label>
+        <div className="validation-box span-2">
+          <strong>Użyj istniejącej bazy.</strong>
+          <span>DevBox nie utworzy bazy ani użytkownika. Aplikacja otrzyma dokładnie podany host, port, nazwę bazy i dane logowania.</span>
+        </div>
+        <label>Host MySQL/MariaDB<input disabled={readOnly || busy !== ''} value={draft.host ?? ''} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="np. devbox-mysql albo mysql.example.internal" /></label>
         <label>Port<input disabled={readOnly || busy !== ''} type="number" min={1} max={65535} value={draft.port ?? 3306} onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })} /></label>
-        <label>Nazwa bazy<input disabled={readOnly || busy !== ''} value={draft.database ?? ''} onChange={(event) => setDraft({ ...draft, database: event.target.value })} /></label>
-        <label>Użytkownik<input disabled={readOnly || busy !== ''} value={draft.username ?? ''} onChange={(event) => setDraft({ ...draft, username: event.target.value })} /></label>
+        <label>Nazwa istniejącej bazy<input disabled={readOnly || busy !== ''} value={draft.database ?? ''} onChange={(event) => setDraft({ ...draft, database: event.target.value })} placeholder="np. wordpress" /></label>
+        <label>Użytkownik bazy<input disabled={readOnly || busy !== ''} value={draft.username ?? ''} onChange={(event) => setDraft({ ...draft, username: event.target.value })} /></label>
         <label className="span-2">Hasło / Secret
-          <input disabled={readOnly || busy !== ''} type="password" autoComplete="new-password" value={draft.password ?? ''} onChange={(event) => setDraft({ ...draft, password: event.target.value })} placeholder={binding?.has_secret ? 'pozostaw puste, aby zachować obecny SecretStore secret' : 'wymagane'} />
+          <input disabled={readOnly || busy !== ''} type="password" autoComplete="new-password" value={draft.password ?? ''} onChange={(event) => setDraft({ ...draft, password: event.target.value })} placeholder={binding?.has_secret ? 'pozostaw puste, aby zachować obecny SecretStore secret' : 'hasło do istniejącej bazy'} />
         </label>
+        {!readOnly && <div className="actions span-2">
+          <button type="button" className="secondary" disabled={busy !== ''} onClick={() => setDraft({ ...draft, host: 'devbox-mysql', port: 3306 })}>Użyj wspólnego hosta DevBox: devbox-mysql:3306</button>
+        </div>}
       </>}
 
       {modeFields.includes('application_host') && <label>Host używany przez aplikację
@@ -317,7 +346,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
 
     {!readOnly && <div className="actions">
       {draft.mode === 'managed' && !managedExists
-        ? <button type="button" disabled={busy !== ''} onClick={() => void provisionManaged()}>{busy === 'provision' ? 'Tworzenie…' : 'Utwórz bazę dla projektu'}</button>
+        ? <button type="button" disabled={busy !== ''} onClick={() => void provisionManaged()}>{busy === 'provision' ? 'Tworzenie bazy…' : 'Utwórz bazę i połącz z aplikacją'}</button>
         : <button type="button" disabled={busy !== ''} onClick={() => void saveBinding()}>{busy === 'save' ? 'Zapisywanie…' : 'Zapisz konfigurację bazy'}</button>}
       {binding?.mode !== 'none' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void testConnection()}>{busy === 'test' ? 'Testowanie…' : 'Testuj połączenie'}</button>}
       {binding?.mode === 'managed' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void openPHPMyAdmin()}>Otwórz phpMyAdmin</button>}
