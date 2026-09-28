@@ -3,6 +3,7 @@ package docker
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -43,5 +44,25 @@ func TestDiscoverComposeProjectsAcceptsSupportedFileNames(t *testing.T) {
 func TestSafeChildRejectsTraversal(t *testing.T) {
 	if _, err := safeChild(t.TempDir(), "../outside"); err == nil {
 		t.Fatal("expected traversal to be rejected")
+	}
+}
+
+func TestComposeArgsAvoidUnsupportedProjectDirectoryFlag(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "compose.yaml")
+	if err := os.WriteFile(config, []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	args, err := composeArgs(dir, "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(args, "--project-directory") {
+		t.Fatalf("compose args must not contain --project-directory: %v", args)
+	}
+	want := []string{"compose", "--project-name", "sample", "--file", config}
+	if !slices.Equal(args, want) {
+		t.Fatalf("unexpected compose args: got %v want %v", args, want)
 	}
 }

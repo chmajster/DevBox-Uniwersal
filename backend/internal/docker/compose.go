@@ -207,12 +207,12 @@ func composeArgs(directory, projectName string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	dirAbs, err := filepath.Abs(directory)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid compose directory", ErrInvalidInput)
-	}
-	if err := validateValue(dirAbs, "compose directory"); err != nil {
+	if err := validateValue(configFile, "compose file"); err != nil {
 		return nil, err
 	}
+	// Do not pass --project-directory here. Older Docker Compose plugins reject
+	// that option at the top-level docker command. Because --file receives an
+	// absolute path, Compose already resolves the project directory from the
+	// directory containing the first Compose file.
 	return []string{"compose", "--project-name", projectName, "--file", configFile}, nil
 }
