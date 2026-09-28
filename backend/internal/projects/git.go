@@ -65,7 +65,7 @@ func (g *GitClient) Checkout(ctx context.Context, workDir, reference string) err
 	if _, err := g.run(ctx, workDir, nil, "switch", reference); err == nil {
 		return nil
 	}
-	_, err := g.run(ctx, workDir, nil, "switch", "--track", "-c", reference, "origin/"+reference)
+	_, err = g.run(ctx, workDir, nil, "switch", "--track", "-c", reference, "origin/"+reference)
 	return err
 }
 
