@@ -41,7 +41,7 @@ func TestDeploymentFailurePersistsProviderUnavailable(t *testing.T) {
 	}
 	repo := NewRepository(db)
 	now := time.Now().UTC()
-	project := Project{ID: NewID(), Name: "failure-test", Slug: "failure-test", Status: "ready", SourceType: SourceLocal, LocalPath: t.TempDir(), Runtime: "missing-runtime", DeploymentMode: "native", CreatedAt: now, UpdatedAt: now}
+	project := Project{ID: NewID(), Name: "failure-test", Slug: "failure-test", Status: "ready", SourceType: SourceLocal, LocalPath: t.TempDir(), Runtime: "static", ContainerPolicy: ContainerPolicyAuto, DeploymentMode: "docker", CreatedAt: now, UpdatedAt: now}
 	if err := repo.Create(context.Background(), project, ""); err != nil {
 		t.Fatal(err)
 	}
