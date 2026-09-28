@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Managed runtime containers
+
+- Removed native host runtime deployment for applications. PHP, Node.js, Python, Go and static projects now execute through Docker.
+- Added automatic managed image generation when an application does not provide its own Compose file or Dockerfile; project-owned container definitions take precedence.
+- Added per-application runtime version, container policy and allowlisted runtime module configuration with dedicated API and UI.
+- Added selectable PHP extensions and controlled build dependencies for Node.js, Python and Go without installing project runtimes or modules globally on the host.
+- Added migration 007 for runtime versions, container policy, project module selections and persisted managed image/container fingerprints.
+- Added deterministic image fingerprints and explicit rebuild support so unchanged images can be reused.
+- Added sanitized managed build contexts that exclude .env files, VCS metadata, dependency trees and common local caches.
+- Added atomic managed-container replacement with health verification and rollback to the previous container on failure.
+- Project runtime validation no longer requires PHP-FPM, Go, Node.js or Python executables on the host.
+- Added a dedicated Runtime containers CI workflow covering managed-container backend and frontend quality gates.
+
+
 ### Selected control-room UI
 
 - Implemented the selected compact dark DevOps dashboard: circular CPU/RAM/disk gauges, service status, application/job tables, terminal-style log preview and utilization chart.

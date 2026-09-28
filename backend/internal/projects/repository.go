@@ -29,8 +29,8 @@ func (r *Repository) Create(ctx context.Context, p Project, credentialName strin
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO projects(id,name,slug,description,status,work_dir,created_by,created_at,updated_at,source_type,local_path,runtime,deployment_mode,working_directory,build_command,start_command,healthcheck,auto_start,current_commit) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		p.ID, p.Name, p.Slug, nullable(p.Description), p.Status, p.LocalPath, p.CreatedBy, p.CreatedAt.UTC().Format(time.RFC3339Nano), p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.SourceType, nullable(p.LocalPath), p.Runtime, p.DeploymentMode, p.WorkingDirectory, p.BuildCommand, p.StartCommand, p.Healthcheck, boolInt(p.AutoStart), nullable(p.CurrentCommit))
+	_, err = tx.ExecContext(ctx, `INSERT INTO projects(id,name,slug,description,status,work_dir,created_by,created_at,updated_at,source_type,local_path,runtime,runtime_version,container_policy,deployment_mode,working_directory,build_command,start_command,healthcheck,auto_start,current_commit) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		p.ID, p.Name, p.Slug, nullable(p.Description), p.Status, p.LocalPath, p.CreatedBy, p.CreatedAt.UTC().Format(time.RFC3339Nano), p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.SourceType, nullable(p.LocalPath), p.Runtime, p.RuntimeVersion, p.ContainerPolicy, "docker", p.WorkingDirectory, p.BuildCommand, p.StartCommand, p.Healthcheck, boolInt(p.AutoStart), nullable(p.CurrentCommit))
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
 	}
@@ -112,8 +112,8 @@ func (r *Repository) Update(ctx context.Context, p Project, credentialName strin
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `UPDATE projects SET name=?,slug=?,description=?,status=?,work_dir=?,local_path=?,runtime=?,deployment_mode=?,working_directory=?,build_command=?,start_command=?,healthcheck=?,auto_start=?,current_commit=?,updated_at=? WHERE id=?`,
-		p.Name, p.Slug, nullable(p.Description), p.Status, p.LocalPath, nullable(p.LocalPath), p.Runtime, p.DeploymentMode, p.WorkingDirectory, p.BuildCommand, p.StartCommand, p.Healthcheck, boolInt(p.AutoStart), nullable(p.CurrentCommit), p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.ID)
+	_, err = tx.ExecContext(ctx, `UPDATE projects SET name=?,slug=?,description=?,status=?,work_dir=?,local_path=?,runtime=?,runtime_version=?,container_policy=?,working_directory=?,build_command=?,start_command=?,healthcheck=?,auto_start=?,current_commit=?,updated_at=? WHERE id=?`,
+		p.Name, p.Slug, nullable(p.Description), p.Status, p.LocalPath, nullable(p.LocalPath), p.Runtime, p.RuntimeVersion, p.ContainerPolicy, p.WorkingDirectory, p.BuildCommand, p.StartCommand, p.Healthcheck, boolInt(p.AutoStart), nullable(p.CurrentCommit), p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.ID)
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
 	}
@@ -168,6 +168,98 @@ func (r *Repository) UpdateStatus(ctx context.Context, id, status string) error 
 func (r *Repository) UpdateRuntime(ctx context.Context, id, runtime string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE projects SET runtime=?,updated_at=? WHERE id=?`, runtime, time.Now().UTC().Format(time.RFC3339Nano), id)
 	return err
+}
+
+func (r *Repository) RuntimeContainerConfig(ctx context.Context, projectID string) (RuntimeContainerConfig, error) {
+	p, err := r.Get(ctx, projectID)
+	if err != nil {
+		return RuntimeContainerConfig{}, err
+	}
+	config := RuntimeContainerConfig{
+		ProjectID:       projectID,
+		Runtime:         p.Runtime,
+		RuntimeVersion:  p.RuntimeVersion,
+		ContainerPolicy: p.ContainerPolicy,
+		Modules:         []RuntimeModule{},
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT module_name,version_constraint FROM project_runtime_modules WHERE project_id=? AND enabled=1 ORDER BY module_name`, projectID)
+	if err != nil {
+		return RuntimeContainerConfig{}, fmt.Errorf("load runtime modules: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var module RuntimeModule
+		if err := rows.Scan(&module.Name, &module.Version); err != nil {
+			return RuntimeContainerConfig{}, err
+		}
+		config.Modules = append(config.Modules, module)
+	}
+	if err := rows.Err(); err != nil {
+		return RuntimeContainerConfig{}, err
+	}
+	var state RuntimeContainerState
+	err = r.db.QueryRowContext(ctx, `SELECT container_name,image_tag,build_fingerprint FROM project_runtime_state WHERE project_id=?`, projectID).
+		Scan(&state.ContainerName, &state.ImageTag, &state.Fingerprint)
+	if err == nil {
+		config.ContainerName = state.ContainerName
+		config.ImageTag = state.ImageTag
+		config.Fingerprint = state.Fingerprint
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return RuntimeContainerConfig{}, fmt.Errorf("load runtime state: %w", err)
+	}
+	return config, nil
+}
+
+func (r *Repository) SaveRuntimeContainerConfig(ctx context.Context, projectID string, config RuntimeContainerConfig) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	result, err := tx.ExecContext(ctx, `UPDATE projects SET runtime=?,runtime_version=?,container_policy=?,updated_at=? WHERE id=?`,
+		config.Runtime, config.RuntimeVersion, config.ContainerPolicy, now, projectID)
+	if err != nil {
+		return fmt.Errorf("update runtime container config: %w", err)
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM project_runtime_modules WHERE project_id=?`, projectID); err != nil {
+		return fmt.Errorf("replace runtime modules: %w", err)
+	}
+	for _, module := range config.Modules {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO project_runtime_modules(project_id,runtime,module_name,version_constraint,enabled,created_at,updated_at) VALUES(?,?,?,?,1,?,?)`,
+			projectID, config.Runtime, module.Name, module.Version, now, now); err != nil {
+			return fmt.Errorf("store runtime module %s: %w", module.Name, err)
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) RuntimeContainerState(ctx context.Context, projectID string) (RuntimeContainerState, error) {
+	var state RuntimeContainerState
+	err := r.db.QueryRowContext(ctx, `SELECT container_name,image_tag,build_fingerprint FROM project_runtime_state WHERE project_id=?`, projectID).
+		Scan(&state.ContainerName, &state.ImageTag, &state.Fingerprint)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RuntimeContainerState{}, nil
+	}
+	if err != nil {
+		return RuntimeContainerState{}, fmt.Errorf("load runtime state: %w", err)
+	}
+	return state, nil
+}
+
+func (r *Repository) SaveRuntimeContainerState(ctx context.Context, projectID string, state RuntimeContainerState) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := r.db.ExecContext(ctx, `INSERT INTO project_runtime_state(project_id,container_name,image_tag,build_fingerprint,updated_at)
+		VALUES(?,?,?,?,?)
+		ON CONFLICT(project_id) DO UPDATE SET container_name=excluded.container_name,image_tag=excluded.image_tag,build_fingerprint=excluded.build_fingerprint,updated_at=excluded.updated_at`,
+		projectID, state.ContainerName, state.ImageTag, state.Fingerprint, now)
+	if err != nil {
+		return fmt.Errorf("store runtime state: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) CentralCredentialKind(ctx context.Context, id string) (string, error) {
@@ -241,7 +333,7 @@ func (r *Repository) ListDeployments(ctx context.Context, projectID string) ([]D
 	return out, rows.Err()
 }
 
-const projectSelect = `SELECT p.id,p.name,p.slug,COALESCE(p.description,''),p.status,p.source_type,COALESCE(s.repository_url,''),COALESCE(s.reference,''),COALESCE(p.local_path,''),p.runtime,p.deployment_mode,p.working_directory,p.build_command,p.start_command,p.healthcheck,p.auto_start,COALESCE(s.credential_kind,''),COALESCE(s.credential_secret_id,''),COALESCE(p.current_commit,''),p.created_by,p.created_at,p.updated_at,p.archived_at,(SELECT port FROM ports WHERE project_id=p.id AND released_at IS NULL ORDER BY created_at DESC LIMIT 1),(SELECT hostname FROM domains WHERE project_id=p.id ORDER BY created_at DESC LIMIT 1) FROM projects p LEFT JOIN project_sources s ON s.project_id=p.id`
+const projectSelect = `SELECT p.id,p.name,p.slug,COALESCE(p.description,''),p.status,p.source_type,COALESCE(s.repository_url,''),COALESCE(s.reference,''),COALESCE(p.local_path,''),p.runtime,p.runtime_version,p.container_policy,p.working_directory,p.build_command,p.start_command,p.healthcheck,p.auto_start,COALESCE(s.credential_kind,''),COALESCE(s.credential_secret_id,''),COALESCE(p.current_commit,''),p.created_by,p.created_at,p.updated_at,p.archived_at,(SELECT port FROM ports WHERE project_id=p.id AND released_at IS NULL ORDER BY created_at DESC LIMIT 1),(SELECT hostname FROM domains WHERE project_id=p.id ORDER BY created_at DESC LIMIT 1) FROM projects p LEFT JOIN project_sources s ON s.project_id=p.id`
 
 type scanFunc func(dest ...any) error
 
@@ -251,7 +343,7 @@ func scanProject(scan scanFunc) (Project, error) {
 	var createdBy, archived, domain sql.NullString
 	var port sql.NullInt64
 	var created, updated string
-	if err := scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &p.SourceType, &p.RepositoryURL, &p.Branch, &p.LocalPath, &p.Runtime, &p.DeploymentMode, &p.WorkingDirectory, &p.BuildCommand, &p.StartCommand, &p.Healthcheck, &auto, &p.CredentialKind, &p.CredentialID, &p.CurrentCommit, &createdBy, &created, &updated, &archived, &port, &domain); err != nil {
+	if err := scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &p.SourceType, &p.RepositoryURL, &p.Branch, &p.LocalPath, &p.Runtime, &p.RuntimeVersion, &p.ContainerPolicy, &p.WorkingDirectory, &p.BuildCommand, &p.StartCommand, &p.Healthcheck, &auto, &p.CredentialKind, &p.CredentialID, &p.CurrentCommit, &createdBy, &created, &updated, &archived, &port, &domain); err != nil {
 		return Project{}, err
 	}
 	p.AutoStart = auto != 0

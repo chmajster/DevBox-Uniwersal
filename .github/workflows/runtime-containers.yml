@@ -1,0 +1,53 @@
+name: Runtime containers
+on:
+  push:
+    branches: [agent/43-managed-runtime-containers]
+  pull_request:
+    paths:
+      - 'backend/internal/containerspec/**'
+      - 'backend/internal/managedapps/**'
+      - 'backend/internal/docker/runtime_*'
+      - 'backend/internal/projects/**'
+      - 'frontend/src/runtime/**'
+      - '.github/workflows/runtime-containers.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exact source snapshot
+        run: git archive --format=tar.gz HEAD > "$RUNNER_TEMP/source.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-container-source
+          path: ${{ runner.temp }}/source.tar.gz
+          retention-days: 1
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Locked test dependencies
+        run: |
+          (cd backend && go mod vendor)
+          (cd frontend && npm ci)
+          tar -czf "$RUNNER_TEMP/dependencies.tar.gz" backend/vendor frontend/node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-container-test-dependencies
+          path: ${{ runner.temp }}/dependencies.tar.gz
+          retention-days: 1
+      - name: Backend tests
+        working-directory: backend
+        run: go test ./... && go vet ./... && go build ./cmd/...
+      - name: Frontend checks
+        working-directory: frontend
+        run: npm run lint && npm run typecheck && npm test && npm run build

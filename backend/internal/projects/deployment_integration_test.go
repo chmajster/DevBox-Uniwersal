@@ -9,32 +9,35 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/containerspec"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
 )
 
-func TestDeploymentIntegrationNativeAllocatesPortDetectsRuntimeAndRoutes(t *testing.T) {
+func TestDeploymentIntegrationManagedAllocatesPortDetectsRuntimeBuildsAndRoutes(t *testing.T) {
 	repo, project, deploymentID := integrationProject(t, Project{
-		Runtime:        "",
-		DeploymentMode: "native",
+		Runtime:         "",
+		ContainerPolicy: ContainerPolicyAuto,
 	})
 
-	runtimeProvider := &integrationRuntime{name: "integration", healthy: true, state: "stopped"}
+	runtimeProvider := &integrationRuntime{name: "static", healthy: true, state: "stopped"}
 	registry := runtimes.NewRegistry()
 	if err := registry.Register(runtimeProvider); err != nil {
 		t.Fatal(err)
 	}
 	ports := &integrationPorts{port: 18123}
 	routes := &integrationRoutes{}
+	managed := &integrationManaged{}
 	handler := NewDeploymentHandler(repo, NewGitClient(nil), registry, &testJobLogger{}, DeploymentIntegrations{
-		Ports:  ports,
-		Routes: routes,
+		Ports:   ports,
+		Routes:  routes,
+		Managed: managed,
 	})
 
 	_, err := handler.Run(context.Background(), domain.Job{
-		ID: "integration-native",
+		ID: "integration-managed",
 		Payload: map[string]any{
 			"project_id":    project.ID,
 			"deployment_id": deploymentID,
@@ -43,11 +46,11 @@ func TestDeploymentIntegrationNativeAllocatesPortDetectsRuntimeAndRoutes(t *test
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if !runtimeProvider.started {
-		t.Fatal("runtime was not started")
+	if !managed.built || !managed.replaced {
+		t.Fatalf("managed container pipeline incomplete: %+v", managed)
 	}
-	if got := runtimeProvider.lastProject.Config["port"]; got != 18123 {
-		t.Fatalf("runtime port = %#v, want 18123", got)
+	if managed.spec.Runtime != "static" || managed.spec.HostPort != 18123 {
+		t.Fatalf("unexpected managed spec: %+v", managed.spec)
 	}
 	if routes.calls != 1 || routes.port != 18123 || routes.hostname != project.Slug+".localhost" {
 		t.Fatalf("unexpected route reconciliation: %+v", routes)
@@ -57,50 +60,51 @@ func TestDeploymentIntegrationNativeAllocatesPortDetectsRuntimeAndRoutes(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if refreshed.Runtime != "integration" {
-		t.Fatalf("runtime = %q, want integration", refreshed.Runtime)
+	if refreshed.Runtime != "static" {
+		t.Fatalf("runtime = %q, want static", refreshed.Runtime)
 	}
 	if refreshed.Status != "running" {
 		t.Fatalf("status = %q, want running", refreshed.Status)
 	}
-}
-
-func TestDeploymentIntegrationHealthFailureRollsBackNewRuntimeAndPort(t *testing.T) {
-	repo, project, deploymentID := integrationProject(t, Project{
-		Runtime:        "integration",
-		DeploymentMode: "native",
-	})
-
-	runtimeProvider := &integrationRuntime{name: "integration", healthy: false, state: "stopped"}
-	registry := runtimes.NewRegistry()
-	if err := registry.Register(runtimeProvider); err != nil {
+	state, err := repo.RuntimeContainerState(context.Background(), project.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
+	if state.Fingerprint == "" || state.ImageTag == "" || state.ContainerName == "" {
+		t.Fatalf("managed container state was not persisted: %+v", state)
+	}
+}
+
+func TestDeploymentIntegrationManagedFailureReleasesPortAndPersistsFailure(t *testing.T) {
+	repo, project, deploymentID := integrationProject(t, Project{
+		Runtime:         "static",
+		ContainerPolicy: ContainerPolicyAuto,
+	})
+
 	ports := &integrationPorts{port: 18124}
 	routes := &integrationRoutes{}
-	handler := NewDeploymentHandler(repo, NewGitClient(nil), registry, &testJobLogger{}, DeploymentIntegrations{
-		Ports:  ports,
-		Routes: routes,
+	managed := &integrationManaged{replaceErr: context.DeadlineExceeded}
+	handler := NewDeploymentHandler(repo, NewGitClient(nil), runtimes.NewRegistry(), &testJobLogger{}, DeploymentIntegrations{
+		Ports:   ports,
+		Routes:  routes,
+		Managed: managed,
 	})
 
 	_, err := handler.Run(context.Background(), domain.Job{
-		ID: "integration-health-failure",
+		ID: "integration-managed-failure",
 		Payload: map[string]any{
 			"project_id":    project.ID,
 			"deployment_id": deploymentID,
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "healthcheck failed") {
-		t.Fatalf("expected healthcheck failure, got %v", err)
-	}
-	if !runtimeProvider.stopped {
-		t.Fatal("newly started runtime was not stopped after failure")
+	if err == nil || !strings.Contains(err.Error(), "replace managed container") {
+		t.Fatalf("expected managed container replacement failure, got %v", err)
 	}
 	if ports.released != 18124 {
 		t.Fatalf("released port = %d, want 18124", ports.released)
 	}
 	if routes.calls != 0 {
-		t.Fatalf("route was activated despite unhealthy runtime: %+v", routes)
+		t.Fatalf("route was activated despite failed replacement: %+v", routes)
 	}
 
 	deployments, err := repo.ListDeployments(context.Background(), project.ID)
@@ -114,9 +118,12 @@ func TestDeploymentIntegrationHealthFailureRollsBackNewRuntimeAndPort(t *testing
 
 func TestDeploymentIntegrationDockerComposeHealthThenRoute(t *testing.T) {
 	repo, project, deploymentID := integrationProject(t, Project{
-		DeploymentMode: "docker",
-		Healthcheck:    "http://127.0.0.1:19090/health",
+		ContainerPolicy: ContainerPolicyAuto,
+		Healthcheck:     "http://127.0.0.1:19090/health",
 	})
+	if err := os.WriteFile(filepath.Join(project.LocalPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	compose := &integrationCompose{}
 	routes := &integrationRoutes{}
 	handler := NewDeploymentHandler(repo, NewGitClient(nil), runtimes.NewRegistry(), &testJobLogger{}, DeploymentIntegrations{
@@ -159,21 +166,22 @@ func integrationProject(t *testing.T, overrides Project) (*Repository, Project, 
 	}
 	now := time.Now().UTC()
 	project := Project{
-		ID:             NewID(),
-		Name:           "Integration App",
-		Slug:           "integration-app",
-		Status:         "ready",
-		SourceType:     SourceLocal,
-		LocalPath:      workDir,
-		Runtime:        overrides.Runtime,
-		DeploymentMode: overrides.DeploymentMode,
-		Healthcheck:    overrides.Healthcheck,
-		AutoStart:      overrides.AutoStart,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:              NewID(),
+		Name:            "Integration App",
+		Slug:            "integration-app",
+		Status:          "ready",
+		SourceType:      SourceLocal,
+		LocalPath:       workDir,
+		Runtime:         overrides.Runtime,
+		RuntimeVersion:  overrides.RuntimeVersion,
+		ContainerPolicy: overrides.ContainerPolicy,
+		Healthcheck:     overrides.Healthcheck,
+		AutoStart:       overrides.AutoStart,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
-	if project.DeploymentMode == "" {
-		project.DeploymentMode = "native"
+	if project.ContainerPolicy == "" {
+		project.ContainerPolicy = ContainerPolicyAuto
 	}
 	repo := NewRepository(db)
 	if err := repo.Create(context.Background(), project, ""); err != nil {
@@ -288,6 +296,32 @@ func (r *integrationRoutes) EnsureProjectRoute(_ context.Context, projectID, hos
 	r.hostname = hostname
 	r.port = targetPort
 	return r.returnError
+}
+
+type integrationManaged struct {
+	built       bool
+	replaced    bool
+	imageExists bool
+	replaceErr  error
+	spec        containerspec.DeploymentSpec
+}
+
+func (m *integrationManaged) Available(context.Context) error { return nil }
+
+func (m *integrationManaged) ManagedImageExists(context.Context, string) (bool, error) {
+	return m.imageExists, nil
+}
+
+func (m *integrationManaged) BuildManaged(_ context.Context, spec containerspec.DeploymentSpec) error {
+	m.built = true
+	m.spec = spec
+	return nil
+}
+
+func (m *integrationManaged) ReplaceManaged(_ context.Context, spec containerspec.DeploymentSpec) error {
+	m.replaced = true
+	m.spec = spec
+	return m.replaceErr
 }
 
 type integrationCompose struct {

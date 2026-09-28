@@ -2,8 +2,6 @@ export type Role = 'admin' | 'operator' | 'viewer'
 
 export type OperationalStatus = 'RUNNING' | 'STOPPED' | 'FAILED' | 'BUILDING' | 'DEPLOYING' | 'UNHEALTHY'
 export type ProjectSourceType = 'git' | 'local' | 'empty'
-export type DeploymentMode = 'native' | 'docker' | 'Docker' | 'DockerCompose'
-
 export interface CentralCredential {
   id: string
   name: string
@@ -129,6 +127,29 @@ export interface ProjectRuntimeInfo {
   start_command?: string
   environment?: Record<string, string>
   configured_runtime?: string
+}
+
+export interface RuntimeModule {
+  name: string
+  version?: string
+}
+
+export interface RuntimeModuleOption {
+  name: string
+  label: string
+  description: string
+  versioned: boolean
+}
+
+export interface RuntimeContainerConfig {
+  project_id: string
+  runtime: string
+  runtime_version: string
+  container_policy: 'auto' | 'custom'
+  modules: RuntimeModule[]
+  container_name?: string
+  image_tag?: string
+  build_fingerprint?: string
 }
 
 export interface RuntimeValidation {
@@ -354,7 +375,8 @@ export interface Project {
   branch?: string
   local_path: string
   runtime: string
-  deployment_mode: DeploymentMode
+  runtime_version: string
+  container_policy: 'auto' | 'custom'
   working_directory: string
   build_command: string
   start_command: string

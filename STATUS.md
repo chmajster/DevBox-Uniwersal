@@ -22,27 +22,33 @@ DevBox Universal is an integrated local development control plane.
 - Redesigned login, persistent dark/light theme and shared module forms, tables, statuses and logs.
 - Native accessible dialogs, keyboard navigation, visible focus, reduced-motion support and graceful handling of disabled browser storage.
 - Frontend unit tests and a Chromium smoke workflow with synthetic API fixtures and screenshot artifacts. This is not full provider/infrastructure E2E coverage.
-- Existing API contracts, RBAC, CSRF and backend behavior are unchanged; no migrations or new frontend runtime dependencies.
+- Runtime/deployment API and persistence now use the managed-container model; migration 007 adds per-project runtime versions, container policy, module selections and managed image state.
 
 ## Projects / Git / deployments
 
 - Git, local-directory and empty-project onboarding.
 - Project CRUD/archive, Git fetch/pull/checkout/history and credential masking.
 - Operator-only local-directory browser constrained to configured roots, with canonical symlink handling, traversal limits and audit events.
-- Deployment state machine using the shared runtime registry.
+- Deployment state machine uses Docker as the mandatory application execution boundary; project Compose/Dockerfile definitions take precedence, otherwise DevBox builds a managed runtime image.
 - Project-level application health configuration.
 
 ## Runtimes
 
-- Static, PHP, Python, Go and Node.js providers.
-- Laravel, Symfony, Django, FastAPI, Flask, Vite and generic project detection.
-- Python per-project virtual environments, controlled Go build output and lockfile-aware Node package-manager selection.
-- Runtime validation, lifecycle control, logs and health checks.
+- Static, PHP, Python, Go and Node.js project detection remains available without requiring those runtimes on the host.
+- Application runtimes execute in Docker; native host execution is no longer a supported deployment mode.
+- Per-project runtime version and allowlisted image modules are persisted and editable from the application configuration.
+- PHP managed images support selectable extensions including PDO MySQL, MySQLi, mbstring, intl, GD, cURL, ZIP, BCMath, OPcache, XML, SOAP, sockets, PCNTL and EXIF.
+- Node.js, Python and Go managed images support controlled build dependencies while application dependencies continue to come from package-lock/pnpm/yarn, requirements/pyproject and go.mod.
+- Generated images are keyed by deterministic build fingerprints; unchanged images are reused and explicit rebuilds are supported.
+- Dedicated `Runtime containers` GitHub Actions workflow verifies backend tests/vet/build and frontend lint/typecheck/tests/build for managed-container changes.
 
 ## Docker
 
 - Docker Engine inventory and container lifecycle.
 - Images, volumes, networks and Docker Compose project management.
+- Managed application image generation for projects without Compose/Dockerfile.
+- Atomic managed-container replacement with rollback, no-new-privileges and reduced capabilities.
+- Managed build contexts exclude secret environment files and common local dependency/cache directories.
 - RBAC/audit protection for mutations.
 - Docker output available in central operations logs.
 
@@ -78,5 +84,4 @@ DevBox Universal is an integrated local development control plane.
 - Secret-key rotation/versioning.
 - Signed release artifacts and rollback-capable updater.
 - Full browser E2E coverage.
-- Runtime version installation/isolation.
 - Automatic local HTTPS.

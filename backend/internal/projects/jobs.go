@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/containerspec"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
 	jobpkg "github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
@@ -119,10 +120,18 @@ type ComposeDeployer interface {
 	ComposeHealthy(ctx context.Context, directory, projectName string) error
 }
 
+type ManagedContainerDeployer interface {
+	Available(ctx context.Context) error
+	ManagedImageExists(ctx context.Context, image string) (bool, error)
+	BuildManaged(ctx context.Context, spec containerspec.DeploymentSpec) error
+	ReplaceManaged(ctx context.Context, spec containerspec.DeploymentSpec) error
+}
+
 type DeploymentIntegrations struct {
 	Ports   providers.PortAllocator
 	Routes  ProjectRouteManager
 	Compose ComposeDeployer
+	Managed ManagedContainerDeployer
 }
 
 type DeploymentHandler struct {
@@ -157,6 +166,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		return nil, err
 	}
 	reconcile := payloadBool(job.Payload, "reconcile")
+	forceRebuild := payloadBool(job.Payload, "force_rebuild")
 
 	started := time.Now().UTC()
 	commitBefore := p.CurrentCommit
@@ -173,20 +183,14 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	currentStage := DeploymentPreparing
 	commitAfter := commitBefore
 	var (
-		allocatedPort     int
-		startedRuntime    runtimes.Runtime
-		startedRuntimeCtx runtimes.ProjectContext
-		startedNew        bool
-		composeStarted    bool
-		composeDir        string
-		composeName       string
+		allocatedPort  int
+		composeStarted bool
+		composeDir     string
+		composeName    string
 	)
 	defer func() {
 		if runErr == nil {
 			return
-		}
-		if startedNew && startedRuntime != nil {
-			_ = startedRuntime.Stop(context.Background(), startedRuntimeCtx)
 		}
 		if composeStarted && h.integrations.Compose != nil {
 			_ = h.integrations.Compose.ComposeDown(context.Background(), composeDir, composeName)
@@ -240,8 +244,21 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 	}
 
-	mode := strings.ToLower(strings.TrimSpace(p.DeploymentMode))
-	if mode == "docker" || mode == "docker-compose" || mode == "dockercompose" || mode == "compose" {
+	config, err := h.repo.RuntimeContainerConfig(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	if config.ContainerPolicy == "" {
+		config.ContainerPolicy = ContainerPolicyAuto
+	}
+	hasCompose := projectHasCompose(workDir)
+	hasDockerfile := projectHasDockerfile(workDir)
+	if config.ContainerPolicy == ContainerPolicyCustom && !hasCompose && !hasDockerfile {
+		return nil, errors.New("custom container policy requires compose.yaml/docker-compose.yml or Dockerfile")
+	}
+
+	// Project-owned Compose takes precedence. There is no host-runtime fallback.
+	if hasCompose {
 		if h.integrations.Compose == nil {
 			return nil, errors.New("provider unavailable: docker compose")
 		}
@@ -256,7 +273,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		if err := setStage(DeploymentDependencies); err != nil {
 			return nil, err
 		}
-		if !reconcile {
+		if !reconcile || forceRebuild {
 			if err := h.integrations.Compose.ComposePull(ctx, composeDir, composeName, ""); err != nil {
 				return nil, fmt.Errorf("docker compose pull: %w", err)
 			}
@@ -264,7 +281,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		if err := setStage(DeploymentBuilding); err != nil {
 			return nil, err
 		}
-		if !reconcile {
+		if !reconcile || forceRebuild {
 			if err := h.integrations.Compose.ComposeBuild(ctx, composeDir, composeName, ""); err != nil {
 				return nil, fmt.Errorf("docker compose build: %w", err)
 			}
@@ -291,7 +308,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 		if h.integrations.Routes != nil {
 			if targetPort == 0 {
-				return nil, errors.New("docker compose healthcheck passed but no target port is configured for reverse proxy")
+				return nil, errors.New("compose deployment is healthy but no host target port is configured for reverse proxy")
 			}
 			if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), targetPort); err != nil {
 				return nil, fmt.Errorf("reverse proxy: %w", err)
@@ -300,20 +317,11 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		return h.finishSuccess(ctx, deploymentID, p.ID, commitBefore, commitAfter, started, setStage)
 	}
 
-	runtimeName := strings.TrimSpace(p.Runtime)
-	if runtimeName == "" {
-		runtimeName, err = h.detectRuntime(ctx, p, workDir)
-		if err != nil {
-			return nil, err
-		}
-		p.Runtime = runtimeName
-		if err := h.repo.UpdateRuntime(ctx, p.ID, runtimeName); err != nil {
-			return nil, err
-		}
+	if h.integrations.Managed == nil {
+		return nil, errors.New("provider unavailable: managed docker runtime")
 	}
-	runtimeProvider, ok := h.runtimes.Get(runtimeName)
-	if !ok {
-		return nil, fmt.Errorf("provider unavailable: runtime %s", runtimeName)
+	if err := h.integrations.Managed.Available(ctx); err != nil {
+		return nil, fmt.Errorf("provider unavailable: docker: %w", err)
 	}
 
 	port := 0
@@ -331,58 +339,78 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		allocatedPort = port
 	}
 
-	runtimeCtx := runtimeContext(p, workDir, port)
-	validation, err := runtimeProvider.Validate(ctx, runtimeCtx)
+	var spec containerspec.DeploymentSpec
+	if hasDockerfile {
+		spec, err = containerspec.GenerateCustomDockerfile(p.ID, workDir, port)
+		if err != nil {
+			return nil, fmt.Errorf("custom Dockerfile: %w", err)
+		}
+	} else {
+		runtimeName := strings.TrimSpace(config.Runtime)
+		if runtimeName == "" {
+			runtimeName = strings.TrimSpace(p.Runtime)
+		}
+		if runtimeName == "" {
+			runtimeName, err = h.detectRuntime(ctx, p, workDir)
+			if err != nil {
+				return nil, err
+			}
+			if err := h.repo.UpdateRuntime(ctx, p.ID, runtimeName); err != nil {
+				return nil, err
+			}
+		}
+		modules := make([]containerspec.Module, 0, len(config.Modules))
+		for _, module := range config.Modules {
+			modules = append(modules, containerspec.Module{Name: module.Name, Version: module.Version})
+		}
+		spec, err = containerspec.GenerateManaged(p.ID, workDir, runtimeName, config.RuntimeVersion, modules, commitAfter, port)
+		if err != nil {
+			return nil, fmt.Errorf("managed runtime specification: %w", err)
+		}
+	}
+
+	state, err := h.repo.RuntimeContainerState(ctx, p.ID)
 	if err != nil {
-		return nil, fmt.Errorf("runtime validation: %w", err)
+		return nil, err
 	}
-	if !validation.Valid {
-		return nil, fmt.Errorf("runtime validation failed: %v", validation.Errors)
+	imageExists, err := h.integrations.Managed.ManagedImageExists(ctx, spec.Image)
+	if err != nil {
+		return nil, fmt.Errorf("inspect managed image: %w", err)
 	}
+	needsBuild := forceRebuild || state.Fingerprint != spec.Fingerprint || state.ImageTag != spec.Image || !imageExists
 
 	if err := setStage(DeploymentDependencies); err != nil {
 		return nil, err
 	}
-	if !reconcile {
-		if err := runtimeProvider.InstallDependencies(ctx, runtimeCtx); err != nil {
-			return nil, fmt.Errorf("install dependencies: %w", err)
-		}
-	}
 	if err := setStage(DeploymentBuilding); err != nil {
 		return nil, err
 	}
-	if !reconcile {
-		if err := runtimeProvider.Build(ctx, runtimeCtx); err != nil {
-			return nil, fmt.Errorf("build: %w", err)
+	if needsBuild {
+		_ = h.logger.Log(ctx, job.ID, "info", "runtime.container.build", map[string]any{
+			"runtime": spec.Runtime, "version": spec.Version, "image": spec.Image, "fingerprint": spec.Fingerprint,
+		})
+		if err := h.integrations.Managed.BuildManaged(ctx, spec); err != nil {
+			return nil, err
 		}
+	} else {
+		_ = h.logger.Log(ctx, job.ID, "info", "runtime.container.build.skipped", map[string]any{"image": spec.Image, "fingerprint": spec.Fingerprint})
 	}
+
 	if err := setStage(DeploymentStarting); err != nil {
 		return nil, err
 	}
-
-	status, statusErr := runtimeProvider.Status(ctx, runtimeCtx)
-	if statusErr == nil && status.State == "running" {
-		if err := runtimeProvider.Restart(ctx, runtimeCtx); err != nil {
-			return nil, fmt.Errorf("restart: %w", err)
-		}
-	} else {
-		if err := runtimeProvider.Start(ctx, runtimeCtx); err != nil {
-			return nil, fmt.Errorf("start: %w", err)
-		}
-		startedRuntime = runtimeProvider
-		startedRuntimeCtx = runtimeCtx
-		startedNew = true
+	if err := h.integrations.Managed.ReplaceManaged(ctx, spec); err != nil {
+		return nil, fmt.Errorf("replace managed container: %w", err)
 	}
-
 	if err := setStage(DeploymentHealthcheck); err != nil {
 		return nil, err
 	}
-	health, err := runtimeProvider.HealthCheck(ctx, runtimeCtx)
-	if err != nil {
-		return nil, fmt.Errorf("healthcheck: %w", err)
-	}
-	if !health.Healthy {
-		return nil, fmt.Errorf("healthcheck failed: %s", health.Message)
+	if err := h.repo.SaveRuntimeContainerState(ctx, p.ID, RuntimeContainerState{
+		ContainerName: spec.ContainerName,
+		ImageTag:      spec.Image,
+		Fingerprint:   spec.Fingerprint,
+	}); err != nil {
+		return nil, err
 	}
 	if h.integrations.Routes != nil {
 		if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), port); err != nil {
@@ -392,6 +420,21 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 
 	allocatedPort = 0
 	return h.finishSuccess(ctx, deploymentID, p.ID, commitBefore, commitAfter, started, setStage)
+}
+
+func projectHasDockerfile(workDir string) bool {
+	info, err := os.Stat(filepath.Join(workDir, "Dockerfile"))
+	return err == nil && info.Mode().IsRegular()
+}
+
+func projectHasCompose(workDir string) bool {
+	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"} {
+		info, err := os.Stat(filepath.Join(workDir, name))
+		if err == nil && info.Mode().IsRegular() {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *DeploymentHandler) finishSuccess(ctx context.Context, deploymentID, projectID, commitBefore, commitAfter string, started time.Time, setStage func(string) error) (map[string]any, error) {
@@ -491,7 +534,6 @@ func runtimeContext(p Project, workDir string, ports ...int) runtimes.ProjectCon
 		"start_command":   p.StartCommand,
 		"healthcheck":     p.Healthcheck,
 		"auto_start":      p.AutoStart,
-		"deployment_mode": p.DeploymentMode,
 	}
 	if len(ports) > 0 && ports[0] > 0 {
 		config["port"] = ports[0]

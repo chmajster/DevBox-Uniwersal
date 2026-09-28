@@ -27,12 +27,12 @@ export function ApplicationsPage() {
     {error && <ErrorState message={error} />}
     <div className="table-wrap">
       <table>
-        <thead><tr><th>Name</th><th>Runtime</th><th>Deployment</th><th>Status</th><th>Path</th></tr></thead>
+        <thead><tr><th>Name</th><th>Runtime</th><th>Container</th><th>Status</th><th>Path</th></tr></thead>
         <tbody>
           {projects.map((project) => <tr key={project.id}>
             <td><Link to={`/projects/${encodeURIComponent(project.id)}/overview`}>{project.name}</Link></td>
             <td>{project.runtime ?? '—'}</td>
-            <td>{project.deployment_mode ?? '—'}</td>
+            <td>{project.container_policy === 'custom' ? 'Custom Docker' : 'Managed Docker'}</td>
             <td><StatusBadge status={project.status} /></td>
             <td>{project.working_directory ?? project.local_path ?? '—'}</td>
           </tr>)}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/containerspec"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
@@ -52,11 +53,18 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 	if slug == "" {
 		return Project{}, nil, fmt.Errorf("%w: name cannot produce an empty slug", ErrInvalidInput)
 	}
-	if input.DeploymentMode == "" {
-		input.DeploymentMode = "native"
+	input.Runtime = containerspec.NormalizeRuntime(input.Runtime)
+	input.ContainerPolicy = strings.ToLower(strings.TrimSpace(input.ContainerPolicy))
+	if input.ContainerPolicy == "" {
+		input.ContainerPolicy = ContainerPolicyAuto
 	}
-	if input.DeploymentMode != "native" && input.DeploymentMode != "docker" {
-		return Project{}, nil, fmt.Errorf("%w: deployment_mode must be native or docker", ErrInvalidInput)
+	if input.ContainerPolicy != ContainerPolicyAuto && input.ContainerPolicy != ContainerPolicyCustom {
+		return Project{}, nil, fmt.Errorf("%w: container_policy must be auto or custom", ErrInvalidInput)
+	}
+	if input.Runtime != "" {
+		if err := containerspec.Validate(input.Runtime, strings.TrimSpace(input.RuntimeVersion), nil); err != nil {
+			return Project{}, nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
 	}
 	if err := validateCredentialKind(input.CredentialKind); err != nil {
 		return Project{}, nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
@@ -76,7 +84,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 	}
 
 	id := NewID()
-	p := Project{ID: id, Name: input.Name, Slug: slug, Description: strings.TrimSpace(input.Description), SourceType: input.SourceType, RepositoryURL: strings.TrimSpace(input.RepositoryURL), Branch: strings.TrimSpace(input.Branch), Runtime: strings.TrimSpace(input.Runtime), DeploymentMode: input.DeploymentMode, WorkingDirectory: strings.TrimSpace(input.WorkingDirectory), BuildCommand: strings.TrimSpace(input.BuildCommand), StartCommand: strings.TrimSpace(input.StartCommand), Healthcheck: strings.TrimSpace(input.Healthcheck), AutoStart: input.AutoStart, CredentialKind: input.CredentialKind, CredentialID: strings.TrimSpace(input.CredentialID), CreatedBy: actor, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	p := Project{ID: id, Name: input.Name, Slug: slug, Description: strings.TrimSpace(input.Description), SourceType: input.SourceType, RepositoryURL: strings.TrimSpace(input.RepositoryURL), Branch: strings.TrimSpace(input.Branch), Runtime: input.Runtime, RuntimeVersion: strings.TrimSpace(input.RuntimeVersion), ContainerPolicy: input.ContainerPolicy, WorkingDirectory: strings.TrimSpace(input.WorkingDirectory), BuildCommand: strings.TrimSpace(input.BuildCommand), StartCommand: strings.TrimSpace(input.StartCommand), Healthcheck: strings.TrimSpace(input.Healthcheck), AutoStart: input.AutoStart, CredentialKind: input.CredentialKind, CredentialID: strings.TrimSpace(input.CredentialID), CreatedBy: actor, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 	if p.SourceType == "" {
 		p.SourceType = SourceEmpty
 	}
@@ -200,16 +208,6 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Pro
 			}
 		}
 		p.Branch = value
-	}
-	if input.Runtime != nil {
-		p.Runtime = strings.TrimSpace(*input.Runtime)
-	}
-	if input.DeploymentMode != nil {
-		value := strings.TrimSpace(*input.DeploymentMode)
-		if value != "native" && value != "docker" {
-			return Project{}, fmt.Errorf("%w: deployment_mode must be native or docker", ErrInvalidInput)
-		}
-		p.DeploymentMode = value
 	}
 	if input.WorkingDirectory != nil {
 		p.WorkingDirectory = strings.TrimSpace(*input.WorkingDirectory)
@@ -350,8 +348,55 @@ func (s *Service) EnqueueCheckout(ctx context.Context, id, branch string, actor 
 	}
 	return s.jobRunner.Enqueue(ctx, jobs.Request{Type: JobCheckout, ProjectID: &p.ID, RequestedBy: actor, Payload: map[string]any{"project_id": p.ID, "branch": branch}})
 }
+func (s *Service) RuntimeContainerConfig(ctx context.Context, id string) (RuntimeContainerConfig, error) {
+	return s.repo.RuntimeContainerConfig(ctx, id)
+}
+
+func (s *Service) RuntimeModules(runtime string) ([]containerspec.ModuleOption, error) {
+	items, err := containerspec.Catalog(runtime)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	return items, nil
+}
+
+func (s *Service) UpdateRuntimeContainerConfig(ctx context.Context, id string, config RuntimeContainerConfig) (RuntimeContainerConfig, error) {
+	if _, err := s.repo.Get(ctx, id); err != nil {
+		return RuntimeContainerConfig{}, err
+	}
+	config.ProjectID = id
+	config.Runtime = containerspec.NormalizeRuntime(config.Runtime)
+	config.RuntimeVersion = strings.TrimSpace(config.RuntimeVersion)
+	config.ContainerPolicy = strings.ToLower(strings.TrimSpace(config.ContainerPolicy))
+	if config.ContainerPolicy == "" {
+		config.ContainerPolicy = ContainerPolicyAuto
+	}
+	if config.ContainerPolicy != ContainerPolicyAuto && config.ContainerPolicy != ContainerPolicyCustom {
+		return RuntimeContainerConfig{}, fmt.Errorf("%w: container_policy must be auto or custom", ErrInvalidInput)
+	}
+	modules := make([]containerspec.Module, 0, len(config.Modules))
+	for _, module := range config.Modules {
+		modules = append(modules, containerspec.Module{Name: module.Name, Version: module.Version})
+	}
+	if config.Runtime == "" {
+		if config.RuntimeVersion != "" || len(modules) > 0 {
+			return RuntimeContainerConfig{}, fmt.Errorf("%w: runtime must be selected before configuring a version or modules", ErrInvalidInput)
+		}
+	} else if err := containerspec.Validate(config.Runtime, config.RuntimeVersion, modules); err != nil {
+		return RuntimeContainerConfig{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if err := s.repo.SaveRuntimeContainerConfig(ctx, id, config); err != nil {
+		return RuntimeContainerConfig{}, err
+	}
+	return s.repo.RuntimeContainerConfig(ctx, id)
+}
+
+func (s *Service) RebuildRuntime(ctx context.Context, id string, actor *string) (domain.Job, error) {
+	return s.enqueueDeployment(ctx, id, actor, false, true)
+}
+
 func (s *Service) Deploy(ctx context.Context, id string, actor *string) (domain.Job, error) {
-	return s.enqueueDeployment(ctx, id, actor, false)
+	return s.enqueueDeployment(ctx, id, actor, false, false)
 }
 
 func (s *Service) ReconcileAutoStart(ctx context.Context) ([]domain.Job, error) {
@@ -371,7 +416,7 @@ func (s *Service) ReconcileAutoStart(ctx context.Context) ([]domain.Job, error) 
 		if active {
 			continue
 		}
-		job, err := s.enqueueDeployment(ctx, project.ID, nil, true)
+		job, err := s.enqueueDeployment(ctx, project.ID, nil, true, false)
 		if err != nil {
 			return enqueued, fmt.Errorf("reconcile auto-start project %s: %w", project.ID, err)
 		}
@@ -380,7 +425,7 @@ func (s *Service) ReconcileAutoStart(ctx context.Context) ([]domain.Job, error) 
 	return enqueued, nil
 }
 
-func (s *Service) enqueueDeployment(ctx context.Context, id string, actor *string, reconcile bool) (domain.Job, error) {
+func (s *Service) enqueueDeployment(ctx context.Context, id string, actor *string, reconcile, forceRebuild bool) (domain.Job, error) {
 	p, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return domain.Job{}, err
@@ -395,6 +440,9 @@ func (s *Service) enqueueDeployment(ctx context.Context, id string, actor *strin
 	payload := map[string]any{"project_id": id, "deployment_id": d.ID}
 	if reconcile {
 		payload["reconcile"] = true
+	}
+	if forceRebuild {
+		payload["force_rebuild"] = true
 	}
 	job, err := s.jobRunner.Enqueue(ctx, jobs.Request{Type: JobDeploy, ProjectID: &id, RequestedBy: actor, Payload: payload})
 	if err != nil {

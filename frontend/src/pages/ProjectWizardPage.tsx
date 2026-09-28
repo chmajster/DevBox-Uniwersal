@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { request } from '../api/client'
 import { DirectoryPicker } from '../components/DirectoryPicker'
-import type { CentralCredential, DeploymentMode, Project, ProjectSourceType } from '../api/types'
+import type { CentralCredential, Project, ProjectSourceType } from '../api/types'
 import { repositoryNameFromURL } from './projectWizardHelpers'
 
 interface FormState {
@@ -13,7 +13,8 @@ interface FormState {
   branch: string
   local_path: string
   runtime: string
-  deployment_mode: DeploymentMode
+  runtime_version: string
+  container_policy: 'auto' | 'custom'
   working_directory: string
   build_command: string
   start_command: string
@@ -30,7 +31,8 @@ const initial: FormState = {
   branch: '',
   local_path: '',
   runtime: '',
-  deployment_mode: 'native',
+  runtime_version: '',
+  container_policy: 'auto',
   working_directory: '',
   build_command: '',
   start_command: '',
@@ -209,10 +211,14 @@ export function ProjectWizardPage() {
         </select>
       </label>
 
-      <label>Deployment mode
-        <select value={form.deployment_mode} onChange={(event) => set('deployment_mode', event.target.value as DeploymentMode)}>
-          <option value="native">native</option>
-          <option value="docker">docker</option>
+      <label>Wersja runtime
+        <input value={form.runtime_version} onChange={(event) => set('runtime_version', event.target.value)} placeholder="puste = wersja domyślna obrazu" disabled={!form.runtime} />
+      </label>
+
+      <label>Kontener
+        <select value={form.container_policy} onChange={(event) => set('container_policy', event.target.value as 'auto' | 'custom')}>
+          <option value="auto">Automatycznie: użyj Dockerfile/Compose lub wygeneruj kontener</option>
+          <option value="custom">Tylko własny Dockerfile / Compose</option>
         </select>
       </label>
 
@@ -238,7 +244,7 @@ export function ProjectWizardPage() {
       </label>
 
       {form.source_type === 'git' && <div className="span-2 muted small">
-        Przykład: wybierz PHP. DevBox zapisze runtime jako PHP i po utworzeniu projektu uruchomi zadanie klonowania Git. Puste pole runtime pozostawia automatyczną detekcję dla deploymentu.
+        Przykład: wybierz PHP. DevBox zapisze runtime jako PHP i po utworzeniu projektu uruchomi zadanie klonowania Git. Puste pole runtime pozostawia automatyczną detekcję. Runtime aplikacji zawsze działa w kontenerze; DevBox nie instaluje PHP/Go/Node/Pythona na hoście.
       </div>}
     </div>}
 
@@ -246,7 +252,7 @@ export function ProjectWizardPage() {
       <div><span>Nazwa</span><strong>{form.name}</strong></div>
       <div><span>Źródło</span><strong>{form.source_type}</strong></div>
       <div><span>Runtime</span><strong>{form.runtime || 'automatyczne wykrywanie'}</strong></div>
-      <div><span>Tryb</span><strong>{form.deployment_mode}</strong></div>
+      <div><span>Kontener</span><strong>{form.container_policy === 'auto' ? 'automatyczny' : 'własny Docker'}</strong></div>
       {form.source_type === 'git' && <>
         <div className="span-2"><span>Repo</span><strong>{form.repository_url}</strong></div>
         <div><span>Branch</span><strong>{form.branch || 'domyślna gałąź repo'}</strong></div>

@@ -548,3 +548,30 @@ input[type="checkbox"] { width: auto; margin: 0; }
 
 a.secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; min-height: 40px; border: 1px solid var(--border); border-radius: 8px; padding: 9px 14px; font-weight: 600; line-height: 1.4; background: transparent; color: var(--text); }
 a.secondary-button:hover { background: var(--panel-alt); text-decoration: none; }
+
+
+/* Managed runtime container configuration */
+.runtime-section { display: grid; gap: 18px; }
+.runtime-modules { display: grid; gap: 12px; }
+.runtime-modules .section-heading { align-items: end; gap: 16px; }
+.runtime-modules .section-heading input { width: min(320px, 100%); }
+.runtime-module-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.runtime-module-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.runtime-module-row > span { display: grid; gap: 4px; min-width: 0; }
+.runtime-module-row code { width: fit-content; }
+.runtime-module-row small { color: var(--muted); line-height: 1.4; }
+.runtime-summary article code { overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .runtime-modules .section-heading { align-items: stretch; }
+  .runtime-modules .section-heading input { width: 100%; }
+  .runtime-module-list { grid-template-columns: 1fr; }
+}
