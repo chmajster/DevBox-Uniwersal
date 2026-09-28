@@ -214,5 +214,5 @@ func composeArgs(directory, projectName string) ([]string, error) {
 	if err := validateValue(dirAbs, "compose directory"); err != nil {
 		return nil, err
 	}
-	return []string{"compose", "--project-directory", dirAbs, "--project-name", projectName, "--file", configFile}, nil
+	return []string{"compose", "--project-name", projectName, "--file", configFile}, nil
 }
