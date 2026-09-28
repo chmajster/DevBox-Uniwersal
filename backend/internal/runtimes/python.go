@@ -37,7 +37,7 @@ func (r *PythonRuntime) Detect(_ context.Context, project ProjectContext) (Detec
 	if err := validateWorkDir(project); err != nil {
 		return Detection{}, err
 	}
-	files := existingFiles(project.WorkDir, "manage.py", "pyproject.toml", "requirements.txt", "poetry.lock", "uv.lock")
+	files := existingFiles(project.WorkDir, "manage.py", "pyproject.toml", "requirements.txt", "poetry.lock", "uv.lock", ".python-version", "runtime.txt")
 	if !fileExists(project.WorkDir, "manage.py") && !fileExists(project.WorkDir, "pyproject.toml") && !fileExists(project.WorkDir, "requirements.txt") {
 		return Detection{Runtime: r.Name()}, nil
 	}
@@ -87,7 +87,7 @@ func (r *PythonRuntime) Detect(_ context.Context, project ProjectContext) (Detec
 		}
 	}
 
-	return newDetection(
+	detection := newDetection(
 		r.Name(),
 		framework,
 		confidence,
@@ -95,7 +95,9 @@ func (r *PythonRuntime) Detect(_ context.Context, project ProjectContext) (Detec
 		"python -m compileall .",
 		startCommand,
 		metadata,
-	), nil
+	)
+	detection.Version = pythonVersionRequirement(project.WorkDir, string(pyproject))
+	return detection, nil
 }
 
 func (r *PythonRuntime) Validate(_ context.Context, project ProjectContext) (ValidationResult, error) {
@@ -105,7 +107,7 @@ func (r *PythonRuntime) Validate(_ context.Context, project ProjectContext) (Val
 		result.Errors = append(result.Errors, err.Error())
 		return result, nil
 	}
-	if _, err := findExecutable("python3", "python"); err != nil {
+	if _, err := projectExecutable(project, "python", "python3", "python"); err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, err.Error())
 		return result, nil
@@ -132,6 +134,8 @@ func (r *PythonRuntime) Validate(_ context.Context, project ProjectContext) (Val
 	}
 	if !fileExists(project.WorkDir, filepath.Join(".venv", venvPythonRelative())) {
 		result.Warnings = append(result.Warnings, "project virtualenv .venv does not exist; install dependencies before Start")
+	} else if warning := pythonVenvCompatibility(project); warning != "" {
+		result.Warnings = append(result.Warnings, warning)
 	}
 	if _, ok := projectPort(project); !ok {
 		result.Warnings = append(result.Warnings, "runtime port is not configured")
@@ -155,6 +159,10 @@ func (r *PythonRuntime) InstallDependencies(ctx context.Context, project Project
 	}
 	manager := pythonPackageManager(project.WorkDir, string(pyproject))
 	venvDir := filepath.Join(project.WorkDir, ".venv")
+	selectedPython, err := projectExecutable(project, "python", "python3", "python")
+	if err != nil {
+		return err
+	}
 
 	switch manager {
 	case "uv":
@@ -163,7 +171,7 @@ func (r *PythonRuntime) InstallDependencies(ctx context.Context, project Project
 			return err
 		}
 		if !fileExists(project.WorkDir, filepath.Join(".venv", venvPythonRelative())) {
-			if err := r.base.runner.Run(ctx, uv, []string{"venv", venvDir}, project.WorkDir, project.Environment); err != nil {
+			if err := r.base.runner.Run(ctx, uv, []string{"venv", "--python", selectedPython, venvDir}, project.WorkDir, project.Environment); err != nil {
 				return err
 			}
 		}
@@ -180,14 +188,13 @@ func (r *PythonRuntime) InstallDependencies(ctx context.Context, project Project
 		}
 		environment := copyStringMap(project.Environment)
 		environment["POETRY_VIRTUALENVS_IN_PROJECT"] = "true"
-		return r.base.runner.Run(ctx, poetry, []string{"install", "--no-interaction"}, project.WorkDir, environment)
-	default:
-		python, err := findExecutable("python3", "python")
-		if err != nil {
+		if err := r.base.runner.Run(ctx, poetry, []string{"env", "use", selectedPython}, project.WorkDir, environment); err != nil {
 			return err
 		}
+		return r.base.runner.Run(ctx, poetry, []string{"install", "--no-interaction"}, project.WorkDir, environment)
+	default:
 		if !fileExists(project.WorkDir, filepath.Join(".venv", venvPythonRelative())) {
-			if err := r.base.runner.Run(ctx, python, []string{"-m", "venv", venvDir}, project.WorkDir, project.Environment); err != nil {
+			if err := r.base.runner.Run(ctx, selectedPython, []string{"-m", "venv", venvDir}, project.WorkDir, project.Environment); err != nil {
 				return err
 			}
 		}
@@ -287,6 +294,47 @@ func (r *PythonRuntime) Logs(ctx context.Context, project ProjectContext, option
 
 func (r *PythonRuntime) HealthCheck(ctx context.Context, project ProjectContext) (HealthResult, error) {
 	return r.base.httpHealth(ctx, project)
+}
+
+
+func pythonVersionRequirement(workDir, pyproject string) string {
+	for _, filename := range []string{".python-version", "runtime.txt"} {
+		content, err := readProjectFile(workDir, filename)
+		if err == nil && content != nil {
+			value := strings.TrimSpace(string(content))
+			value = strings.TrimPrefix(strings.TrimPrefix(value, "python-"), "python")
+			if value != "" {
+				return value
+			}
+		}
+	}
+	pattern := regexp.MustCompile(`(?m)requires-python\s*=\s*["']([^"']+)["']`)
+	match := pattern.FindStringSubmatch(pyproject)
+	if len(match) == 2 {
+		return strings.TrimSpace(match[1])
+	}
+	return ""
+}
+
+func pythonVenvCompatibility(project ProjectContext) string {
+	selected := ""
+	if project.RuntimeVersions != nil {
+		selected = project.RuntimeVersions["python"]
+	}
+	if selected == "" {
+		return ""
+	}
+	venv := venvPython(project.WorkDir)
+	version, err := commandVersion(context.Background(), venv, "--version")
+	if err != nil {
+		return "project virtualenv cannot be validated and may need recreation"
+	}
+	selectedParts := strings.Split(selected, ".")
+	venvParts := strings.Split(version, ".")
+	if len(selectedParts) >= 2 && len(venvParts) >= 2 && (selectedParts[0] != venvParts[0] || selectedParts[1] != venvParts[1]) {
+		return fmt.Sprintf("project virtualenv uses Python %s but assigned runtime is %s; recreate .venv before running the project", version, selected)
+	}
+	return ""
 }
 
 func pythonPackageManager(workDir, pyproject string) string {
