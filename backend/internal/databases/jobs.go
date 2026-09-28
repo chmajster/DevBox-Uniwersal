@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	JobTypeDatabaseBackup  = "database.backup"
-	JobTypeDatabaseRestore = "database.restore"
+	JobTypeDatabaseBackup     = "database.backup"
+	JobTypeDatabaseRestore    = "database.restore"
+	JobTypeManagedMySQLAction = "database.mysql.action"
 )
 
 type backupStore interface {
@@ -162,4 +163,35 @@ func backupPath(root, fileName string) (string, error) {
 		return "", errors.New("backup path escapes backup directory")
 	}
 	return path, nil
+}
+
+type ManagedMySQLJobHandler struct {
+	manager *ManagedMySQLManager
+}
+
+func NewManagedMySQLJobHandler(manager *ManagedMySQLManager) *ManagedMySQLJobHandler {
+	return &ManagedMySQLJobHandler{manager: manager}
+}
+
+func (h *ManagedMySQLJobHandler) Type() string {
+	return JobTypeManagedMySQLAction
+}
+
+func (h *ManagedMySQLJobHandler) Run(ctx context.Context, job domain.Job) (map[string]any, error) {
+	if h.manager == nil {
+		return nil, errors.New("managed MySQL lifecycle is not configured")
+	}
+	action, err := payloadString(job.Payload, "action")
+	if err != nil {
+		return nil, err
+	}
+	switch action {
+	case "install", "start", "stop", "restart":
+	default:
+		return nil, fmt.Errorf("unsupported managed MySQL action %q", action)
+	}
+	if err := h.manager.Action(ctx, action); err != nil {
+		return nil, err
+	}
+	return map[string]any{"action": action, "status": "completed"}, nil
 }
