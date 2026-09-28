@@ -14,6 +14,7 @@ DevBox Universal is an integrated local development control plane.
 
 - Git, local-directory and empty-project onboarding.
 - Project CRUD/archive, Git fetch/pull/checkout/history and credential masking.
+- Operator-only local-directory browser constrained to configured roots, with canonical symlink handling, traversal limits and audit events.
 - Deployment state machine using the shared runtime registry.
 - Project-level application health configuration.
 
