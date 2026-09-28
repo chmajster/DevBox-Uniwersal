@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -26,6 +27,7 @@ var gitRefPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 type Status struct {
 	CurrentVersion  string `json:"current_version"`
 	LatestVersion   string `json:"latest_version,omitempty"`
+	LatestCommitAt  string `json:"latest_commit_at,omitempty"`
 	UpdateAvailable bool   `json:"update_available"`
 	Repository      string `json:"repository"`
 	Ref             string `json:"ref"`
@@ -65,12 +67,13 @@ func (s *Service) Status(ctx context.Context) Status {
 		status.CurrentVersion = "unknown"
 	}
 	status.AutoUpdate = timerEnabled(ctx)
-	latest, err := remoteSHA(ctx, s.repository, s.ref)
+	latest, commitAt, err := remoteCommitInfo(ctx, s.repository, s.ref)
 	if err != nil {
 		status.LastError = err.Error()
 		return status
 	}
 	status.LatestVersion = latest
+	status.LatestCommitAt = commitAt
 	status.UpdateAvailable = latest != "" && latest != status.CurrentVersion
 	return status
 }
@@ -95,22 +98,44 @@ func (s *Service) Apply(ctx context.Context) error {
 	return nil
 }
 
-func remoteSHA(ctx context.Context, repository, ref string) (string, error) {
+func remoteCommitInfo(ctx context.Context, repository, ref string) (string, string, error) {
 	if !gitRefPattern.MatchString(ref) {
-		return "", errors.New("invalid update ref")
+		return "", "", errors.New("invalid update ref")
 	}
-	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(checkCtx, "git", "ls-remote", repository, "refs/heads/"+ref)
-	out, err := cmd.Output()
+
+	tmp, err := os.MkdirTemp("", "devbox-update-check-*")
 	if err != nil {
-		return "", fmt.Errorf("git ls-remote failed: %w", err)
+		return "", "", fmt.Errorf("create update check directory: %w", err)
 	}
-	fields := strings.Fields(string(out))
-	if len(fields) < 1 || len(fields[0]) != 40 {
-		return "", errors.New("remote ref did not return a commit SHA")
+	defer os.RemoveAll(tmp)
+
+	if out, err := exec.CommandContext(checkCtx, "git", "-C", tmp, "init", "-q").CombinedOutput(); err != nil {
+		return "", "", fmt.Errorf("git init failed: %s", strings.TrimSpace(string(out)))
 	}
-	return fields[0], nil
+	fetch := exec.CommandContext(checkCtx, "git", "-C", tmp, "fetch", "--depth=1", "--no-tags", repository, "refs/heads/"+ref)
+	if out, err := fetch.CombinedOutput(); err != nil {
+		message := strings.TrimSpace(string(out))
+		if message == "" {
+			message = err.Error()
+		}
+		return "", "", fmt.Errorf("git fetch failed: %s", message)
+	}
+
+	show := exec.CommandContext(checkCtx, "git", "-C", tmp, "show", "-s", "--format=%H%n%cI", "FETCH_HEAD")
+	out, err := show.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("git show failed: %w", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 || len(lines[0]) != 40 {
+		return "", "", errors.New("remote commit metadata is incomplete")
+	}
+	if _, err := time.Parse(time.RFC3339, lines[1]); err != nil {
+		return "", "", fmt.Errorf("parse remote commit date: %w", err)
+	}
+	return lines[0], lines[1], nil
 }
 
 func timerEnabled(ctx context.Context) bool {
