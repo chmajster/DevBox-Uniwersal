@@ -522,6 +522,7 @@ func (e *cliMySQLExecutor) defaultsFile(ctx context.Context) (string, func(), er
 	}
 	file, err := os.CreateTemp("", "devbox-mysql-client-*")
 	if err != nil {
+		clear(decrypted)
 		return "", func() {}, fmt.Errorf("create mysql credentials file: %w", err)
 	}
 	path := file.Name()
