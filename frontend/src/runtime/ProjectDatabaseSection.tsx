@@ -246,19 +246,21 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     {error && <div className="error-banner">{error}</div>}
     {message && <div className="success-banner">{message}</div>}
 
-    <fieldset disabled={readOnly || busy !== ''} className="form-grid">
-      <legend>Tryb</legend>
-      {([
-        ['none', 'Brak'],
-        ['managed', 'Baza zarządzana przez DevBox'],
-        ['compose', 'Baza z Docker Compose projektu'],
-        ['external', 'Zewnętrzna baza danych'],
-      ] as Array<[DatabaseMode, string]>).map(([mode, label]) =>
-        <label className="checkbox" key={mode}>
-          <input type="radio" name={`database-mode-${projectId}`} checked={draft.mode === mode} onChange={() => setDraft({ ...emptyDraft, mode, application_service: draft.application_service })} />
-          {label}
-        </label>
-      )}
+    <fieldset disabled={readOnly || busy !== ''} className="database-mode-selector">
+      <legend>Tryb bazy danych</legend>
+      <div className="database-mode-options">
+        {([
+          ['none', 'Brak'],
+          ['managed', 'Baza zarządzana przez DevBox'],
+          ['compose', 'Baza z Docker Compose projektu'],
+          ['external', 'Zewnętrzna baza danych'],
+        ] as Array<[DatabaseMode, string]>).map(([mode, label]) =>
+          <label className="database-mode-option" data-selected={draft.mode === mode ? 'true' : 'false'} key={mode}>
+            <input type="radio" name={`database-mode-${projectId}`} checked={draft.mode === mode} onChange={() => setDraft({ ...emptyDraft, mode, application_service: draft.application_service })} />
+            <span>{label}</span>
+          </label>
+        )}
+      </div>
     </fieldset>
 
     {draft.mode !== 'none' && <div className="form-grid">
