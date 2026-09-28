@@ -11,6 +11,54 @@ import (
 	"strings"
 )
 
+type composeRunner struct {
+	runner commandRunner
+	legacy bool
+}
+
+func (p *CLIProvider) resolveComposeRunner(ctx context.Context) (composeRunner, error) {
+	_, _, pluginErr := p.runner.Run(ctx, "compose", "version")
+	if pluginErr == nil {
+		return composeRunner{runner: p.runner}, nil
+	}
+	if p.legacyComposeRunner != nil {
+		_, _, legacyErr := p.legacyComposeRunner.Run(ctx, "version")
+		if legacyErr == nil {
+			return composeRunner{runner: p.legacyComposeRunner, legacy: true}, nil
+		}
+		return composeRunner{}, fmt.Errorf("%w: Docker Compose is unavailable; docker compose failed: %v; docker-compose failed: %v", ErrUnavailable, pluginErr, legacyErr)
+	}
+	return composeRunner{}, fmt.Errorf("%w: Docker Compose plugin is unavailable: %v", ErrUnavailable, pluginErr)
+}
+
+func (p *CLIProvider) runCompose(ctx context.Context, args ...string) ([]byte, []byte, error) {
+	resolved, err := p.resolveComposeRunner(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if resolved.legacy {
+		if len(args) == 0 || args[0] != "compose" {
+			return nil, nil, fmt.Errorf("%w: invalid compose invocation", ErrInvalidInput)
+		}
+		args = args[1:]
+	}
+	return resolved.runner.Run(ctx, args...)
+}
+
+func (p *CLIProvider) streamCompose(ctx context.Context, args ...string) (io.ReadCloser, error) {
+	resolved, err := p.resolveComposeRunner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if resolved.legacy {
+		if len(args) == 0 || args[0] != "compose" {
+			return nil, fmt.Errorf("%w: invalid compose invocation", ErrInvalidInput)
+		}
+		args = args[1:]
+	}
+	return resolved.runner.Stream(ctx, args...)
+}
+
 var composeFileNames = []string{"compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"}
 
 func DiscoverComposeProjects(root string) ([]ComposeProject, error) {
@@ -61,7 +109,7 @@ func (p *CLIProvider) ComposeValidate(ctx context.Context, directory, projectNam
 		return err
 	}
 	args = append(args, "config", "--quiet")
-	_, _, err = p.runner.Run(ctx, args...)
+	_, _, err = p.runCompose(ctx, args...)
 	return err
 }
 
@@ -85,7 +133,7 @@ func (p *CLIProvider) ComposeUp(ctx context.Context, directory, projectName, ser
 	if service != "" {
 		args = append(args, service)
 	}
-	_, _, err = p.runner.Run(ctx, args...)
+	_, _, err = p.runCompose(ctx, args...)
 	return err
 }
 
@@ -95,7 +143,7 @@ func (p *CLIProvider) ComposeDown(ctx context.Context, directory, projectName st
 		return err
 	}
 	args = append(args, "down")
-	_, _, err = p.runner.Run(ctx, args...)
+	_, _, err = p.runCompose(ctx, args...)
 	return err
 }
 
@@ -115,7 +163,7 @@ func (p *CLIProvider) composeCommand(ctx context.Context, directory, projectName
 	if service != "" {
 		args = append(args, service)
 	}
-	_, _, err = p.runner.Run(ctx, args...)
+	_, _, err = p.runCompose(ctx, args...)
 	return err
 }
 
@@ -140,7 +188,7 @@ func (p *CLIProvider) ComposeLogs(ctx context.Context, directory, projectName, s
 	if service != "" {
 		args = append(args, service)
 	}
-	return p.runner.Stream(ctx, args...)
+	return p.streamCompose(ctx, args...)
 }
 
 func (p *CLIProvider) ComposeHealthy(ctx context.Context, directory, projectName string) error {
@@ -170,8 +218,11 @@ func (p *CLIProvider) ComposePS(ctx context.Context, directory, projectName stri
 		return nil, err
 	}
 	args = append(args, "ps", "--format", "json")
-	out, _, err := p.runner.Run(ctx, args...)
+	out, _, err := p.runCompose(ctx, args...)
 	if err != nil {
+		if composePSFormatUnsupported(err) {
+			return p.composePSByInspect(ctx, directory, projectName)
+		}
 		return nil, err
 	}
 	var raw []struct {
@@ -195,6 +246,72 @@ func (p *CLIProvider) ComposePS(ctx context.Context, directory, projectName stri
 	items := make([]ComposeProcess, 0, len(raw))
 	for _, item := range raw {
 		items = append(items, ComposeProcess{Name: item.Name, Service: item.Service, State: item.State, Health: item.Health, Image: item.Image})
+	}
+	return items, nil
+}
+
+func composePSFormatUnsupported(err error) bool {
+	message := strings.ToLower(err.Error())
+	for _, fragment := range []string{"unknown flag", "unknown option", "no such option", "flag provided but not defined"} {
+		if strings.Contains(message, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *CLIProvider) composePSByInspect(ctx context.Context, directory, projectName string) ([]ComposeProcess, error) {
+	args, err := composeArgs(directory, projectName)
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, "ps", "-q")
+	out, _, err := p.runCompose(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	ids := strings.Fields(string(out))
+	items := make([]ComposeProcess, 0, len(ids))
+	for _, id := range ids {
+		if err := validateContainerRef(id); err != nil {
+			return nil, err
+		}
+		inspect, _, err := p.runner.Run(ctx, "container", "inspect", id)
+		if err != nil {
+			return nil, err
+		}
+		var raw []struct {
+			Name   string `json:"Name"`
+			Config struct {
+				Image  string            `json:"Image"`
+				Labels map[string]string `json:"Labels"`
+			} `json:"Config"`
+			State struct {
+				Status string `json:"Status"`
+				Health *struct {
+					Status string `json:"Status"`
+				} `json:"Health"`
+			} `json:"State"`
+		}
+		if err := json.Unmarshal(inspect, &raw); err != nil || len(raw) != 1 {
+			if err == nil {
+				err = fmt.Errorf("expected one container")
+			}
+			return nil, fmt.Errorf("decode docker compose container inspect: %w", err)
+		}
+		item := raw[0]
+		health := ""
+		if item.State.Health != nil {
+			health = item.State.Health.Status
+		}
+		service := item.Config.Labels["com.docker.compose.service"]
+		items = append(items, ComposeProcess{
+			Name:    strings.TrimPrefix(item.Name, "/"),
+			Service: service,
+			State:   item.State.Status,
+			Health:  health,
+			Image:   item.Config.Image,
+		})
 	}
 	return items, nil
 }
