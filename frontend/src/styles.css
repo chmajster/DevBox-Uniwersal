@@ -617,3 +617,45 @@ a.secondary-button:hover { background: var(--panel-alt); text-decoration: none; 
 @media (max-width: 720px) {
   .deployment-stage-track { grid-template-columns: repeat(8, minmax(120px, 1fr)); }
 }
+
+
+/* Project detail logs tab */
+.project-logs-toolbar {
+  display: grid;
+  gap: 16px;
+}
+.project-logs-toolbar h2,
+.project-logs-toolbar p {
+  margin-bottom: 0;
+}
+.project-log-filters {
+  display: grid;
+  grid-template-columns: 160px 130px minmax(220px, 1fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+.project-log-filters label {
+  color: var(--muted);
+  font-size: 12px;
+}
+.project-log-search { min-width: 0; }
+.project-log-console {
+  min-height: 420px;
+  max-height: calc(100vh - 320px);
+}
+@media (max-width: 980px) {
+  .project-log-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .project-log-search {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 620px) {
+  .project-log-filters {
+    grid-template-columns: 1fr;
+  }
+  .project-log-search {
+    grid-column: auto;
+  }
+}
