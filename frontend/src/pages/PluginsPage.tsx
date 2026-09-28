@@ -172,7 +172,7 @@ export function PluginsPage() {
     <section className="panel phpmyadmin-panel">
       <div>
         <div className="actions">
-          <Icon name="layers" size={24} />
+          <Icon name="box" size={24} />
           <div>
             <h2>Docker Compose</h2>
             <p className="muted">Wymagany do wdrażania aplikacji zawierających <code>compose.yaml</code> lub <code>docker-compose.yml</code>.</p>
