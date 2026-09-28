@@ -10,6 +10,7 @@ import (
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
 )
 
@@ -18,6 +19,10 @@ var (
 	ErrProviderUnavailable = errors.New("provider unavailable")
 )
 
+type runtimeDefaultsApplier interface {
+	ApplyDefaults(ctx context.Context, projectID string) error
+}
+
 type Service struct {
 	repo                 *Repository
 	git                  *GitClient
@@ -25,6 +30,8 @@ type Service struct {
 	secretStore          secrets.SecretStore
 	projectsRoot         string
 	directoryBrowseRoots []string
+	sourceControl        providers.ProjectSourceIntegration
+	runtimeDefaults      runtimeDefaultsApplier
 }
 
 func NewService(repo *Repository, git *GitClient, jobRunner jobs.JobRunner, secretStore secrets.SecretStore, projectsRoot string, directoryBrowseRoots ...string) *Service {
@@ -38,6 +45,14 @@ func NewService(repo *Repository, git *GitClient, jobRunner jobs.JobRunner, secr
 	}
 }
 
+func (s *Service) SetSourceControlIntegration(integration providers.ProjectSourceIntegration) {
+	s.sourceControl = integration
+}
+
+func (s *Service) SetRuntimeDefaults(defaults runtimeDefaultsApplier) {
+	s.runtimeDefaults = defaults
+}
+
 func (s *Service) List(ctx context.Context, includeArchived bool) ([]Project, error) {
 	return s.repo.List(ctx, includeArchived)
 }
@@ -45,6 +60,9 @@ func (s *Service) Get(ctx context.Context, id string) (Project, error) { return 
 
 func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) (Project, *domain.Job, error) {
 	input.Name = strings.TrimSpace(input.Name)
+	if input.Name == "" {
+		input.Name = projectNameFromSource(input.RepositoryPath, input.RepositoryURL)
+	}
 	if input.Name == "" || len(input.Name) > 120 {
 		return Project{}, nil, fmt.Errorf("%w: name is required and must be at most 120 characters", ErrInvalidInput)
 	}
@@ -57,6 +75,28 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 	}
 	if input.DeploymentMode != "native" && input.DeploymentMode != "docker" {
 		return Project{}, nil, fmt.Errorf("%w: deployment_mode must be native or docker", ErrInvalidInput)
+	}
+	var sourceResolution *providers.ProjectSourceResolution
+	if strings.TrimSpace(input.IntegrationID) != "" {
+		if input.SourceType == "" {
+			input.SourceType = SourceGit
+		}
+		if input.SourceType != SourceGit {
+			return Project{}, nil, fmt.Errorf("%w: integration source requires source_type=git", ErrInvalidInput)
+		}
+		if s.sourceControl == nil {
+			return Project{}, nil, fmt.Errorf("%w: source-control integrations are unavailable", ErrProviderUnavailable)
+		}
+		resolution, err := s.sourceControl.ResolveProjectSource(ctx, strings.TrimSpace(input.IntegrationID), strings.TrimSpace(input.RepositoryPath), strings.TrimSpace(input.Branch))
+		if err != nil {
+			return Project{}, nil, err
+		}
+		sourceResolution = &resolution
+		input.RepositoryURL = resolution.Repository.CloneURL
+		input.Branch = resolution.Branch
+		input.CredentialID = resolution.CredentialID
+		input.CredentialKind = ""
+		input.CredentialValue = ""
 	}
 	if err := validateCredentialKind(input.CredentialKind); err != nil {
 		return Project{}, nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
@@ -140,6 +180,18 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 			_ = s.secretStore.Delete(ctx, "git/"+id, credentialName)
 		}
 		return Project{}, nil, err
+	}
+	if sourceResolution != nil {
+		if err := s.sourceControl.LinkProjectSource(ctx, p.ID, *sourceResolution); err != nil {
+			_ = s.repo.Delete(context.Background(), p.ID)
+			return Project{}, nil, fmt.Errorf("link source-control repository: %w", err)
+		}
+	}
+	if s.runtimeDefaults != nil {
+		if err := s.runtimeDefaults.ApplyDefaults(ctx, p.ID); err != nil {
+			_ = s.repo.Delete(context.Background(), p.ID)
+			return Project{}, nil, fmt.Errorf("apply runtime defaults: %w", err)
+		}
 	}
 	if p.SourceType == SourceGit {
 		job, err := s.jobRunner.Enqueue(ctx, jobs.Request{Type: JobClone, ProjectID: &p.ID, RequestedBy: actor, Payload: map[string]any{"project_id": p.ID}})
@@ -397,4 +449,19 @@ func (s *Service) Deployments(ctx context.Context, id string) ([]Deployment, err
 		return nil, err
 	}
 	return s.repo.ListDeployments(ctx, id)
+}
+
+func projectNameFromSource(repositoryPath, repositoryURL string) string {
+	value := strings.Trim(strings.TrimSpace(repositoryPath), "/")
+	if value == "" {
+		value = strings.Trim(strings.TrimSpace(repositoryURL), "/")
+		if index := strings.IndexAny(value, "?#"); index >= 0 {
+			value = value[:index]
+		}
+	}
+	if index := strings.LastIndex(value, "/"); index >= 0 {
+		value = value[index+1:]
+	}
+	value = strings.TrimSuffix(value, ".git")
+	return strings.TrimSpace(value)
 }
