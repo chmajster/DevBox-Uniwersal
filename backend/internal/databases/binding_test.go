@@ -52,6 +52,17 @@ func databaseBindingTestService(t *testing.T) (*Service, *Repository, *fakeSecre
 	return service, repo, store, engine
 }
 
+func TestMySQLStatusExposesApplicationAddress(t *testing.T) {
+	service, _, _, _ := databaseBindingTestService(t)
+	status := service.MySQLStatus(context.Background())
+	if status.AdminHost != "127.0.0.1" || status.AdminPort != 3306 {
+		t.Fatalf("unexpected admin endpoint: %s:%d", status.AdminHost, status.AdminPort)
+	}
+	if status.ApplicationHost != DefaultManagedMySQLContainer || status.ApplicationPort != 3306 {
+		t.Fatalf("unexpected application endpoint: %s:%d", status.ApplicationHost, status.ApplicationPort)
+	}
+}
+
 func TestManagedDatabaseResolverUsesContainerDNS(t *testing.T) {
 	ctx := context.Background()
 	service, repo, store, engine := databaseBindingTestService(t)
