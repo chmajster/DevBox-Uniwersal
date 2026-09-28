@@ -95,7 +95,6 @@ func TestLoginMeAndHealth(t *testing.T) {
 	}
 }
 
-
 func TestAdminUserManagement(t *testing.T) {
 	tmp := t.TempDir()
 	db, err := database.Open(filepath.Join(tmp, "users.db"))
@@ -151,8 +150,8 @@ func TestAdminUserManagement(t *testing.T) {
 	}
 	var createEnvelope struct {
 		Data struct {
-			User domain.User `json:"user"`
-			Password string `json:"password"`
+			User     domain.User `json:"user"`
+			Password string      `json:"password"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(created.Body.Bytes(), &createEnvelope); err != nil {
@@ -177,7 +176,6 @@ func TestAdminUserManagement(t *testing.T) {
 	if changed.Code != http.StatusOK {
 		t.Fatalf("change password status=%d body=%s", changed.Code, changed.Body.String())
 	}
-
 
 	admin, err := users.ByUsername(context.Background(), "admin")
 	if err != nil {
