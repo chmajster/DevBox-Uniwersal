@@ -26,7 +26,7 @@ func (p *CLIProvider) resolveComposeRunner(ctx context.Context) (composeRunner, 
 		if legacyErr == nil {
 			return composeRunner{runner: p.legacyComposeRunner, legacy: true}, nil
 		}
-		return composeRunner{}, fmt.Errorf("%w: Docker Compose is unavailable; docker compose failed: %v; docker-compose failed: %v", ErrUnavailable, pluginErr, legacyErr)
+		return composeRunner{}, fmt.Errorf("%w: Docker Compose is unavailable; install it from Plugins -> Docker Compose or run the DevBox updater/repair; docker compose failed: %v; docker-compose failed: %v", ErrUnavailable, pluginErr, legacyErr)
 	}
 	return composeRunner{}, fmt.Errorf("%w: Docker Compose plugin is unavailable: %v", ErrUnavailable, pluginErr)
 }
