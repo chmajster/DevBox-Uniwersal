@@ -130,6 +130,15 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 		"--security-opt", "no-new-privileges:true",
 		"--cap-drop", "ALL",
 	}
+	for i, network := range spec.Networks {
+		if err := validateNetworkRef(network); err != nil {
+			rollback()
+			return err
+		}
+		if i == 0 {
+			args = append(args, "--network", network)
+		}
+	}
 	args = append(args, publishArgs...)
 	if spec.ReadOnly {
 		args = append(args, "--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=64m")
@@ -173,10 +182,25 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 		}
 		args = append(args, "--env", key+"="+value)
 	}
+	envFile, cleanupEnv, err := secureEnvFile(spec.SensitiveEnvironment)
+	if err != nil {
+		rollback()
+		return err
+	}
+	defer cleanupEnv()
+	if envFile != "" {
+		args = append(args, "--env-file", envFile)
+	}
 	args = append(args, spec.Image)
 	if _, _, err := p.runner.Run(ctx, args...); err != nil {
 		rollback()
 		return fmt.Errorf("create managed container: %w", err)
+	}
+	for _, network := range spec.Networks[1:] {
+		if err := p.ConnectNetwork(ctx, spec.ContainerName, network); err != nil {
+			rollback()
+			return fmt.Errorf("connect managed container network: %w", err)
+		}
 	}
 	if _, _, err := p.runner.Run(ctx, "container", "start", spec.ContainerName); err != nil {
 		rollback()
