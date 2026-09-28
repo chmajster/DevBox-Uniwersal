@@ -2,6 +2,7 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -72,6 +73,50 @@ func TestDeploymentIntegrationManagedAllocatesPortDetectsRuntimeBuildsAndRoutes(
 	}
 	if state.Fingerprint == "" || state.ImageTag == "" || state.ContainerName == "" {
 		t.Fatalf("managed container state was not persisted: %+v", state)
+	}
+}
+
+func TestDeploymentIntegrationManagedProxyFailureIsWarning(t *testing.T) {
+	repo, project, deploymentID := integrationProject(t, Project{
+		Runtime:         "static",
+		ContainerPolicy: ContainerPolicyAuto,
+	})
+	ports := &integrationPorts{port: 18125}
+	routes := &integrationRoutes{returnError: errors.New("nginx unavailable")}
+	managed := &integrationManaged{}
+	handler := NewDeploymentHandler(repo, NewGitClient(nil), runtimes.NewRegistry(), &testJobLogger{}, DeploymentIntegrations{
+		Ports:   ports,
+		Routes:  routes,
+		Managed: managed,
+	})
+
+	result, err := handler.Run(context.Background(), domain.Job{
+		ID: "integration-managed-proxy-warning",
+		Payload: map[string]any{
+			"project_id":    project.ID,
+			"deployment_id": deploymentID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	warnings, ok := result["warnings"].([]string)
+	if !ok || len(warnings) != 1 || !strings.Contains(warnings[0], "reverse proxy") {
+		t.Fatalf("warnings = %#v", result["warnings"])
+	}
+	refreshed, err := repo.Get(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Status != "running" {
+		t.Fatalf("project status = %q, want running", refreshed.Status)
+	}
+	deployments, err := repo.ListDeployments(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deployments) != 1 || deployments[0].Status != DeploymentSuccess {
+		t.Fatalf("deployment should succeed with proxy warning: %+v", deployments)
 	}
 }
 
@@ -150,6 +195,58 @@ func TestDeploymentIntegrationDockerComposeHealthThenRoute(t *testing.T) {
 	}
 	if routes.calls != 1 || routes.port != 19090 {
 		t.Fatalf("proxy did not receive compose target port: %+v", routes)
+	}
+}
+
+func TestDeploymentIntegrationDockerComposeProxyFailureIsWarning(t *testing.T) {
+	repo, project, deploymentID := integrationProject(t, Project{
+		ContainerPolicy: ContainerPolicyAuto,
+		Healthcheck:     "http://127.0.0.1:19091/health",
+	})
+	if err := os.WriteFile(filepath.Join(project.LocalPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n    ports:\n      - \"19091:80\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	compose := &integrationCompose{binding: providers.ComposePortBinding{
+		Service: "app", RequestedHostPort: 19091, HostPort: 19091, ContainerPort: 80, Protocol: "tcp",
+	}}
+	ports := &integrationPorts{port: 19091}
+	routes := &integrationRoutes{returnError: errors.New("nginx validation failed")}
+	handler := NewDeploymentHandler(repo, NewGitClient(nil), runtimes.NewRegistry(), &testJobLogger{}, DeploymentIntegrations{
+		Ports:   ports,
+		Routes:  routes,
+		Compose: compose,
+	})
+
+	result, err := handler.Run(context.Background(), domain.Job{
+		ID: "integration-compose-proxy-warning",
+		Payload: map[string]any{
+			"project_id":    project.ID,
+			"deployment_id": deploymentID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	warnings, ok := result["warnings"].([]string)
+	if !ok || len(warnings) != 1 || !strings.Contains(warnings[0], "reverse proxy") {
+		t.Fatalf("warnings = %#v", result["warnings"])
+	}
+	if compose.stopped {
+		t.Fatal("healthy Compose application was stopped because reverse proxy failed")
+	}
+	refreshed, err := repo.Get(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Status != "running" {
+		t.Fatalf("project status = %q, want running", refreshed.Status)
+	}
+	deployments, err := repo.ListDeployments(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deployments) != 1 || deployments[0].Status != DeploymentSuccess {
+		t.Fatalf("deployment should succeed with proxy warning: %+v", deployments)
 	}
 }
 
