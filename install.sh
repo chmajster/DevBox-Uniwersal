@@ -27,7 +27,6 @@ LOG_FILE="${DEVBOX_INSTALL_LOG:-/var/log/devbox-installer.log}"
 MODE=""
 PURGE=0
 COLOR=0
-BOOTSTRAP_PASSWORD=""
 BOOTSTRAP_USERNAME="admin"
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
@@ -457,16 +456,10 @@ EOF_NGINX
   emit " OK " "Nginx używa kontrolowanego include z $NGINX_STATE_DIR; walidacja/reload działa przez devbox-helper."
 }
 
-generate_bootstrap_credentials() {
-  if [[ -e "$DATA_DIR/devbox.db" ]]; then
-    return 0
-  fi
-  if grep -q '^DEVBOX_BOOTSTRAP_ADMIN_USERNAME=' "$ENV_FILE" 2>/dev/null && grep -q '^DEVBOX_BOOTSTRAP_ADMIN_PASSWORD=' "$ENV_FILE" 2>/dev/null; then
-    return 0
-  fi
-  BOOTSTRAP_PASSWORD="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+configure_passwordless_access() {
+  upsert_env_file "$ENV_FILE" DEVBOX_AUTH_DISABLED "true"
   upsert_env_file "$ENV_FILE" DEVBOX_BOOTSTRAP_ADMIN_USERNAME "$BOOTSTRAP_USERNAME"
-  upsert_env_file "$ENV_FILE" DEVBOX_BOOTSTRAP_ADMIN_PASSWORD "$BOOTSTRAP_PASSWORD"
+  remove_env_key "$ENV_FILE" DEVBOX_BOOTSTRAP_ADMIN_PASSWORD
   chown root:devbox "$ENV_FILE"
   chmod 0640 "$ENV_FILE"
 }
@@ -609,7 +602,7 @@ run_install() {
   install_artifacts
   configure_mysql_admin
   install_nginx_integration
-  generate_bootstrap_credentials
+  configure_passwordless_access
 
   stage 6 "Instalacja usługi"
   install_service
@@ -621,11 +614,7 @@ run_install() {
   stage 8 "Podsumowanie"
   emit " OK " "DevBox Universal zainstalowany. GUI: http://localhost:8787/"
   emit INFO "Log instalatora: $LOG_FILE"
-  if [[ -n "$BOOTSTRAP_PASSWORD" ]]; then
-    # Deliberately not written through emit(): credentials must never enter the installer log.
-    printf '[INFO] Pierwsze logowanie: %s\n' "$BOOTSTRAP_USERNAME"
-    printf '[INFO] Hasło jednorazowo wygenerowane podczas instalacji: %s\n' "$BOOTSTRAP_PASSWORD"
-  fi
+  emit INFO "Logowanie hasłem jest wyłączone. Panel lokalny otwiera się bez ekranu logowania."
 }
 
 run_status() {
