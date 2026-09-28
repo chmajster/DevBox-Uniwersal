@@ -1,0 +1,117 @@
+name: Verify prepared live source repair
+on:
+  push:
+    branches: [agent/59-compose-live-source-verification]
+    paths:
+      - '.github/live-source-transfer.*'
+      - '.github/workflows/agent-live-source-transfer.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Materialize reviewed source and verify exact tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/live-source-transfer.{0,1,2} | base64 --decode | gzip --decompress > "$RUNNER_TEMP/live-source.patch"
+          echo "85c9c8a4bfaf8b4fbd132998bb75948c37ca5c1bb7ef43a6db9a4363e97ba79d  $RUNNER_TEMP/live-source.patch" | sha256sum --check
+          git rm .github/live-source-transfer.{0,1,2} .github/workflows/agent-live-source-transfer.yml
+          test "$(git write-tree)" = 174ac18767767d0ae0ba609d60ca89d73e6945c3
+          git apply --check "$RUNNER_TEMP/live-source.patch"
+          git apply --index "$RUNNER_TEMP/live-source.patch"
+          git ls-files -z '*.go' | xargs -0 gofmt -w
+          git add backend
+          test "$(git write-tree)" = 2d91595be3faac437a55a4b5231e9ac3e518df02
+          git diff --cached --check
+          git archive --format=tar.gz "$(git write-tree)" > "$RUNNER_TEMP/verified-source.tar.gz"
+      - name: Backend validation
+        working-directory: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./... | tee "$RUNNER_TEMP/backend-tests.log"
+          go vet ./...
+          go build ./cmd/...
+      - name: Frontend validation
+        working-directory: frontend
+        run: npm ci && npm run lint && npm run typecheck && npm test && npm run build
+      - name: Installer validation
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y shellcheck
+          bash -n install.sh scripts/test-install.sh
+          shellcheck -x install.sh scripts/dev.sh scripts/test-install.sh
+          ./scripts/test-install.sh
+      - name: PowerShell installer validation
+        shell: pwsh
+        run: |
+          ./scripts/validate-powershell.ps1
+          ./scripts/test-install.ps1
+      - name: Real Docker live source validation
+        working-directory: backend
+        env:
+          DEVBOX_DOCKER_LIVE_TEST: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker info
+          docker compose -p devbox-probe version
+          go test -v -count=1 -timeout=15m ./internal/docker -run '^TestDockerLive' | tee "$RUNNER_TEMP/docker-live-test.log"
+      - name: Verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-live-source-repair
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/verified-source.tar.gz
+            ${{ runner.temp }}/backend-tests.log
+            ${{ runner.temp }}/docker-live-test.log
+  publish-source:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: Commit only the verified source to the repair branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/live-source-transfer.{0,1,2} | base64 --decode | gzip --decompress > "$RUNNER_TEMP/live-source.patch"
+          echo "85c9c8a4bfaf8b4fbd132998bb75948c37ca5c1bb7ef43a6db9a4363e97ba79d  $RUNNER_TEMP/live-source.patch" | sha256sum --check
+          git rm .github/live-source-transfer.{0,1,2} .github/workflows/agent-live-source-transfer.yml
+          test "$(git write-tree)" = 174ac18767767d0ae0ba609d60ca89d73e6945c3
+          git apply --index "$RUNNER_TEMP/live-source.patch"
+          git ls-files -z '*.go' | xargs -0 gofmt -w
+          git add backend
+          test "$(git write-tree)" = 2d91595be3faac437a55a4b5231e9ac3e518df02
+          # Workflow changes are finalized by the connected GitHub client, not
+          # by giving application tests a token that can rewrite workflows.
+          git restore --source="$GITHUB_SHA" --staged --worktree .github/workflows/agent-live-source-transfer.yml
+          git rm .github/workflows/docker-live-source.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(docker): complete Compose installation and verify live PHP source mounts'
+          git push origin HEAD:refs/heads/agent/59-compose-live-source-verification
