@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/containerspec"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
@@ -100,5 +101,43 @@ func TestPHPMySQLDriverDetection(t *testing.T) {
 	}
 	if !hasPHPMySQLDriver([]RuntimeModule{{Name: "mysqli"}}) {
 		t.Fatal("mysqli must satisfy MySQL driver requirement")
+	}
+}
+
+func TestManagedEnvironmentPrecedenceDatabaseThenProjectThenRuntimeDefaults(t *testing.T) {
+	spec := containerspec.DeploymentSpec{
+		Environment: map[string]string{
+			"APP_ENV": "runtime-default",
+			"DB_HOST": "runtime-db-host",
+		},
+	}
+	mergeProjectEnvironment(&spec, runtimes.ResolvedEnvironment{
+		Plain: map[string]string{
+			"APP_ENV": "project-value",
+			"DB_HOST": "project-db-host",
+		},
+		Sensitive: map[string]string{
+			"API_TOKEN": "project-secret",
+		},
+	})
+	mergeDatabaseEnvironment(&spec, map[string]string{
+		"DB_HOST":     "devbox-mysql",
+		"DB_PASSWORD": "database-secret",
+	})
+
+	if spec.Environment["APP_ENV"] != "project-value" {
+		t.Fatalf("project environment must override runtime default, got %q", spec.Environment["APP_ENV"])
+	}
+	if _, exists := spec.Environment["DB_HOST"]; exists {
+		t.Fatal("reserved DB_HOST must be removed from plain runtime environment")
+	}
+	if spec.SensitiveEnvironment["DB_HOST"] != "devbox-mysql" {
+		t.Fatalf("database binding must override project DB_HOST, got %q", spec.SensitiveEnvironment["DB_HOST"])
+	}
+	if spec.SensitiveEnvironment["DB_PASSWORD"] != "database-secret" {
+		t.Fatal("database password was not injected as sensitive runtime environment")
+	}
+	if spec.SensitiveEnvironment["API_TOKEN"] != "project-secret" {
+		t.Fatal("project SecretStore environment was not preserved")
 	}
 }
