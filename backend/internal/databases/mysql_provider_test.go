@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
 )
 
 type fakeSecretStore struct {
@@ -24,7 +26,7 @@ func (f *fakeSecretStore) Put(_ context.Context, scope, name string, plaintext [
 func (f *fakeSecretStore) Get(_ context.Context, scope, name string) ([]byte, error) {
 	value, ok := f.values[scope+"/"+name]
 	if !ok {
-		return nil, errors.New("not found")
+		return nil, secrets.ErrNotFound
 	}
 	return append([]byte(nil), value...), nil
 }
