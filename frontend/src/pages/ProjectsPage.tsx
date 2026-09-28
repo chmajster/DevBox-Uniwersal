@@ -7,8 +7,59 @@ import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
+import { jobState } from '../control-room/model'
+import { usePolling } from '../control-room/usePolling'
 import { readPreference, savePreference } from '../layout/navigation'
 import { filterProjects, projectStatuses } from './projectFilters'
+
+type JobCollection = Job[] | { items?: Job[] }
+
+async function loadProjectJobs(signal: AbortSignal) {
+  const payload = await request<JobCollection>('/jobs?limit=200', { signal })
+  return Array.isArray(payload) ? payload : payload.items ?? []
+}
+
+function projectJobLabel(type: string) {
+  switch (type) {
+    case 'project.deploy': return 'Wdrożenie'
+    case 'project.git.clone': return 'Klonowanie Git'
+    case 'project.git.fetch': return 'Git fetch'
+    case 'project.git.pull': return 'Git pull'
+    case 'project.git.checkout': return 'Zmiana gałęzi'
+    default: return type.startsWith('project.') ? type.slice('project.'.length) : type
+  }
+}
+
+function latestProjectJobs(jobs: Job[]) {
+  const result = new Map<string, Job>()
+  const ordered = [...jobs].sort((a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0))
+  for (const job of ordered) {
+    if (!job.project_id || !job.type.startsWith('project.') || result.has(job.project_id)) continue
+    result.set(job.project_id, job)
+  }
+  return result
+}
+
+function ProjectLiveStatus({ project, job, unavailable }: { project: Project; job?: Job; unavailable: boolean }) {
+  const state = job ? jobState(job.status) : null
+  const active = job ? ['queued', 'pending', 'running'].includes(job.status.toLowerCase()) : false
+  const rawStage = job?.result?.stage ?? job?.payload?.stage
+  const stage = typeof rawStage === 'string' && rawStage.trim() ? rawStage : job ? projectJobLabel(job.type) : ''
+  return <div className={`project-live-status${active ? ' is-active' : ''}`} aria-live="polite">
+    <div className="project-live-heading">
+      <span className="project-live-title"><span className={`live-dot${active ? ' is-pulsing' : ''}`} aria-hidden="true" />Status na żywo</span>
+      <StatusBadge status={project.status} />
+    </div>
+    {unavailable
+      ? <div className="project-live-message">Status zadań chwilowo niedostępny.</div>
+      : job && state
+        ? <div className="project-live-job">
+            <div className="project-live-job-copy"><strong>{stage}</strong><span><span className={`console-badge badge-${state.tone}`}>{state.label}</span> <code>{job.id.slice(0, 8)}</code></span></div>
+            <Link className="project-live-link" to={`/jobs?job=${encodeURIComponent(job.id)}`}>Podgląd</Link>
+          </div>
+        : <div className="project-live-message">Brak aktywnych lub ostatnich zadań projektu.</div>}
+  </div>
+}
 
 export function ProjectsPage() {
   const { user } = useAuth()
@@ -31,6 +82,8 @@ export function ProjectsPage() {
   const status = projectStatuses.some((value) => value === statusParam) ? statusParam : ''
   const canManage = user?.role === 'admin' || user?.role === 'operator'
   const filtered = useMemo(() => filterProjects(projects, query, status), [projects, query, status])
+  const jobListing = usePolling(loadProjectJobs, 2000, loaded)
+  const jobsByProject = useMemo(() => latestProjectJobs(jobListing.data ?? []), [jobListing.data])
 
   useEffect(() => {
     let cancelled = false
@@ -43,6 +96,26 @@ export function ProjectsPage() {
     }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [reload, showArchived])
+
+  useEffect(() => {
+    if (!loaded) return
+    let cancelled = false
+    let timer: number | undefined
+    async function refreshProjectsLive() {
+      if (cancelled) return
+      if (!document.hidden) {
+        try {
+          const items = await listProjects(showArchived)
+          if (!cancelled) setProjects(items)
+        } catch {
+          // The initial/manual load owns the visible error state. A transient live refresh must not wipe the current list.
+        }
+      }
+      if (!cancelled) timer = window.setTimeout(() => void refreshProjectsLive(), 2500)
+    }
+    timer = window.setTimeout(() => void refreshProjectsLive(), 2500)
+    return () => { cancelled = true; if (timer !== undefined) window.clearTimeout(timer) }
+  }, [loaded, showArchived])
 
   function changeStatus(value: string) {
     const next = new URLSearchParams(params)
@@ -59,6 +132,7 @@ export function ProjectsPage() {
     setNotice('')
     try {
       await request<Job | Project>(`/projects/${encodeURIComponent(project.id)}/${action}`, { method: 'POST' })
+      if (action === 'deploy') jobListing.refresh()
       setNotice(action === 'deploy' ? `Wdrożenie „${project.name}” dodano do kolejki zadań.` : `Zarchiwizowano aplikację „${project.name}”.`)
       setArchiveTarget(null)
       setReload((value) => value + 1)
@@ -127,9 +201,10 @@ export function ProjectsPage() {
         <p className="project-description">{project.description || project.domain || 'Projekt zarządzany przez DevBox'}</p>
         <div className="project-tags"><span>{project.runtime || 'Runtime nieustawiony'}</span><span>{project.container_policy === 'custom' ? 'Własny Docker' : 'Kontener zarządzany'}</span></div>
         <dl className="project-meta"><div><dt><Icon name="branch" size={14} />Gałąź</dt><dd>{project.branch || '—'}</dd></div><div><dt><Icon name="network" size={14} />Port</dt><dd>{project.port ?? '—'}</dd></div><div><dt><Icon name="globe" size={14} />Domena</dt><dd title={project.domain}>{project.domain || '—'}</dd></div><div><dt><Icon name="code" size={14} />Commit</dt><dd><code>{project.current_commit?.slice(0, 10) || '—'}</code></dd></div></dl>
+        <ProjectLiveStatus project={project} job={jobsByProject.get(project.id)} unavailable={Boolean(jobListing.error)} />
         {actions(project)}
-      </article>)}</div> : <div className="table-wrap"><table><caption className="sr-only">Aplikacje i dostępne operacje</caption><thead><tr>{['Nazwa', 'Status', 'Runtime', 'Gałąź', 'Port', 'Domena', 'Commit', 'Akcje'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead><tbody>{filtered.map((project) => <tr key={project.id}>
-        <td><Link className="project-name" to={`/apps/${encodeURIComponent(project.id)}`}>{project.name}</Link></td><td><StatusBadge status={project.status} /></td><td>{project.runtime || '—'}</td><td>{project.branch || '—'}</td><td>{project.port ?? '—'}</td><td>{project.domain || '—'}</td><td><code>{project.current_commit?.slice(0, 10) || '—'}</code></td><td>{actions(project)}</td>
+      </article>)}</div> : <div className="table-wrap"><table><caption className="sr-only">Aplikacje i dostępne operacje</caption><thead><tr>{['Nazwa', 'Status', 'Live', 'Runtime', 'Gałąź', 'Port', 'Domena', 'Commit', 'Akcje'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead><tbody>{filtered.map((project) => <tr key={project.id}>
+        <td><Link className="project-name" to={`/apps/${encodeURIComponent(project.id)}`}>{project.name}</Link></td><td><StatusBadge status={project.status} /></td><td>{jobsByProject.get(project.id) ? <Link className="table-live-link" to={`/jobs?job=${encodeURIComponent(jobsByProject.get(project.id)!.id)}`}>{jobState(jobsByProject.get(project.id)!.status).label}</Link> : '—'}</td><td>{project.runtime || '—'}</td><td>{project.branch || '—'}</td><td>{project.port ?? '—'}</td><td>{project.domain || '—'}</td><td><code>{project.current_commit?.slice(0, 10) || '—'}</code></td><td>{actions(project)}</td>
       </tr>)}</tbody></table></div>}
     </div>}
     {loaded && !loading && !loadError && filtered.length === 0 && <div className="workspace-empty">

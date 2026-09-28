@@ -178,6 +178,20 @@ progress.meter-warning::-moz-progress-bar { background: var(--warning); }
 .project-meta > div { min-width: 0; }
 .project-meta dt { display: flex; align-items: center; gap: 5px; color: var(--muted); }
 .project-meta dd { margin: 4px 0 0; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.project-live-status { display: grid; gap: 9px; margin: 2px 0 17px; padding: 11px 12px; border: 1px solid var(--border-soft); border-radius: 9px; background: var(--panel-alt); min-width: 0; }
+.project-live-status.is-active { border-color: var(--success-border); background: var(--success-bg); }
+.project-live-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.project-live-title { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; white-space: nowrap; }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.live-dot.is-pulsing { background: var(--success); box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 32%, transparent); animation: project-live-pulse 1.4s ease-out infinite; }
+.project-live-job { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.project-live-job-copy { display: grid; gap: 3px; min-width: 0; }
+.project-live-job-copy strong { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-live-job-copy > span { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: 9px; }
+.project-live-job-copy code { overflow: hidden; text-overflow: ellipsis; }
+.project-live-link, .table-live-link { font-size: 10px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.project-live-message { color: var(--muted); font-size: 10px; }
+@keyframes project-live-pulse { 70% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--success) 0%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
 .project-actions { display: flex; align-items: center; gap: 8px; }
 .project-card .project-actions { border-top: 1px solid var(--border-soft); padding-top: 15px; }
 .project-details-link { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; text-decoration: none; white-space: nowrap; margin-right: auto; }
