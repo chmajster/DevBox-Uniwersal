@@ -7,6 +7,7 @@ import { ErrorState } from '../components/ErrorState'
 import { StatusBadge } from '../components/StatusBadge'
 import { PROJECT_TABS, type ProjectTab } from '../routes'
 import { ProjectDatabaseSection } from '../runtime/ProjectDatabaseSection'
+import { ProjectPHPModulesSection } from '../runtime/ProjectPHPModulesSection'
 
 const tabLabels: Record<ProjectTab, string> = {
   overview: 'Overview',
@@ -100,11 +101,14 @@ function TabContent({ project, tab }: { project: Project; tab: ProjectTab }) {
         {field('Local path', project.local_path)}
       </div>
     case 'runtime':
-      return <div className="detail-grid">
-        {field('Runtime', project.runtime)}
-        {field('Status', project.status)}
-        {field('Start command', project.start_command)}
-        {field('Healthcheck', project.healthcheck)}
+      return <div className="stack">
+        <div className="detail-grid">
+          {field('Runtime', project.runtime)}
+          {field('Status', project.status)}
+          {field('Start command', project.start_command)}
+          {field('Healthcheck', project.healthcheck)}
+        </div>
+        <ProjectPHPModulesSection projectId={project.id} runtimeHint={project.runtime} />
       </div>
     case 'git':
       return <div className="detail-grid">

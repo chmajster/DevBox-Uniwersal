@@ -3,6 +3,7 @@ import { ProjectPortsSection } from './ProjectPortsSection'
 import { request } from '../api/client'
 import type { Job, ProjectRuntimeInfo, RuntimeContainerConfig, RuntimeModuleOption } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { effectiveRuntimeName, preparePHPModuleConfig, updatePHPModuleSelection } from './phpModuleConfig'
 
 interface Props {
   projectId: string
@@ -49,8 +50,10 @@ export function ProjectRuntimeSection({ projectId }: Props) {
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Nie udało się wczytać konfiguracji runtime'))
   }, [projectId])
 
+  const effectiveRuntime = effectiveRuntimeName(config.runtime, runtime?.runtime)
+
   useEffect(() => {
-    if (config.runtime !== 'php') {
+    if (effectiveRuntime !== 'php') {
       setCatalog([])
       setQuery('')
       return
@@ -61,7 +64,7 @@ export function ProjectRuntimeSection({ projectId }: Props) {
         setCatalog([])
         setError(reason instanceof Error ? reason.message : 'Nie udało się wczytać listy modułów PHP')
       })
-  }, [config.runtime])
+  }, [effectiveRuntime])
 
   const selected = useMemo(() => new Set(config.modules.map((item) => item.name)), [config.modules])
   const filteredCatalog = useMemo(() => {
@@ -76,10 +79,8 @@ export function ProjectRuntimeSection({ projectId }: Props) {
 
   function toggleModule(name: string, enabled: boolean) {
     setConfig((current) => ({
-      ...current,
-      modules: enabled
-        ? [...current.modules.filter((item) => item.name !== name), { name }]
-        : current.modules.filter((item) => item.name !== name),
+      ...preparePHPModuleConfig(current),
+      modules: updatePHPModuleSelection(current.modules, name, enabled),
     }))
   }
 
@@ -88,9 +89,10 @@ export function ProjectRuntimeSection({ projectId }: Props) {
     setError('')
     setMessage('')
     try {
+      const payload = effectiveRuntime === 'php' && config.modules.length > 0 ? preparePHPModuleConfig(config) : config
       const saved = await request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`, {
         method: 'PUT',
-        body: JSON.stringify(config),
+        body: JSON.stringify(payload),
       })
       setConfig(saved)
       const job = await request<Job>(`/projects/${encodeURIComponent(projectId)}/runtime/rebuild`, {
@@ -162,7 +164,7 @@ export function ProjectRuntimeSection({ projectId }: Props) {
       <div><dt>Fingerprint</dt><dd><code>{config.build_fingerprint?.slice(0, 16) || '—'}</code></dd></div>
     </dl>}
 
-    {config.runtime === 'php' && <div className="runtime-modules">
+    {effectiveRuntime === 'php' && <div className="runtime-modules">
       <div className="section-heading">
         <div>
           <h3>Moduły PHP w kontenerze</h3>
