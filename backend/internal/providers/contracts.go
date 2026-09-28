@@ -111,10 +111,11 @@ type PortLease struct {
 }
 
 type ComposePortBinding struct {
-	Service       string
-	HostPort      int
-	ContainerPort int
-	Protocol      string
+	Service           string
+	RequestedHostPort int
+	HostPort          int
+	ContainerPort     int
+	Protocol          string
 }
 
 type PortAllocator interface {
