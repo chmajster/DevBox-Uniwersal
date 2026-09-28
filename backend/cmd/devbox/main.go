@@ -17,6 +17,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/apphealth"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/auth"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/backups"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/config"
 	controldb "github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/databases"
@@ -71,6 +72,20 @@ func serve() error {
 		logger.Error("configuration error", "error", err)
 		os.Exit(1)
 	}
+	restoreResult, err := backups.ApplyPendingRestore(backups.ApplyRestoreOptions{
+		DatabasePath:        cfg.DatabasePath,
+		BackupDir:           cfg.ControlPlaneBackupDir,
+		ProjectsRoot:        cfg.ProjectsRoot,
+		NginxSitesAvailable: cfg.NginxSitesAvailable,
+		NginxSitesEnabled:   cfg.NginxSitesEnabled,
+	})
+	if err != nil {
+		logger.Error("pending control-plane restore failed", "error", err)
+		os.Exit(1)
+	}
+	if restoreResult.Applied {
+		logger.Info("pending control-plane restore applied", "backup_id", restoreResult.BackupID, "rollback_path", restoreResult.RollbackPath)
+	}
 	db, err := controldb.Open(cfg.DatabasePath)
 	if err != nil {
 		logger.Error("database open failed", "error", err)
@@ -93,6 +108,24 @@ func serve() error {
 		os.Exit(1)
 	}
 	auditService := audit.NewService(auditRepo)
+
+	backupRepo := backups.NewRepository(db)
+	backupManager := backups.NewManager(db, backups.ManagerOptions{
+		DatabasePath:        cfg.DatabasePath,
+		BackupDir:           cfg.ControlPlaneBackupDir,
+		ProjectsRoot:        cfg.ProjectsRoot,
+		NginxSitesAvailable: cfg.NginxSitesAvailable,
+		NginxSitesEnabled:   cfg.NginxSitesEnabled,
+		AppVersion:          cfg.AppVersion,
+	})
+	backupService := backups.NewService(backupRepo, jobRunner, backupManager, cfg.ControlPlaneBackupDir)
+	for _, handler := range backupService.Handlers() {
+		if err := jobRunner.Register(handler); err != nil {
+			logger.Error("backup job handler registration failed", "type", handler.Type(), "error", err)
+			os.Exit(1)
+		}
+	}
+	backupModule := backups.NewModule(backupService, auditService)
 
 	var secretStore secrets.SecretStore
 	if cfg.MasterKeyBase64 != "" {
@@ -224,6 +257,7 @@ func serve() error {
 		databaseModule,
 		networkModule,
 		appHealthModule,
+		backupModule,
 		monitoring.NewModule(monitoring.NewCollector()),
 		operations.NewModule(logRegistry),
 	}
