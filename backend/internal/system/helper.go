@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var ErrOperationNotAllowed = errors.New("privileged operation not allowed")
