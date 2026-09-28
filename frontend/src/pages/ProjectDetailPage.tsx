@@ -73,6 +73,7 @@ export function ProjectDetailPage() {
   }, [tab])
 
   const activeDeployment = deployments.find((item) => !deploymentFinished(item))
+  const currentDeployment = activeDeployment ?? deployments[0]
 
   useEffect(() => {
     if (!activeDeployment) return
@@ -159,27 +160,29 @@ export function ProjectDetailPage() {
       <div className="table-wrap"><table><thead><tr><th>Commit</th><th>Author</th><th>Date</th><th>Subject</th></tr></thead><tbody>{git.history.map((commit) => <tr key={commit.hash}><td><code>{commit.hash.slice(0, 10)}</code></td><td>{commit.author}</td><td>{new Date(commit.date).toLocaleString()}</td><td>{commit.subject}</td></tr>)}</tbody></table></div></>}
     </div>}
     {tab === 'deployments' && <div className="stack">
-      {activeDeployment && <section className="panel deployment-live" aria-live="polite">
+      {currentDeployment && <section className={`panel deployment-live ${currentDeployment.status === 'FAILED' ? 'deployment-live-failed' : currentDeployment.status === 'SUCCESS' ? 'deployment-live-success' : ''}`} aria-live="polite">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">AKTUALNY DEPLOYMENT</span>
-            <h2>{deploymentStageLabels[activeDeployment.stage] ?? activeDeployment.stage}</h2>
-            <p className="muted"><code>{activeDeployment.id.slice(0, 12)}</code>{activeDeployment.job_id ? <> · job <code>{activeDeployment.job_id.slice(0, 12)}</code></> : null}</p>
+            <span className="eyebrow">{activeDeployment ? 'AKTUALNY DEPLOYMENT' : 'OSTATNI DEPLOYMENT'}</span>
+            <h2>{currentDeployment.status === 'FAILED' ? `Błąd podczas: ${deploymentStageLabels[currentDeployment.stage] ?? currentDeployment.stage}` : deploymentStageLabels[currentDeployment.stage] ?? currentDeployment.stage}</h2>
+            <p className="muted"><code>{currentDeployment.id.slice(0, 12)}</code>{currentDeployment.job_id ? <> · job <code>{currentDeployment.job_id.slice(0, 12)}</code></> : null}</p>
           </div>
-          <span className={`console-badge ${activeDeployment.status === 'FAILED' ? 'badge-danger' : 'badge-info'}`}>{activeDeployment.status}</span>
+          <span className={`console-badge ${currentDeployment.status === 'FAILED' ? 'badge-danger' : currentDeployment.status === 'SUCCESS' ? 'badge-success' : 'badge-info'}`}>{currentDeployment.status}</span>
         </div>
         <div className="deployment-live-progress">
-          <div><span>Postęp</span><strong>{deploymentProgress(activeDeployment)}%</strong></div>
-          <progress max={100} value={deploymentProgress(activeDeployment)}>{deploymentProgress(activeDeployment)}%</progress>
+          <div><span>Postęp</span><strong>{deploymentProgress(currentDeployment)}%</strong></div>
+          <progress max={100} value={deploymentProgress(currentDeployment)}>{deploymentProgress(currentDeployment)}%</progress>
         </div>
         <div className="deployment-stage-track">
           {deploymentStages.map((stage) => {
-            const current = stage === activeDeployment.stage
-            const done = deploymentStages.indexOf(stage) < deploymentStages.indexOf(activeDeployment.stage as (typeof deploymentStages)[number])
-            return <div key={stage} className={current ? 'is-current' : done ? 'is-done' : ''}><span></span><small>{deploymentStageLabels[stage]}</small></div>
+            const currentIndex = deploymentStages.indexOf(currentDeployment.stage as (typeof deploymentStages)[number])
+            const stageIndex = deploymentStages.indexOf(stage)
+            const current = stage === currentDeployment.stage
+            const done = currentDeployment.status === 'SUCCESS' || (currentIndex >= 0 && stageIndex < currentIndex)
+            return <div key={stage} className={current ? currentDeployment.status === 'FAILED' ? 'is-failed' : 'is-current' : done ? 'is-done' : ''}><span></span><small>{deploymentStageLabels[stage]}</small></div>
           })}
         </div>
-        {activeDeployment.error && <div className="error-banner">{activeDeployment.error}</div>}
+        {currentDeployment.error && <div className="error-banner">{currentDeployment.error}</div>}
       </section>}
       <div className="table-wrap"><table><thead><tr><th>Status</th><th>Stage</th><th>Commit before</th><th>Commit after</th><th>Started</th><th>Duration</th><th>Error</th></tr></thead><tbody>{deployments.map((item) => <tr key={item.id}><td>{item.status}</td><td>{deploymentStageLabels[item.stage] ?? item.stage}</td><td><code>{item.commit_before?.slice(0, 10) || '—'}</code></td><td><code>{item.commit_after?.slice(0, 10) || '—'}</code></td><td>{item.started_at ? new Date(item.started_at).toLocaleString() : '—'}</td><td>{item.duration_ms ? `${item.duration_ms} ms` : '—'}</td><td className="error-cell">{item.error || '—'}</td></tr>)}{deployments.length === 0 && <tr><td colSpan={7} className="muted">Brak deploymentów.</td></tr>}</tbody></table></div>
     </div>}
