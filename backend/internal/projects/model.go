@@ -37,6 +37,7 @@ type Project struct {
 	AutoStart        bool       `json:"auto_start"`
 	CredentialKind   string     `json:"credential_kind,omitempty"`
 	CredentialID     string     `json:"credential_id,omitempty"`
+	SourceControlProvider string `json:"source_control_provider,omitempty"`
 	CurrentCommit    string     `json:"current_commit,omitempty"`
 	Port             *int       `json:"port,omitempty"`
 	Domain           *string    `json:"domain,omitempty"`
