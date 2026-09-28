@@ -270,6 +270,16 @@ export interface PHPFPMStatus {
   message?: string
 }
 
+export interface PHPExtension {
+  id: string
+  name: string
+  description: string
+  category: string
+  package: string
+  installed: boolean
+  modules?: string[]
+}
+
 export interface ProvisionResult {
   database: DatabaseRecord
   credential: {
