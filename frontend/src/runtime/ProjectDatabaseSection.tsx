@@ -11,6 +11,7 @@ import type {
   RuntimeContainerConfig,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { databaseModeFields } from './databaseMode'
 
 interface Props {
   projectId: string
@@ -93,6 +94,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     void loadComposeServices()
   }, [load, loadComposeServices])
 
+  const modeFields = databaseModeFields(draft.mode)
   const effectiveRuntime = (runtimeConfig?.runtime || runtimeInfo?.runtime || '').toLowerCase()
   const phpModules = useMemo(() => new Set((runtimeConfig?.modules ?? []).map((item) => item.name.toLowerCase())), [runtimeConfig])
   const needsPHPMySQLDriver = draft.mode !== 'none' && effectiveRuntime === 'php' && !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
@@ -259,20 +261,20 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     </fieldset>
 
     {draft.mode !== 'none' && <div className="form-grid">
-      {(draft.mode === 'managed' || draft.mode === 'compose') && <label>Application service
+      {modeFields.includes('application_service') && <label>Application service
         <select disabled={readOnly || busy !== ''} value={draft.application_service ?? ''} onChange={(event) => setDraft({ ...draft, application_service: event.target.value })}>
           <option value="">Automatycznie wykryj</option>
           {serviceOptions.map((service) => <option key={service} value={service}>{service}</option>)}
         </select>
       </label>}
 
-      {draft.mode === 'managed' && <>
+      {modeFields.includes('engine') && draft.mode === 'managed' && <>
         <label>Silnik<input readOnly value={binding?.engine || draft.engine || 'mysql'} /></label>
         <label>Nazwa bazy<input readOnly value={binding?.database || '—'} /></label>
         <label>Użytkownik<input readOnly value={binding?.username || '—'} /></label>
       </>}
 
-      {draft.mode === 'compose' && <>
+      {modeFields.includes('compose_service') && <>
         <label>Database service
           <select disabled={readOnly || busy !== ''} required value={draft.compose_service ?? ''} onChange={(event) => setDraft({ ...draft, compose_service: event.target.value })}>
             <option value="">Wybierz service bazy</option>
@@ -287,7 +289,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         </label>
       </>}
 
-      {draft.mode === 'external' && <>
+      {modeFields.includes('host') && draft.mode === 'external' && <>
         <label>Host<input disabled={readOnly || busy !== ''} value={draft.host ?? ''} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="mysql.example.internal" /></label>
         <label>Port<input disabled={readOnly || busy !== ''} type="number" min={1} max={65535} value={draft.port ?? 3306} onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })} /></label>
         <label>Nazwa bazy<input disabled={readOnly || busy !== ''} value={draft.database ?? ''} onChange={(event) => setDraft({ ...draft, database: event.target.value })} /></label>
@@ -297,10 +299,10 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         </label>
       </>}
 
-      <label>Host używany przez aplikację
+      {modeFields.includes('application_host') && <label>Host używany przez aplikację
         <input readOnly value={draft.mode === 'managed' ? (binding?.application_host || 'devbox-mysql') : draft.mode === 'compose' ? (draft.compose_service || '—') : draft.mode === 'external' ? (draft.host || '—') : '—'} />
-      </label>
-      <label>Port używany przez aplikację<input readOnly value={draft.mode === 'managed' ? (binding?.application_port || 3306) : (draft.port || 3306)} /></label>
+      </label>}
+      {modeFields.includes('application_port') && <label>Port używany przez aplikację<input readOnly value={draft.mode === 'managed' ? (binding?.application_port || 3306) : (draft.port || 3306)} /></label>}
     </div>}
 
     {needsPHPMySQLDriver && <div className="validation-box">
