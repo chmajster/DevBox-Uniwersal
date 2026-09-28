@@ -1,0 +1,32 @@
+name: Agent gofmt
+
+on:
+  push:
+    branches:
+      - agent/22-runtime-source-control
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/22-runtime-source-control
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: Format backend
+        run: |
+          gofmt -w backend
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend
+          git commit -m "Format runtime and source-control tests"
+          git push origin HEAD:agent/22-runtime-source-control
