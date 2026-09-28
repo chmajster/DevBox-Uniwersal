@@ -25,12 +25,12 @@ func TestReconcileAutoStartQueuesOnceAndMarksReconcilePayload(t *testing.T) {
 	projectRepo := NewRepository(db)
 	now := time.Now().UTC()
 	auto := Project{
-		ID:             NewID(),
-		Name:           "auto",
-		Slug:           "auto",
-		Status:         "running",
-		SourceType:     SourceLocal,
-		LocalPath:      t.TempDir(),
+		ID:              NewID(),
+		Name:            "auto",
+		Slug:            "auto",
+		Status:          "running",
+		SourceType:      SourceLocal,
+		LocalPath:       t.TempDir(),
 		Runtime:         "static",
 		ContainerPolicy: ContainerPolicyAuto,
 		DeploymentMode:  "docker",
