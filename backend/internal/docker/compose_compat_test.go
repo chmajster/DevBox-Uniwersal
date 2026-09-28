@@ -114,3 +114,69 @@ func TestComposePSFallsBackWhenLegacyFormatJSONIsUnsupported(t *testing.T) {
 		t.Fatalf("unexpected compose processes: %#v", items)
 	}
 }
+
+
+func TestComposeTargetPortDetectsPlanStyleWebBinding(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services:\n  web:\n    image: php:8.2-apache\n    ports:\n      - \"8080:80\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &stubRunner{responses: []runnerResponse{
+		{stdout: "Docker Compose version v2.29.0\n"},
+		{stdout: "abc123\n"},
+		{stdout: "[{\"Config\":{\"Labels\":{\"com.docker.compose.service\":\"web\"}},\"NetworkSettings\":{\"Ports\":{\"80/tcp\":[{\"HostIp\":\"0.0.0.0\",\"HostPort\":\"8080\"},{\"HostIp\":\"::\",\"HostPort\":\"8080\"}]}}}]"},
+	}}
+	provider := newCLIProviderWithRunner(runner)
+
+	port, err := provider.ComposeTargetPort(context.Background(), dir, "plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if port != 8080 {
+		t.Fatalf("ComposeTargetPort() = %d, want 8080", port)
+	}
+}
+
+func TestComposeTargetPortPrefersWebOverPublishedDatabase(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services:\n  web:\n    image: nginx:alpine\n  db:\n    image: mysql:8\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &stubRunner{responses: []runnerResponse{
+		{stdout: "Docker Compose version v2.29.0\n"},
+		{stdout: "web123\ndb123\n"},
+		{stdout: "[{\"Config\":{\"Labels\":{\"com.docker.compose.service\":\"web\"}},\"NetworkSettings\":{\"Ports\":{\"80/tcp\":[{\"HostIp\":\"0.0.0.0\",\"HostPort\":\"8080\"}]}}}]"},
+		{stdout: "[{\"Config\":{\"Labels\":{\"com.docker.compose.service\":\"db\"}},\"NetworkSettings\":{\"Ports\":{\"3306/tcp\":[{\"HostIp\":\"127.0.0.1\",\"HostPort\":\"3306\"}]}}}]"},
+	}}
+	provider := newCLIProviderWithRunner(runner)
+
+	port, err := provider.ComposeTargetPort(context.Background(), dir, "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if port != 8080 {
+		t.Fatalf("ComposeTargetPort() = %d, want web host port 8080", port)
+	}
+}
+
+func TestComposeTargetPortRejectsAmbiguousPublishedPorts(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services:\n  worker1:\n    image: busybox\n  worker2:\n    image: busybox\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &stubRunner{responses: []runnerResponse{
+		{stdout: "Docker Compose version v2.29.0\n"},
+		{stdout: "one123\ntwo123\n"},
+		{stdout: "[{\"Config\":{\"Labels\":{\"com.docker.compose.service\":\"worker1\"}},\"NetworkSettings\":{\"Ports\":{\"9000/tcp\":[{\"HostIp\":\"0.0.0.0\",\"HostPort\":\"19000\"}]}}}]"},
+		{stdout: "[{\"Config\":{\"Labels\":{\"com.docker.compose.service\":\"worker2\"}},\"NetworkSettings\":{\"Ports\":{\"9001/tcp\":[{\"HostIp\":\"0.0.0.0\",\"HostPort\":\"19001\"}]}}}]"},
+	}}
+	provider := newCLIProviderWithRunner(runner)
+
+	_, err := provider.ComposeTargetPort(context.Background(), dir, "sample")
+	if err == nil || !strings.Contains(err.Error(), "multiple published host ports") {
+		t.Fatalf("expected ambiguous published port error, got %v", err)
+	}
+}
