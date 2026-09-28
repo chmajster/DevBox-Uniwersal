@@ -138,11 +138,11 @@ func (r *Repository) RuntimeContainerConfig(ctx context.Context, projectID strin
 		return RuntimeContainerConfig{}, err
 	}
 	config := RuntimeContainerConfig{
-		ProjectID: projectID,
-		Runtime: p.Runtime,
-		RuntimeVersion: p.RuntimeVersion,
+		ProjectID:       projectID,
+		Runtime:         p.Runtime,
+		RuntimeVersion:  p.RuntimeVersion,
 		ContainerPolicy: p.ContainerPolicy,
-		Modules: []RuntimeModule{},
+		Modules:         []RuntimeModule{},
 	}
 	rows, err := r.db.QueryContext(ctx, `SELECT module_name,version_constraint FROM project_runtime_modules WHERE project_id=? AND enabled=1 ORDER BY module_name`, projectID)
 	if err != nil {
