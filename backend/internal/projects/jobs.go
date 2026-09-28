@@ -784,14 +784,14 @@ func payloadBool(payload map[string]any, key string) bool {
 
 func validDeploymentTransition(from, to string) bool {
 	next := map[string]string{
-		DeploymentQueued: DeploymentPreparing,
-		DeploymentPreparing: DeploymentUpdatingSource,
+		DeploymentQueued:         DeploymentPreparing,
+		DeploymentPreparing:      DeploymentUpdatingSource,
 		DeploymentUpdatingSource: DeploymentDatabase,
-		DeploymentDatabase: DeploymentDependencies,
-		DeploymentDependencies: DeploymentBuilding,
-		DeploymentBuilding: DeploymentStarting,
-		DeploymentStarting: DeploymentHealthcheck,
-		DeploymentHealthcheck: DeploymentSuccess,
+		DeploymentDatabase:       DeploymentDependencies,
+		DeploymentDependencies:   DeploymentBuilding,
+		DeploymentBuilding:       DeploymentStarting,
+		DeploymentStarting:       DeploymentHealthcheck,
+		DeploymentHealthcheck:    DeploymentSuccess,
 	}
 	return next[from] == to
 }
@@ -801,16 +801,16 @@ func projectDatabaseEnvironment(runtime providers.ProjectDatabaseRuntime) map[st
 	port := strconv.Itoa(connection.Port)
 	password := string(runtime.Secret)
 	return map[string]string{
-		"DB_DRIVER": "mysql",
-		"DB_HOST": connection.Host,
-		"DB_PORT": port,
-		"DB_DATABASE": connection.Database,
-		"DB_USERNAME": connection.Username,
-		"DB_PASSWORD": password,
-		"DATABASE_HOST": connection.Host,
-		"DATABASE_PORT": port,
-		"DATABASE_NAME": connection.Database,
-		"DATABASE_USER": connection.Username,
+		"DB_DRIVER":         "mysql",
+		"DB_HOST":           connection.Host,
+		"DB_PORT":           port,
+		"DB_DATABASE":       connection.Database,
+		"DB_USERNAME":       connection.Username,
+		"DB_PASSWORD":       password,
+		"DATABASE_HOST":     connection.Host,
+		"DATABASE_PORT":     port,
+		"DATABASE_NAME":     connection.Database,
+		"DATABASE_USER":     connection.Username,
 		"DATABASE_PASSWORD": password,
 	}
 }

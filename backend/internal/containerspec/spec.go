@@ -27,24 +27,24 @@ type ModuleOption struct {
 }
 
 type DeploymentSpec struct {
-	ProjectID        string
-	Runtime          string
-	Version          string
-	ContextDir       string
-	Dockerfile       string
-	DockerfilePath   string
-	Image            string
-	ContainerName    string
-	HostPort         int
-	ContainerPort    int
+	ProjectID            string
+	Runtime              string
+	Version              string
+	ContextDir           string
+	Dockerfile           string
+	DockerfilePath       string
+	Image                string
+	ContainerName        string
+	HostPort             int
+	ContainerPort        int
 	Environment          map[string]string
 	SensitiveEnvironment map[string]string
 	Networks             []string
-	BindMounts       map[string]string
-	AnonymousVolumes []string
-	Labels           map[string]string
-	Fingerprint      string
-	ReadOnly         bool
+	BindMounts           map[string]string
+	AnonymousVolumes     []string
+	Labels               map[string]string
+	Fingerprint          string
+	ReadOnly             bool
 }
 
 type moduleDef struct {
