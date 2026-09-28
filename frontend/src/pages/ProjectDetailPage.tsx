@@ -46,6 +46,8 @@ export function ProjectDetailPage() {
   const { user } = useAuth()
   const [project, setProject] = useState<Project | null>(null)
   const [git, setGit] = useState<GitState | null>(null)
+  const [gitError, setGitError] = useState('')
+  const [gitLoading, setGitLoading] = useState(false)
   const [deployments, setDeployments] = useState<Deployment[]>([])
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logSource, setLogSource] = useState('all')
@@ -69,11 +71,15 @@ export function ProjectDetailPage() {
     return items
   }
   async function loadGit() {
+    setGitLoading(true)
+    setGitError('')
     try {
       setGit(await request<GitState>(`/projects/${id}/git`))
     } catch (cause) {
       setGit(null)
-      setError(cause instanceof Error ? cause.message : 'Git state unavailable')
+      setGitError(cause instanceof Error ? cause.message : 'Git state unavailable')
+    } finally {
+      setGitLoading(false)
     }
   }
 
@@ -221,7 +227,17 @@ export function ProjectDetailPage() {
     <div className="tabs">{(['overview', 'git', 'deployments', 'logs', 'configuration'] as Tab[]).map((item) => <button key={item} type="button" className={tab === item ? 'active' : ''} onClick={() => { setError(''); setTab(item) }}>{item === 'overview' ? 'Overview' : item === 'git' ? 'Git' : item === 'deployments' ? 'Deployments' : item === 'logs' ? 'Logi' : 'Configuration'}</button>)}</div>
     {tab === 'overview' && <div className="summary-grid panel"><div><span>Status</span><strong>{project.status}</strong></div><div><span>Source</span><strong>{project.source_type}</strong></div><div><span>Runtime</span><strong>{project.runtime || 'auto-detect'}{project.runtime_version ? ` ${project.runtime_version}` : ''}</strong></div><div><span>Kontener</span><strong>{project.container_policy === 'custom' ? 'własny Docker' : 'automatyczny'}</strong></div><div><span>Branch</span><strong>{project.branch || '—'}</strong></div><div><span>Commit</span><strong><code>{project.current_commit?.slice(0, 12) || '—'}</code></strong></div><div><span>Port</span><strong>{project.port ?? '—'}</strong></div><div><span>Domain</span><strong>{project.domain ?? '—'}</strong></div><div className="span-2"><span>Local path</span><strong><code>{project.local_path}</code></strong></div></div>}
     {tab === 'git' && <div className="stack">
-      {user?.role !== 'viewer' && <div className="toolbar"><button type="button" className="secondary" disabled={busy !== ''} onClick={() => void queue(`/projects/${id}/git/fetch`, 'fetch')}>Fetch</button><button type="button" disabled={busy !== ''} onClick={() => void queue(`/projects/${id}/git/pull`, 'pull')}>Pull --ff-only</button></div>}
+      {gitLoading && <div className="panel"><p className="muted">Sprawdzanie repozytorium Git…</p></div>}
+      {!gitLoading && gitError && <div className="panel">
+        <h2>Git niedostępny dla tego projektu</h2>
+        <p className="muted">
+          {project.source_type === 'local'
+            ? 'Projekt został dodany z lokalnego katalogu. Operacje Fetch/Pull są dostępne tylko wtedy, gdy ten katalog jest repozytorium Git i może zostać odczytany przez DevBox.'
+            : 'Nie udało się odczytać stanu repozytorium Git.'}
+        </p>
+        <p className="muted small"><code>{gitError}</code></p>
+      </div>}
+      {git && user?.role !== 'viewer' && git.remote && <div className="toolbar"><button type="button" className="secondary" disabled={busy !== ''} onClick={() => void queue(`/projects/${id}/git/fetch`, 'fetch')}>Fetch</button><button type="button" disabled={busy !== ''} onClick={() => void queue(`/projects/${id}/git/pull`, 'pull')}>Pull --ff-only</button></div>}
       {git && <><div className="summary-grid panel"><div><span>Branch</span><strong>{git.branch}</strong></div><div><span>Commit</span><strong><code>{git.commit.slice(0, 12)}</code></strong></div><div><span>Ahead / behind</span><strong>{git.ahead} / {git.behind}</strong></div><div><span>Working tree</span><strong>{git.dirty ? 'dirty' : 'clean'}</strong></div><div className="span-2"><span>Remote</span><strong>{git.remote || '—'}</strong></div></div>
       <div className="panel"><h2>Branches</h2><div className="branch-list">{git.branches.map((branch) => <span key={branch}>{branch}</span>)}</div></div>
       <div className="table-wrap"><table><thead><tr><th>Commit</th><th>Author</th><th>Date</th><th>Subject</th></tr></thead><tbody>{git.history.map((commit) => <tr key={commit.hash}><td><code>{commit.hash.slice(0, 10)}</code></td><td>{commit.author}</td><td>{new Date(commit.date).toLocaleString()}</td><td>{commit.subject}</td></tr>)}</tbody></table></div></>}
