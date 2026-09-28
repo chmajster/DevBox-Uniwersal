@@ -90,6 +90,10 @@ func (h *PrivilegedHelper) ReloadNginx(ctx context.Context) error {
 	return h.run(ctx, "systemctl", "reload", "nginx.service")
 }
 
+func (h *PrivilegedHelper) StartUpdate(ctx context.Context) error {
+	return h.run(ctx, "systemctl", "start", "--no-block", "devbox-update.service")
+}
+
 // WriteControlledConfig only writes the DevBox environment file and validates
 // every key. It deliberately cannot write arbitrary paths or shell fragments.
 func (h *PrivilegedHelper) WriteControlledConfig(name string, data []byte) error {
