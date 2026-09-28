@@ -269,12 +269,12 @@ func (m *Module) provisionProject(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	actor, remote := requestIdentity(r)
-	result, err := m.service.ProvisionProject(r.Context(), r.PathValue("id"), input.Engine, input.Charset, actor, remote, input.ApplicationService)
+	job, err := m.service.QueueProjectProvision(r.Context(), r.PathValue("id"), input.Engine, input.Charset, input.ApplicationService, actor, remote)
 	if err != nil {
 		writeModuleError(w, err)
 		return
 	}
-	writeData(w, http.StatusCreated, result)
+	writeData(w, http.StatusAccepted, job)
 }
 
 func (m *Module) backupDatabase(w http.ResponseWriter, r *http.Request) {
