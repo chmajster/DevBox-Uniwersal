@@ -53,6 +53,9 @@ func NewPrivilegedHelperWithRunner(runner CommandRunner) *PrivilegedHelper {
 
 func (h *PrivilegedHelper) InstallPackage(ctx context.Context, component string) error {
 	pkg, ok := allowedPackages[component]
+	if component == "docker-compose" {
+		ok = true
+	}
 	if !ok {
 		return fmt.Errorf("%w: package %q", ErrOperationNotAllowed, component)
 	}
@@ -62,6 +65,13 @@ func (h *PrivilegedHelper) InstallPackage(ctx context.Context, component string)
 	if err := h.runWithEnv(ctx, []string{"DEBIAN_FRONTEND=noninteractive"}, "apt-get", "update"); err != nil {
 		return fmt.Errorf("refresh apt package lists: %w", err)
 	}
+	if component == "docker-compose" {
+		var err error
+		pkg, err = h.firstAvailablePackage(ctx, []string{"docker-compose-v2", "docker-compose-plugin", "docker-compose"})
+		if err != nil {
+			return fmt.Errorf("resolve Docker Compose package: %w", err)
+		}
+	}
 	if err := h.runWithEnv(ctx, []string{"DEBIAN_FRONTEND=noninteractive"}, "apt-get",
 		"-o", "Dpkg::Options::=--force-confdef",
 		"-o", "Dpkg::Options::=--force-confold",
@@ -69,6 +79,20 @@ func (h *PrivilegedHelper) InstallPackage(ctx context.Context, component string)
 		return fmt.Errorf("install %s (%s): %w", component, pkg, err)
 	}
 	return nil
+}
+
+func (h *PrivilegedHelper) firstAvailablePackage(ctx context.Context, candidates []string) (string, error) {
+	aptCache, err := h.runner.LookPath("apt-cache")
+	if err != nil {
+		return "", fmt.Errorf("find apt-cache: %w", err)
+	}
+	for _, candidate := range candidates {
+		out, checkErr := h.runner.CombinedOutput(ctx, aptCache, "show", candidate)
+		if checkErr == nil && len(strings.TrimSpace(string(out))) > 0 {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("none of the allowed packages are available: %s", strings.Join(candidates, ", "))
 }
 
 func (h *PrivilegedHelper) RestartService(ctx context.Context, service string) error {
