@@ -19,11 +19,11 @@ var (
 )
 
 type Service struct {
-	repo         *Repository
-	git          *GitClient
-	jobRunner    jobs.JobRunner
-	secretStore  secrets.SecretStore
-	projectsRoot          string
+	repo                 *Repository
+	git                  *GitClient
+	jobRunner            jobs.JobRunner
+	secretStore          secrets.SecretStore
+	projectsRoot         string
 	directoryBrowseRoots []string
 }
 
