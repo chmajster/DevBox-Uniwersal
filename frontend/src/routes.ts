@@ -1,6 +1,7 @@
 export const ROUTES = {
   dashboard: '/',
   applications: '/apps',
+  scriptApps: '/script-apps',
   credentials: '/credentials',
   project: '/projects/:projectId/:tab?',
   logs: '/logs',

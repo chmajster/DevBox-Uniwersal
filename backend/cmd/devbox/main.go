@@ -30,6 +30,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/proxy"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/scriptapps"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
 	devsystem "github.com/chmajster/DevBox-Uniwersal/backend/internal/system"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/webui"
@@ -231,6 +232,16 @@ func serve() error {
 	}
 	projectModule := projects.NewModule(projectService, auditService)
 
+	scriptAppRepo := scriptapps.NewRepository(db)
+	scriptAppService := scriptapps.NewService(scriptAppRepo, jobRunner)
+	for _, jobType := range []string{scriptapps.JobInstall, scriptapps.JobUpdate, scriptapps.JobUninstall, scriptapps.JobStart, scriptapps.JobStop, scriptapps.JobRestart} {
+		if err := jobRunner.Register(scriptapps.NewHandler(jobType, scriptAppRepo, jobRunner)); err != nil {
+			logger.Error("script app job handler registration failed", "type", jobType, "error", err)
+			os.Exit(1)
+		}
+	}
+	scriptAppModule := scriptapps.NewModule(scriptAppService, auditService)
+
 	logRegistry := operations.NewRegistry()
 	logSources := []operations.LogSource{
 		devboxLogs,
@@ -259,6 +270,7 @@ func serve() error {
 		credentialModule,
 		runtimeModule,
 		projectModule,
+		scriptAppModule,
 		dockerModule,
 		databaseModule,
 		networkModule,
