@@ -315,6 +315,7 @@ install_artifacts() {
   upsert_env_file "$ENV_FILE" DEVBOX_FRONTEND_DIR "$INSTALL_ROOT/frontend/dist"
   upsert_env_file "$ENV_FILE" DEVBOX_COOKIE_SECURE "false"
   upsert_env_file "$ENV_FILE" DEVBOX_VERSION "local"
+  upsert_env_file "$ENV_FILE" DEVBOX_CONTROL_PLANE_BACKUP_DIR "$DATA_DIR/backups/system"
   upsert_env_file "$ENV_FILE" DEVBOX_NGINX_SITES_AVAILABLE "$NGINX_STATE_DIR/sites-available"
   upsert_env_file "$ENV_FILE" DEVBOX_NGINX_SITES_ENABLED "$NGINX_STATE_DIR/sites-enabled"
   upsert_env_file "$ENV_FILE" DEVBOX_PRIVILEGED_HELPER "$LIBEXEC_DIR/devbox-helper"
