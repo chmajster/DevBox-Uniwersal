@@ -29,7 +29,8 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("GET /api/v1/projects", secure(domain.RoleViewer, m.list))
 	mux.Handle("POST /api/v1/projects", secure(domain.RoleOperator, m.create))
 	mux.Handle("POST /api/v1/projects/import", secure(domain.RoleOperator, m.importLocal))
-	mux.Handle("GET /api/v1/projects/directories", secure(domain.RoleOperator, m.browseDirectories))
+	mux.Handle("GET /api/v1/project-directories", secure(domain.RoleOperator, m.browseDirectories))
+	mux.Handle("GET /api/v1/projects/directories", secure(domain.RoleOperator, m.browseDirectories)) // legacy alias
 	mux.Handle("GET /api/v1/projects/{id}", secure(domain.RoleViewer, m.get))
 	mux.Handle("PATCH /api/v1/projects/{id}", secure(domain.RoleOperator, m.update))
 	mux.Handle("DELETE /api/v1/projects/{id}", secure(domain.RoleAdmin, m.delete))
@@ -114,6 +115,12 @@ func (m *Module) importLocal(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) get(w http.ResponseWriter, r *http.Request) {
+	// Defensive compatibility for deployments/proxies that route the old
+	// /projects/directories path through the dynamic {id} handler.
+	if r.PathValue("id") == "directories" {
+		m.browseDirectories(w, r)
+		return
+	}
 	project, err := m.service.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
 		m.fail(w, err)
