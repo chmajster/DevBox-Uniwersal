@@ -10,11 +10,12 @@ import (
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
 )
 
 func TestDeploymentStateMachine(t *testing.T) {
-	states := []string{DeploymentQueued, DeploymentPreparing, DeploymentUpdatingSource, DeploymentDependencies, DeploymentBuilding, DeploymentStarting, DeploymentHealthcheck, DeploymentSuccess}
+	states := []string{DeploymentQueued, DeploymentPreparing, DeploymentUpdatingSource, DeploymentDatabase, DeploymentDependencies, DeploymentBuilding, DeploymentStarting, DeploymentHealthcheck, DeploymentSuccess}
 	for i := 0; i < len(states)-1; i++ {
 		if !validDeploymentTransition(states[i], states[i+1]) {
 			t.Fatalf("expected valid transition %s -> %s", states[i], states[i+1])
@@ -67,4 +68,37 @@ type testJobLogger struct{}
 
 func (l *testJobLogger) Log(context.Context, string, string, string, map[string]any) error {
 	return nil
+}
+
+func TestProjectDatabaseEnvironmentInjectsReservedVariablesAndAliases(t *testing.T) {
+	runtime := providers.ProjectDatabaseRuntime{
+		Connection: providers.DatabaseConnection{
+			Engine: "mysql", Host: "devbox-mysql", Port: 3306, Database: "plan",
+			Username: "plan_user", Mode: providers.DatabaseModeManaged,
+		},
+		Secret: []byte("test-password"),
+	}
+	env := projectDatabaseEnvironment(runtime)
+	if env["DB_HOST"] != "devbox-mysql" || env["DB_PORT"] != "3306" ||
+		env["DATABASE_HOST"] != "devbox-mysql" || env["DATABASE_PORT"] != "3306" {
+		t.Fatalf("unexpected database environment: %#v", env)
+	}
+	if env["DB_PASSWORD"] != "test-password" || env["DATABASE_PASSWORD"] != "test-password" {
+		t.Fatal("database secret was not injected into reserved runtime variables")
+	}
+}
+
+func TestPHPMySQLDriverDetection(t *testing.T) {
+	if hasPHPMySQLDriver(nil) {
+		t.Fatal("empty PHP module set must not satisfy MySQL driver requirement")
+	}
+	if hasPHPMySQLDriver([]RuntimeModule{{Name: "curl"}}) {
+		t.Fatal("unrelated PHP module must not satisfy MySQL driver requirement")
+	}
+	if !hasPHPMySQLDriver([]RuntimeModule{{Name: "pdo_mysql"}}) {
+		t.Fatal("pdo_mysql must satisfy MySQL driver requirement")
+	}
+	if !hasPHPMySQLDriver([]RuntimeModule{{Name: "mysqli"}}) {
+		t.Fatal("mysqli must satisfy MySQL driver requirement")
+	}
 }
