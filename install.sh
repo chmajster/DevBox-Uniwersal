@@ -17,6 +17,9 @@ CONFIG_DIR="${DEVBOX_CONFIG_DIR:-/etc/devbox}"
 ENV_FILE="${DEVBOX_ENV_FILE:-$CONFIG_DIR/devbox.env}"
 DATA_DIR="${DEVBOX_DATA_DIR:-/var/lib/devbox}"
 SERVICE_FILE="${DEVBOX_SERVICE_FILE:-/etc/systemd/system/devbox.service}"
+UPDATE_SERVICE_FILE="${DEVBOX_UPDATE_SERVICE_FILE:-/etc/systemd/system/devbox-update.service}"
+UPDATE_TIMER_FILE="${DEVBOX_UPDATE_TIMER_FILE:-/etc/systemd/system/devbox-update.timer}"
+UPDATER_SCRIPT="${DEVBOX_UPDATER_SCRIPT:-$LIBEXEC_DIR/devbox-updater}"
 SUDOERS_FILE="${DEVBOX_SUDOERS_FILE:-/etc/sudoers.d/devbox}"
 NGINX_INCLUDE_FILE="${DEVBOX_NGINX_INCLUDE_FILE:-/etc/nginx/conf.d/devbox.conf}"
 NGINX_STATE_DIR="${DEVBOX_NGINX_STATE_DIR:-$DATA_DIR/nginx}"
@@ -388,6 +391,8 @@ install_artifacts() {
   ensure_user_and_dirs
   install -m 0755 -o root -g root "$ROOT_DIR/.build/devbox" "$LIBEXEC_DIR/devbox"
   install -m 0755 -o root -g root "$ROOT_DIR/.build/devbox-helper" "$LIBEXEC_DIR/devbox-helper"
+  [[ -f "$ROOT_DIR/scripts/devbox-updater.sh" ]] || fail "Brak scripts/devbox-updater.sh."
+  install -m 0755 -o root -g root "$ROOT_DIR/scripts/devbox-updater.sh" "$UPDATER_SCRIPT"
   ln -sfn "$LIBEXEC_DIR/devbox" "$BIN_LINK"
 
   rm -rf "$INSTALL_ROOT/migrations" "$INSTALL_ROOT/frontend"
@@ -400,7 +405,11 @@ install_artifacts() {
   upsert_env_file "$ENV_FILE" DEVBOX_MIGRATIONS_DIR "$INSTALL_ROOT/migrations"
   upsert_env_file "$ENV_FILE" DEVBOX_FRONTEND_DIR "$INSTALL_ROOT/frontend/dist"
   upsert_env_file "$ENV_FILE" DEVBOX_COOKIE_SECURE "false"
-  upsert_env_file "$ENV_FILE" DEVBOX_VERSION "local"
+  local source_version
+  source_version="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || printf 'local')"
+  upsert_env_file "$ENV_FILE" DEVBOX_VERSION "$source_version"
+  upsert_env_file "$ENV_FILE" DEVBOX_UPDATE_REPOSITORY "$SOURCE_REPOSITORY"
+  upsert_env_file "$ENV_FILE" DEVBOX_UPDATE_REF "$SOURCE_REF"
   upsert_env_file "$ENV_FILE" DEVBOX_CONTROL_PLANE_BACKUP_DIR "$DATA_DIR/backups/system"
   upsert_env_file "$ENV_FILE" DEVBOX_NGINX_SITES_AVAILABLE "$NGINX_STATE_DIR/sites-available"
   upsert_env_file "$ENV_FILE" DEVBOX_NGINX_SITES_ENABLED "$NGINX_STATE_DIR/sites-enabled"
@@ -420,6 +429,7 @@ install_nginx_integration() {
   cat >"$sudoers_tmp" <<EOF_SUDOERS
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper validate-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper reload-nginx
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper start-update
 EOF_SUDOERS
   chmod 0440 "$sudoers_tmp"
   if ! visudo -cf "$sudoers_tmp" >>"$LOG_FILE" 2>&1; then
@@ -488,8 +498,43 @@ EOF_UNIT
   chmod 0644 "$SERVICE_FILE"
 }
 
+write_update_units() {
+  cat >"$UPDATE_SERVICE_FILE" <<EOF_UPDATE_SERVICE
+[Unit]
+Description=DevBox Universal Git auto-update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-$ENV_FILE
+ExecStart=$UPDATER_SCRIPT
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+EOF_UPDATE_SERVICE
+
+  cat >"$UPDATE_TIMER_FILE" <<EOF_UPDATE_TIMER
+[Unit]
+Description=Check DevBox Universal updates every 12 hours
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=12h
+RandomizedDelaySec=10min
+Persistent=true
+Unit=devbox-update.service
+
+[Install]
+WantedBy=timers.target
+EOF_UPDATE_TIMER
+  chmod 0644 "$UPDATE_SERVICE_FILE" "$UPDATE_TIMER_FILE"
+}
+
 install_service() {
   write_service_unit
+  write_update_units
   if ! systemd_available; then
     emit WARN "systemd nie jest aktywny. W WSL włącz systemd w /etc/wsl.conf i uruchom ponownie dystrybucję."
     return 0
@@ -497,7 +542,8 @@ install_service() {
   systemctl daemon-reload
   systemctl enable devbox.service >>"$LOG_FILE" 2>&1
   systemctl restart devbox.service >>"$LOG_FILE" 2>&1
-  emit " OK " "Usługa devbox.service została uruchomiona ponownie z aktualnym backendem."
+  systemctl enable --now devbox-update.timer >>"$LOG_FILE" 2>&1
+  emit " OK " "Usługa devbox.service została uruchomiona ponownie z aktualnym backendem; auto-update z Git działa co 12 godzin."
 }
 
 wait_for_health() {
@@ -617,8 +663,11 @@ run_uninstall() {
   if systemd_available; then systemctl disable --now devbox.service >>"$LOG_FILE" 2>&1 || true; fi
   emit " OK " "Usługa zatrzymana lub nie była aktywna."
   stage 2 "Usunięcie unit file"
-  rm -f "$SERVICE_FILE"
-  if systemd_available; then systemctl daemon-reload; fi
+  rm -f "$SERVICE_FILE" "$UPDATE_SERVICE_FILE" "$UPDATE_TIMER_FILE"
+  if systemd_available; then
+    systemctl disable --now devbox-update.timer >>"$LOG_FILE" 2>&1 || true
+    systemctl daemon-reload
+  fi
   emit " OK " "Unit file usunięty."
   stage 3 "Usunięcie binarek"
   rm -f "$BIN_LINK" "$LIBEXEC_DIR/devbox" "$LIBEXEC_DIR/devbox-helper"

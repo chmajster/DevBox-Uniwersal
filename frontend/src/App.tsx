@@ -21,6 +21,7 @@ import { ProjectsPage } from './pages/ProjectsPage'
 import { ROUTES } from './routes'
 import { ProjectRuntimePage } from './pages/ProjectRuntimePage'
 import { RuntimeManagerPage } from './pages/RuntimeManagerPage'
+import { UpdatesPage } from './pages/UpdatesPage'
 import { ScriptAppsPage } from './pages/ScriptAppsPage'
 
 export function App() {
@@ -48,6 +49,7 @@ export function App() {
         <Route path="projects/:projectId/runtime" element={<ProjectRuntimePage />} />
         <Route path={ROUTES.jobs} element={<JobsPage />} />
         <Route path={ROUTES.audit} element={<AuditPage />} />
+        <Route path={ROUTES.updates} element={<UpdatesPage />} />
       </Route>
     </Route>
   </Routes></BrowserRouter>

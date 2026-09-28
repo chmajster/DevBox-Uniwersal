@@ -49,6 +49,12 @@ func main() {
 			os.Exit(2)
 		}
 		err = helper.ReloadNginx(ctx)
+	case "start-update":
+		if len(os.Args) != 2 {
+			usage()
+			os.Exit(2)
+		}
+		err = helper.StartUpdate(ctx)
 	case "write-config":
 		if len(os.Args) != 3 {
 			usage()
@@ -69,7 +75,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: devbox-helper install-package <component> | restart-service <service> | validate-nginx | reload-nginx | write-config devbox-env")
+	fmt.Fprintln(os.Stderr, "usage: devbox-helper install-package <component> | restart-service <service> | validate-nginx | reload-nginx | start-update | write-config devbox-env")
 }
 
 func fatal(message string) {

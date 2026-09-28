@@ -46,6 +46,8 @@ var allowedEnvKeys = map[string]struct{}{
 	"DEVBOX_NGINX_SITES_ENABLED":      {},
 	"DEVBOX_PRIVILEGED_HELPER":        {},
 	"DEVBOX_SUDO_BINARY":              {},
+	"DEVBOX_UPDATE_REPOSITORY":         {},
+	"DEVBOX_UPDATE_REF":                {},
 }
 
 type PrivilegedHelper struct {
@@ -88,6 +90,10 @@ func (h *PrivilegedHelper) ReloadNginx(ctx context.Context) error {
 		return err
 	}
 	return h.run(ctx, "systemctl", "reload", "nginx.service")
+}
+
+func (h *PrivilegedHelper) StartUpdate(ctx context.Context) error {
+	return h.run(ctx, "systemctl", "start", "--no-block", "devbox-update.service")
 }
 
 // WriteControlledConfig only writes the DevBox environment file and validates

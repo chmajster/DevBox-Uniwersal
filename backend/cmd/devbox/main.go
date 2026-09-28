@@ -33,6 +33,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/scriptapps"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
 	devsystem "github.com/chmajster/DevBox-Uniwersal/backend/internal/system"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/updater"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/webui"
 )
 
@@ -231,6 +232,7 @@ func serve() error {
 		logger.Info("desired-state reconciliation queued", "jobs", len(reconciledJobs))
 	}
 	projectModule := projects.NewModule(projectService, auditService)
+	updaterModule := updater.NewModule(updater.NewService(cfg.AppVersion, cfg.NginxHelperBinary, cfg.SudoBinary), auditService)
 
 	scriptAppRepo := scriptapps.NewRepository(db)
 	scriptAppService := scriptapps.NewService(scriptAppRepo, jobRunner)
@@ -268,6 +270,7 @@ func serve() error {
 	}
 	modules := []api.Module{
 		credentialModule,
+		updaterModule,
 		runtimeModule,
 		projectModule,
 		scriptAppModule,
