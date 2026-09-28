@@ -128,6 +128,24 @@ export function DatabasesPage() {
     {error && <div className="error-banner">{error}</div>}
     {message && <div className="success-banner">{message}</div>}
 
+    <section className="panel">
+      <div className="section-heading">
+        <div>
+          <h2>Adres MySQL/MariaDB</h2>
+          <p className="muted">Używaj adresu aplikacyjnego w kontenerach i projektach DevBox. Adres administracyjny jest przeznaczony dla control-plane DevBox.</p>
+        </div>
+        <span className="status-chip" data-ok={mysql?.running ? 'true' : 'false'}>{mysql?.running ? 'Dostępny' : 'Niedostępny'}</span>
+      </div>
+      <div className="summary-grid">
+        <div><span>Adres dla aplikacji</span><strong><code>{mysql?.application_host && mysql?.application_port ? `${mysql.application_host}:${mysql.application_port}` : '—'}</code></strong></div>
+        <div><span>Host</span><strong><code>{mysql?.application_host || '—'}</code></strong></div>
+        <div><span>Port</span><strong>{mysql?.application_port ?? '—'}</strong></div>
+        <div><span>Sieć Docker</span><strong><code>{mysql?.network || '—'}</code></strong></div>
+        <div><span>Adres administracyjny</span><strong><code>{mysql?.admin_host && mysql?.admin_port ? `${mysql.admin_host}:${mysql.admin_port}` : '—'}</code></strong></div>
+        <div><span>Zmienna aplikacji</span><strong><code>{mysql?.application_host ? `DB_HOST=${mysql.application_host}` : '—'}</code></strong></div>
+      </div>
+    </section>
+
     {canMutate && <form className="panel compact-form" onSubmit={createDatabase}>
       <h2>Utwórz bazę</h2>
       <label>Nazwa<input value={databaseName} onChange={(event) => setDatabaseName(event.target.value)} placeholder="app_db" required /></label>

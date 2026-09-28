@@ -49,6 +49,11 @@ type MySQLStatus struct {
 	Version         string `json:"version,omitempty"`
 	Running         bool   `json:"running"`
 	ConnectionState string `json:"connection_state"`
+	AdminHost       string `json:"admin_host,omitempty"`
+	AdminPort       int    `json:"admin_port,omitempty"`
+	ApplicationHost string `json:"application_host,omitempty"`
+	ApplicationPort int    `json:"application_port,omitempty"`
+	Network         string `json:"network,omitempty"`
 }
 
 type ConnectionConfig struct {

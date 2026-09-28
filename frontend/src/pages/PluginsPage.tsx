@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { request } from '../api/client'
-import type { DockerComposePluginStatus, PHPFPMStatus, PHPMyAdminStatus } from '../api/types'
+import type { DockerComposePluginStatus, PHPFPMStatus, PHPMyAdminStatus, PostgreSQLPluginStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 
@@ -12,21 +12,24 @@ export function PluginsPage() {
   const canInstallSystemPackages = user?.role === 'admin'
   const [dockerCompose, setDockerCompose] = useState<DockerComposePluginStatus | null>(null)
   const [phpFPM, setPHPFPM] = useState<PHPFPMStatus | null>(null)
+  const [postgresql, setPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | null>(null)
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'postgresql-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
-    const [dockerComposeStatus, phpFPMStatus, phpMyAdminStatus] = await Promise.all([
+    const [dockerComposeStatus, phpFPMStatus, postgreSQLStatus, phpMyAdminStatus] = await Promise.all([
       request<DockerComposePluginStatus>('/plugins/docker-compose/status'),
       request<PHPFPMStatus>('/plugins/php-fpm/status'),
+      request<PostgreSQLPluginStatus>('/plugins/postgresql/status'),
       request<PHPMyAdminStatus>('/phpmyadmin/status'),
     ])
     setDockerCompose(dockerComposeStatus)
     setPHPFPM(phpFPMStatus)
+    setPostgreSQL(postgreSQLStatus)
     setPHPMyAdmin(phpMyAdminStatus)
   }, [])
 
@@ -60,6 +63,22 @@ export function PluginsPage() {
       setMessage('PHP-FPM został zainstalowany i jest gotowy do użycia.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Instalacja PHP-FPM nie powiodła się')
+      await load().catch(() => undefined)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function installPostgreSQL() {
+    setBusyAction('postgresql-install')
+    setError('')
+    setMessage('')
+    try {
+      const status = await request<PostgreSQLPluginStatus>('/plugins/postgresql/install', { method: 'POST' })
+      setPostgreSQL(status)
+      setMessage('PostgreSQL został zainstalowany.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Instalacja PostgreSQL nie powiodła się')
       await load().catch(() => undefined)
     } finally {
       setBusyAction(null)
@@ -219,6 +238,53 @@ export function PluginsPage() {
             <span className="muted small">Instalacja pakietu systemowego wymaga roli administratora.</span>
           )}
           {!phpFPM?.installed && canInstallSystemPackages && phpFPM && !phpFPM.installable && (
+            <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
+          )}
+        </div>
+      </div>
+    </section>
+
+    <section className="panel phpmyadmin-panel">
+      <div>
+        <div className="actions">
+          <Icon name="database" size={24} />
+          <div>
+            <h2>PostgreSQL</h2>
+            <p className="muted">Opcjonalny lokalny serwer PostgreSQL instalowany przez systemowy manager pakietów.</p>
+          </div>
+        </div>
+        <p className="muted small">
+          {postgresql?.installed
+            ? 'PostgreSQL jest zainstalowany. Status poniżej pokazuje, czy lokalny serwer odpowiada.'
+            : 'PostgreSQL nie jest wymagany przez DevBox. Możesz go doinstalować, jeżeli projekty potrzebują lokalnego serwera PostgreSQL.'}
+        </p>
+      </div>
+
+      <div className="phpmyadmin-status">
+        <div className="actions">
+          <span className="status-chip" data-ok={postgresql?.installed ? 'true' : 'false'}>
+            {postgresql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
+          </span>
+          {postgresql?.installed && <span className="status-chip" data-ok={postgresql.running ? 'true' : 'false'}>
+            {postgresql.running ? 'Uruchomiony' : 'Nie odpowiada'}
+          </span>}
+        </div>
+
+        {postgresql?.version && <p className="muted small">Wersja: <code>{postgresql.version}</code></p>}
+        {postgresql?.path && <p className="muted small">Klient: <code>{postgresql.path}</code></p>}
+        {postgresql?.host && postgresql?.port && <p className="muted small">Adres lokalny: <code>{postgresql.host}:{postgresql.port}</code></p>}
+        {postgresql?.message && <p className="muted small">{postgresql.message}</p>}
+
+        <div className="actions">
+          {!postgresql?.installed && canInstallSystemPackages && postgresql?.installable && (
+            <button type="button" onClick={installPostgreSQL} disabled={busy}>
+              {busyAction === 'postgresql-install' ? 'Instalowanie…' : 'Zainstaluj PostgreSQL'}
+            </button>
+          )}
+          {!postgresql?.installed && !canInstallSystemPackages && (
+            <span className="muted small">Instalacja PostgreSQL wymaga roli administratora.</span>
+          )}
+          {!postgresql?.installed && canInstallSystemPackages && postgresql && !postgresql.installable && (
             <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
           )}
         </div>

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
@@ -30,6 +31,17 @@ type DockerComposeStatus struct {
 	Mode        string `json:"mode,omitempty"`
 	Path        string `json:"path,omitempty"`
 	Version     string `json:"version,omitempty"`
+	Installable bool   `json:"installable"`
+	Message     string `json:"message,omitempty"`
+}
+
+type PostgreSQLStatus struct {
+	Installed   bool   `json:"installed"`
+	Running     bool   `json:"running"`
+	Path        string `json:"path,omitempty"`
+	Version     string `json:"version,omitempty"`
+	Host        string `json:"host,omitempty"`
+	Port        int    `json:"port,omitempty"`
 	Installable bool   `json:"installable"`
 	Message     string `json:"message,omitempty"`
 }
@@ -143,6 +155,79 @@ func firstLine(value string) string {
 	return value
 }
 
+func (s *Service) PostgreSQLStatus(ctx context.Context) PostgreSQLStatus {
+	status := PostgreSQLStatus{Installable: s.helperBinary != "", Host: "127.0.0.1", Port: 5432}
+	psql, err := exec.LookPath("psql")
+	if err != nil {
+		status.Message = "PostgreSQL nie jest zainstalowany. Możesz doinstalować serwer z panelu Pluginy."
+		if !status.Installable {
+			status.Message += " Instalacja z panelu jest niedostępna, ponieważ DEVBOX_PRIVILEGED_HELPER nie jest skonfigurowany."
+		}
+		return status
+	}
+	if _, serverErr := findPostgreSQLServer(); serverErr != nil {
+		status.Path = psql
+		status.Message = "Wykryto klienta PostgreSQL, ale nie znaleziono binarki serwera postgres."
+		return status
+	}
+	status.Installed = true
+	status.Path = psql
+	if out, versionErr := exec.CommandContext(ctx, psql, "--version").CombinedOutput(); versionErr == nil {
+		status.Version = firstLine(string(out))
+	}
+	if ready, readyErr := exec.LookPath("pg_isready"); readyErr == nil {
+		status.Running = exec.CommandContext(ctx, ready, "-q", "-h", status.Host, "-p", strconv.Itoa(status.Port)).Run() == nil
+	}
+	if status.Running {
+		status.Message = "PostgreSQL jest zainstalowany i odpowiada na 127.0.0.1:5432."
+	} else {
+		status.Message = "PostgreSQL jest zainstalowany, ale serwer nie odpowiada na 127.0.0.1:5432."
+	}
+	return status
+}
+
+func (s *Service) InstallPostgreSQL(ctx context.Context) (PostgreSQLStatus, error) {
+	if status := s.PostgreSQLStatus(ctx); status.Installed {
+		return status, nil
+	}
+	if s.helperBinary == "" {
+		return PostgreSQLStatus{}, errors.New("privileged helper is not configured")
+	}
+	if err := s.installSystemPackage(ctx, "postgresql"); err != nil {
+		return PostgreSQLStatus{}, fmt.Errorf("install PostgreSQL: %w", err)
+	}
+	status := s.PostgreSQLStatus(ctx)
+	if !status.Installed {
+		return status, errors.New("PostgreSQL installation completed but the server executable was not detected")
+	}
+	return status, nil
+}
+
+func findPostgreSQLServer() (string, error) {
+	if pgConfig, err := exec.LookPath("pg_config"); err == nil {
+		if out, runErr := exec.Command(pgConfig, "--bindir").CombinedOutput(); runErr == nil {
+			path := filepath.Join(strings.TrimSpace(string(out)), "postgres")
+			if info, statErr := os.Stat(path); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+				return path, nil
+			}
+		}
+	}
+	var discovered []string
+	for _, pattern := range []string{"/usr/lib/postgresql/*/bin/postgres", "/usr/local/pgsql/bin/postgres"} {
+		matches, _ := filepath.Glob(pattern)
+		for _, match := range matches {
+			if info, err := os.Stat(match); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+				discovered = append(discovered, match)
+			}
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(discovered)))
+	if len(discovered) > 0 {
+		return discovered[0], nil
+	}
+	return "", errors.New("postgres server executable not found")
+}
+
 func (s *Service) InstallPHPFPM(ctx context.Context) (PHPFPMStatus, error) {
 	if status := s.PHPFPMStatus(ctx); status.Installed {
 		return status, nil
@@ -221,6 +306,8 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/plugins/docker-compose/install", admin(m.installDockerCompose))
 	mux.Handle("GET /api/v1/plugins/php-fpm/status", viewer(m.phpFPMStatus))
 	mux.Handle("POST /api/v1/plugins/php-fpm/install", admin(m.installPHPFPM))
+	mux.Handle("GET /api/v1/plugins/postgresql/status", viewer(m.postgreSQLStatus))
+	mux.Handle("POST /api/v1/plugins/postgresql/install", admin(m.installPostgreSQL))
 	mux.Handle("GET /api/v1/plugins/php/extensions", viewer(m.phpExtensions))
 	mux.Handle("POST /api/v1/plugins/php/extensions/install", admin(m.installPHPExtensions))
 }
@@ -242,6 +329,27 @@ func (m *Module) installDockerCompose(w http.ResponseWriter, r *http.Request) {
 			actor = &id
 		}
 		_ = m.audit.Record(r.Context(), actor, "plugin.docker_compose.install", "plugin", nil, map[string]any{"mode": status.Mode, "path": status.Path, "version": status.Version}, nil)
+	}
+	writeData(w, http.StatusOK, status)
+}
+
+func (m *Module) postgreSQLStatus(w http.ResponseWriter, r *http.Request) {
+	writeData(w, http.StatusOK, m.service.PostgreSQLStatus(r.Context()))
+}
+
+func (m *Module) installPostgreSQL(w http.ResponseWriter, r *http.Request) {
+	status, err := m.service.InstallPostgreSQL(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "postgresql_install_failed", err.Error())
+		return
+	}
+	if m.audit != nil {
+		var actor *string
+		if user, ok := api.CurrentUser(r.Context()); ok {
+			id := user.ID
+			actor = &id
+		}
+		_ = m.audit.Record(r.Context(), actor, "plugin.postgresql.install", "plugin", nil, map[string]any{"path": status.Path, "version": status.Version, "running": status.Running}, nil)
 	}
 	writeData(w, http.StatusOK, status)
 }

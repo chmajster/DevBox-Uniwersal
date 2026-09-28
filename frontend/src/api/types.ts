@@ -308,6 +308,11 @@ export interface MySQLStatus {
   version?: string
   running: boolean
   connection_state: string
+  admin_host?: string
+  admin_port?: number
+  application_host?: string
+  application_port?: number
+  network?: string
 }
 
 export interface PHPMyAdminStatus {
@@ -330,6 +335,17 @@ export interface PHPFPMStatus {
   installed: boolean
   path?: string
   version?: string
+  installable: boolean
+  message?: string
+}
+
+export interface PostgreSQLPluginStatus {
+  installed: boolean
+  running: boolean
+  path?: string
+  version?: string
+  host?: string
+  port?: number
   installable: boolean
   message?: string
 }
