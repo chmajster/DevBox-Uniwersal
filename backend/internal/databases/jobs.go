@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	JobTypeDatabaseBackup     = "database.backup"
-	JobTypeDatabaseRestore    = "database.restore"
-	JobTypeManagedMySQLAction = "database.mysql.action"
+	JobTypeDatabaseBackup           = "database.backup"
+	JobTypeDatabaseRestore          = "database.restore"
+	JobTypeManagedMySQLAction       = "database.mysql.action"
+	JobTypeProjectDatabaseProvision = "database.project.provision"
 )
 
 type backupStore interface {
@@ -163,6 +164,43 @@ func backupPath(root, fileName string) (string, error) {
 		return "", errors.New("backup path escapes backup directory")
 	}
 	return path, nil
+}
+
+type ProjectDatabaseProvisionJobHandler struct {
+	service *Service
+}
+
+func NewProjectDatabaseProvisionJobHandler(service *Service) *ProjectDatabaseProvisionJobHandler {
+	return &ProjectDatabaseProvisionJobHandler{service: service}
+}
+
+func (h *ProjectDatabaseProvisionJobHandler) Type() string {
+	return JobTypeProjectDatabaseProvision
+}
+
+func (h *ProjectDatabaseProvisionJobHandler) Run(ctx context.Context, job domain.Job) (map[string]any, error) {
+	if h.service == nil {
+		return nil, errors.New("project database provisioning is not configured")
+	}
+	projectID, err := payloadString(job.Payload, "project_id")
+	if err != nil {
+		return nil, err
+	}
+	engine, _ := job.Payload["engine"].(string)
+	charset, _ := job.Payload["charset"].(string)
+	applicationService, _ := job.Payload["application_service"].(string)
+	result, err := h.service.ProvisionProject(ctx, projectID, engine, charset, job.RequestedBy, nil, applicationService)
+	if err != nil {
+		return nil, err
+	}
+	// Never persist the generated plaintext password in jobs.result_json.
+	return map[string]any{
+		"project_id":  projectID,
+		"database_id": result.Database.ID,
+		"database":    result.Database.Name,
+		"username":    result.Database.Username,
+		"status":      result.Database.Status,
+	}, nil
 }
 
 type ManagedMySQLJobHandler struct {
