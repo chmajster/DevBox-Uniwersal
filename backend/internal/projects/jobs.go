@@ -120,9 +120,10 @@ type ComposeDeployer interface {
 }
 
 type DeploymentIntegrations struct {
-	Ports   providers.PortAllocator
-	Routes  ProjectRouteManager
-	Compose ComposeDeployer
+	Ports           providers.PortAllocator
+	Routes          ProjectRouteManager
+	Compose         ComposeDeployer
+	RuntimeVersions runtimes.ExecutionResolver
 }
 
 type DeploymentHandler struct {
@@ -332,6 +333,19 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	}
 
 	runtimeCtx := runtimeContext(p, workDir, port)
+	if h.integrations.RuntimeVersions != nil {
+		selection, selectionErr := h.integrations.RuntimeVersions.ResolveExecution(ctx, p.ID, runtimeName)
+		switch {
+		case selectionErr == nil:
+			runtimeCtx.Executables = selection.Tools
+			runtimeCtx.RuntimeVersions = map[string]string{runtimeName: selection.Version}
+		case errors.Is(selectionErr, runtimes.ErrNoRuntimeAssignment):
+			// Backward-compatible fallback: existing projects keep using host discovery
+			// until an explicit RuntimeInstallation is assigned.
+		default:
+			return nil, fmt.Errorf("resolve project runtime: %w", selectionErr)
+		}
+	}
 	validation, err := runtimeProvider.Validate(ctx, runtimeCtx)
 	if err != nil {
 		return nil, fmt.Errorf("runtime validation: %w", err)
