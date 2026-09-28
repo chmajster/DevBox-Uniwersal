@@ -1,8 +1,10 @@
 import { request } from './client'
 import type {
+  ApplicationHealth,
   DatabaseResource,
   DockerContainer,
   DockerStatus,
+  HealthHistoryEntry,
   Job,
   LogEntry,
   MonitoringSnapshot,
@@ -112,6 +114,8 @@ export interface LogFilters {
   search?: string
   after?: number
   limit?: number
+  since?: string
+  until?: string
 }
 
 export function logQuery(filters: LogFilters) {
@@ -122,6 +126,8 @@ export function logQuery(filters: LogFilters) {
   if (filters.search) params.set('search', filters.search)
   if (filters.after) params.set('after', String(filters.after))
   if (filters.limit) params.set('limit', String(filters.limit))
+  if (filters.since) params.set('since', filters.since)
+  if (filters.until) params.set('until', filters.until)
   return params.toString()
 }
 
@@ -131,4 +137,22 @@ export function listLogs(filters: LogFilters) {
 
 export function listJobLogs(jobID: string) {
   return request<LogEntry[]>(`/jobs/${encodeURIComponent(jobID)}/logs`)
+}
+
+export function listHealthChecks() {
+  return request<ApplicationHealth[]>('/health-checks')
+}
+
+export function listHealthHistory(projectID?: string, limit = 200) {
+  const params = new URLSearchParams()
+  if (projectID) params.set('project_id', projectID)
+  params.set('limit', String(limit))
+  return request<HealthHistoryEntry[]>(`/health-checks/history?${params.toString()}`)
+}
+
+export function runProjectHealthCheck(projectID: string) {
+  return request<ApplicationHealth>(`/projects/${encodeURIComponent(projectID)}/health-check`, {
+    method: 'POST',
+    body: JSON.stringify({})
+  })
 }
