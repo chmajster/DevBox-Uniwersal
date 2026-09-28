@@ -36,6 +36,8 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("DELETE /api/v1/projects/{id}", secure(domain.RoleAdmin, m.delete))
 	mux.Handle("POST /api/v1/projects/{id}/archive", secure(domain.RoleOperator, m.archive))
 	mux.Handle("GET /api/v1/projects/{id}/git", secure(domain.RoleViewer, m.gitState))
+	mux.Handle("GET /api/v1/projects/{id}/git/commits", secure(domain.RoleViewer, m.gitCommits))
+	mux.Handle("GET /api/v1/projects/{id}/git/tags", secure(domain.RoleViewer, m.gitTags))
 	mux.Handle("POST /api/v1/projects/{id}/git/fetch", secure(domain.RoleOperator, m.gitFetch))
 	mux.Handle("POST /api/v1/projects/{id}/git/pull", secure(domain.RoleOperator, m.gitPull))
 	mux.Handle("POST /api/v1/projects/{id}/git/checkout", secure(domain.RoleOperator, m.gitCheckout))
@@ -86,6 +88,12 @@ func (m *Module) create(w http.ResponseWriter, r *http.Request) {
 	if err := m.audit.Record(r.Context(), actor, "project.create", "project", &project.ID, map[string]any{"source_type": project.SourceType}, nil); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "audit_failed", "project created but audit persistence failed")
 		return
+	}
+	if strings.TrimSpace(input.IntegrationID) != "" {
+		if err := m.audit.Record(r.Context(), actor, "project.repository.connected", "project", &project.ID, map[string]any{"integration_id": input.IntegrationID, "repository_path": input.RepositoryPath}, nil); err != nil {
+			writeAPIError(w, http.StatusInternalServerError, "audit_failed", "repository connected but audit persistence failed")
+			return
+		}
 	}
 	status := http.StatusCreated
 	if job != nil {
@@ -185,6 +193,24 @@ func (m *Module) gitState(w http.ResponseWriter, r *http.Request) {
 	}
 	writeData(w, http.StatusOK, state)
 }
+func (m *Module) gitCommits(w http.ResponseWriter, r *http.Request) {
+	page := parsePositiveQuery(r.URL.Query().Get("page"), 1)
+	perPage := parsePositiveQuery(r.URL.Query().Get("per_page"), 30)
+	items, hasMore, err := m.service.GitHistory(r.Context(), r.PathValue("id"), page, perPage)
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]any{"items": items, "page": page, "per_page": perPage, "has_more": hasMore})
+}
+func (m *Module) gitTags(w http.ResponseWriter, r *http.Request) {
+	items, err := m.service.GitTags(r.Context(), r.PathValue("id"))
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, items)
+}
 func (m *Module) gitFetch(w http.ResponseWriter, r *http.Request) { m.enqueueGit(w, r, "fetch") }
 func (m *Module) gitPull(w http.ResponseWriter, r *http.Request)  { m.enqueueGit(w, r, "pull") }
 func (m *Module) enqueueGit(w http.ResponseWriter, r *http.Request, operation string) {
@@ -252,6 +278,8 @@ func (m *Module) fail(w http.ResponseWriter, err error) {
 		writeAPIError(w, http.StatusForbidden, "directory_access_denied", err.Error())
 	case errors.Is(err, ErrInvalidInput):
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	case errors.Is(err, ErrWorkingTreeDirty):
+		writeAPIError(w, http.StatusConflict, "working_tree_dirty", "checkout refused because the Git working tree has local changes")
 	case errors.Is(err, ErrProviderUnavailable), strings.Contains(err.Error(), "provider unavailable"):
 		writeAPIError(w, http.StatusServiceUnavailable, "provider_unavailable", err.Error())
 	case strings.Contains(strings.ToLower(err.Error()), "unique constraint"):
@@ -295,4 +323,21 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(responseEnvelope{Error: &responseError{Code: code, Message: message}})
+}
+
+func parsePositiveQuery(value string, fallback int) int {
+	if value == "" {
+		return fallback
+	}
+	result := 0
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return fallback
+		}
+		result = result*10 + int(char-'0')
+	}
+	if result < 1 {
+		return fallback
+	}
+	return result
 }
