@@ -19,6 +19,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/auth"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/backups"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/config"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/credentials"
 	controldb "github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/databases"
 	dockermodule "github.com/chmajster/DevBox-Uniwersal/backend/internal/docker"
@@ -138,6 +139,10 @@ func serve() error {
 	} else {
 		logger.Warn("DEVBOX_MASTER_KEY is not configured; project database credentials cannot be provisioned")
 	}
+	credentialRepo := credentials.NewRepository(db)
+	credentialService := credentials.NewService(credentialRepo, secretStore)
+	credentialModule := credentials.NewModule(credentialService, auditService)
+
 	runtimeRegistry := runtimes.NewDefaultRegistry()
 	runtimeModule := runtimes.NewModule(
 		runtimeRegistry,
@@ -251,6 +256,7 @@ func serve() error {
 		os.Exit(1)
 	}
 	modules := []api.Module{
+		credentialModule,
 		runtimeModule,
 		projectModule,
 		dockerModule,

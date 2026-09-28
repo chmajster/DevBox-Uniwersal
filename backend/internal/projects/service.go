@@ -61,12 +61,22 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 	if err := validateCredentialKind(input.CredentialKind); err != nil {
 		return Project{}, nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
+	if input.CredentialID != "" && (input.CredentialKind != "" || input.CredentialValue != "") {
+		return Project{}, nil, fmt.Errorf("%w: credential_id cannot be combined with inline credentials", ErrInvalidInput)
+	}
 	if input.CredentialKind != "" && input.CredentialValue == "" {
 		return Project{}, nil, fmt.Errorf("%w: credential_value is required when credential_kind is set", ErrInvalidInput)
 	}
+	if input.CredentialID != "" {
+		kind, err := s.repo.CentralCredentialKind(ctx, input.CredentialID)
+		if err != nil {
+			return Project{}, nil, err
+		}
+		input.CredentialKind = kind
+	}
 
 	id := NewID()
-	p := Project{ID: id, Name: input.Name, Slug: slug, Description: strings.TrimSpace(input.Description), SourceType: input.SourceType, RepositoryURL: strings.TrimSpace(input.RepositoryURL), Branch: strings.TrimSpace(input.Branch), Runtime: strings.TrimSpace(input.Runtime), DeploymentMode: input.DeploymentMode, WorkingDirectory: strings.TrimSpace(input.WorkingDirectory), BuildCommand: strings.TrimSpace(input.BuildCommand), StartCommand: strings.TrimSpace(input.StartCommand), Healthcheck: strings.TrimSpace(input.Healthcheck), AutoStart: input.AutoStart, CredentialKind: input.CredentialKind, CreatedBy: actor, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	p := Project{ID: id, Name: input.Name, Slug: slug, Description: strings.TrimSpace(input.Description), SourceType: input.SourceType, RepositoryURL: strings.TrimSpace(input.RepositoryURL), Branch: strings.TrimSpace(input.Branch), Runtime: strings.TrimSpace(input.Runtime), DeploymentMode: input.DeploymentMode, WorkingDirectory: strings.TrimSpace(input.WorkingDirectory), BuildCommand: strings.TrimSpace(input.BuildCommand), StartCommand: strings.TrimSpace(input.StartCommand), Healthcheck: strings.TrimSpace(input.Healthcheck), AutoStart: input.AutoStart, CredentialKind: input.CredentialKind, CredentialID: strings.TrimSpace(input.CredentialID), CreatedBy: actor, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 	if p.SourceType == "" {
 		p.SourceType = SourceEmpty
 	}
@@ -116,7 +126,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 		return Project{}, nil, fmt.Errorf("%w: source_type must be git, local or empty", ErrInvalidInput)
 	}
 	credentialName := ""
-	if input.CredentialKind != "" {
+	if input.CredentialKind != "" && input.CredentialID == "" {
 		if s.secretStore == nil {
 			return Project{}, nil, fmt.Errorf("%w: secret store is not configured", ErrProviderUnavailable)
 		}
@@ -203,17 +213,37 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Pro
 		p.AutoStart = *input.AutoStart
 	}
 	credentialName := ""
-	if p.CredentialKind != "" {
+	if p.CredentialKind != "" && p.CredentialID == "" {
 		credentialName = "default"
 	}
 	if input.ClearCredential {
-		if s.secretStore != nil {
+		if p.CredentialID == "" && s.secretStore != nil {
 			_ = s.secretStore.Delete(ctx, "git/"+p.ID, "default")
 		}
 		p.CredentialKind = ""
+		p.CredentialID = ""
 		credentialName = ""
 	}
-	if input.CredentialKind != nil || input.CredentialValue != nil {
+	if input.CredentialID != nil {
+		centralID := strings.TrimSpace(*input.CredentialID)
+		if centralID == "" {
+			p.CredentialID = ""
+			p.CredentialKind = ""
+			credentialName = ""
+		} else {
+			kind, err := s.repo.CentralCredentialKind(ctx, centralID)
+			if err != nil {
+				return Project{}, err
+			}
+			if p.CredentialID == "" && p.CredentialKind != "" && s.secretStore != nil {
+				_ = s.secretStore.Delete(ctx, "git/"+p.ID, "default")
+			}
+			p.CredentialID = centralID
+			p.CredentialKind = kind
+			credentialName = ""
+		}
+	}
+	if input.CredentialID == nil && (input.CredentialKind != nil || input.CredentialValue != nil) {
 		kind := p.CredentialKind
 		if input.CredentialKind != nil {
 			kind = strings.TrimSpace(*input.CredentialKind)
@@ -233,6 +263,7 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Pro
 		if err := s.secretStore.Put(ctx, "git/"+p.ID, "default", []byte(*input.CredentialValue)); err != nil {
 			return Project{}, err
 		}
+		p.CredentialID = ""
 		p.CredentialKind, credentialName = kind, "default"
 	}
 	p.UpdatedAt = time.Now().UTC()
@@ -250,7 +281,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
-	if p.CredentialKind != "" && s.secretStore != nil {
+	if p.CredentialKind != "" && p.CredentialID == "" && s.secretStore != nil {
 		_ = s.secretStore.Delete(ctx, "git/"+id, "default")
 	}
 	return nil

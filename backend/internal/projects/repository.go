@@ -35,7 +35,7 @@ func (r *Repository) Create(ctx context.Context, p Project, credentialName strin
 		return fmt.Errorf("create project: %w", err)
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO project_sources(id,project_id,provider,repository_url,reference,credential_secret_id,credential_kind,credential_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		NewID(), p.ID, p.SourceType, p.RepositoryURL, nullable(p.Branch), nil, nullable(p.CredentialKind), nullable(credentialName), p.CreatedAt.UTC().Format(time.RFC3339Nano), p.UpdatedAt.UTC().Format(time.RFC3339Nano))
+		NewID(), p.ID, p.SourceType, p.RepositoryURL, nullable(p.Branch), nullable(p.CredentialID), nullable(p.CredentialKind), nullable(credentialName), p.CreatedAt.UTC().Format(time.RFC3339Nano), p.UpdatedAt.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("create project source: %w", err)
 	}
@@ -79,8 +79,8 @@ func (r *Repository) Update(ctx context.Context, p Project, credentialName strin
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE project_sources SET provider=?,repository_url=?,reference=?,credential_kind=?,credential_name=?,updated_at=? WHERE project_id=?`,
-		p.SourceType, p.RepositoryURL, nullable(p.Branch), nullable(p.CredentialKind), nullable(credentialName), p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.ID)
+	_, err = tx.ExecContext(ctx, `UPDATE project_sources SET provider=?,repository_url=?,reference=?,credential_secret_id=?,credential_kind=?,credential_name=?,updated_at=? WHERE project_id=?`,
+		p.SourceType, p.RepositoryURL, nullable(p.Branch), nullable(p.CredentialID), nullable(p.CredentialKind), nullable(credentialName), p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.ID)
 	if err != nil {
 		return fmt.Errorf("update project source: %w", err)
 	}
@@ -130,6 +130,18 @@ func (r *Repository) UpdateStatus(ctx context.Context, id, status string) error 
 func (r *Repository) UpdateRuntime(ctx context.Context, id, runtime string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE projects SET runtime=?,updated_at=? WHERE id=?`, runtime, time.Now().UTC().Format(time.RFC3339Nano), id)
 	return err
+}
+
+func (r *Repository) CentralCredentialKind(ctx context.Context, id string) (string, error) {
+	var kind string
+	err := r.db.QueryRowContext(ctx, `SELECT kind FROM credentials WHERE id=?`, id).Scan(&kind)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("%w: central credential not found", ErrInvalidInput)
+	}
+	if err != nil {
+		return "", fmt.Errorf("load central credential: %w", err)
+	}
+	return kind, nil
 }
 
 func (r *Repository) HasActiveDeploymentJob(ctx context.Context, projectID string) (bool, error) {
@@ -191,7 +203,7 @@ func (r *Repository) ListDeployments(ctx context.Context, projectID string) ([]D
 	return out, rows.Err()
 }
 
-const projectSelect = `SELECT p.id,p.name,p.slug,COALESCE(p.description,''),p.status,p.source_type,COALESCE(s.repository_url,''),COALESCE(s.reference,''),COALESCE(p.local_path,''),p.runtime,p.deployment_mode,p.working_directory,p.build_command,p.start_command,p.healthcheck,p.auto_start,COALESCE(s.credential_kind,''),COALESCE(p.current_commit,''),p.created_by,p.created_at,p.updated_at,p.archived_at,(SELECT port FROM ports WHERE project_id=p.id AND released_at IS NULL ORDER BY created_at DESC LIMIT 1),(SELECT hostname FROM domains WHERE project_id=p.id ORDER BY created_at DESC LIMIT 1) FROM projects p LEFT JOIN project_sources s ON s.project_id=p.id`
+const projectSelect = `SELECT p.id,p.name,p.slug,COALESCE(p.description,''),p.status,p.source_type,COALESCE(s.repository_url,''),COALESCE(s.reference,''),COALESCE(p.local_path,''),p.runtime,p.deployment_mode,p.working_directory,p.build_command,p.start_command,p.healthcheck,p.auto_start,COALESCE(s.credential_kind,''),COALESCE(s.credential_secret_id,''),COALESCE(p.current_commit,''),p.created_by,p.created_at,p.updated_at,p.archived_at,(SELECT port FROM ports WHERE project_id=p.id AND released_at IS NULL ORDER BY created_at DESC LIMIT 1),(SELECT hostname FROM domains WHERE project_id=p.id ORDER BY created_at DESC LIMIT 1) FROM projects p LEFT JOIN project_sources s ON s.project_id=p.id`
 
 type scanFunc func(dest ...any) error
 
@@ -201,7 +213,7 @@ func scanProject(scan scanFunc) (Project, error) {
 	var createdBy, archived, domain sql.NullString
 	var port sql.NullInt64
 	var created, updated string
-	if err := scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &p.SourceType, &p.RepositoryURL, &p.Branch, &p.LocalPath, &p.Runtime, &p.DeploymentMode, &p.WorkingDirectory, &p.BuildCommand, &p.StartCommand, &p.Healthcheck, &auto, &p.CredentialKind, &p.CurrentCommit, &createdBy, &created, &updated, &archived, &port, &domain); err != nil {
+	if err := scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &p.SourceType, &p.RepositoryURL, &p.Branch, &p.LocalPath, &p.Runtime, &p.DeploymentMode, &p.WorkingDirectory, &p.BuildCommand, &p.StartCommand, &p.Healthcheck, &auto, &p.CredentialKind, &p.CredentialID, &p.CurrentCommit, &createdBy, &created, &updated, &archived, &port, &domain); err != nil {
 		return Project{}, err
 	}
 	p.AutoStart = auto != 0
