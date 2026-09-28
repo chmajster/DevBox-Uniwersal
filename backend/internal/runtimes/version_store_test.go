@@ -29,11 +29,13 @@ func (p testVersionProvider) RuntimeType() string { return p.runtimeType }
 func (p testVersionProvider) ListAvailableVersions(context.Context) ([]AvailableVersion, error) {
 	return nil, nil
 }
-func (p testVersionProvider) DetectInstalled(context.Context) ([]DetectedRuntime, error) { return nil, nil }
+func (p testVersionProvider) DetectInstalled(context.Context) ([]DetectedRuntime, error) {
+	return nil, nil
+}
 func (p testVersionProvider) Install(context.Context, string, string, InstallReporter) (ManagedRuntime, error) {
 	return ManagedRuntime{}, nil
 }
-func (p testVersionProvider) ValidateInstallation(context.Context, Installation) error { return nil }
+func (p testVersionProvider) ValidateInstallation(context.Context, Installation) error    { return nil }
 func (p testVersionProvider) Remove(context.Context, Installation, InstallReporter) error { return nil }
 
 func runtimeVersionTestDB(t *testing.T) *VersionRepository {
@@ -65,8 +67,8 @@ func TestRuntimeVersionAssignmentAndExecutableResolution(t *testing.T) {
 		t.Fatalf("PrepareManagedInstall() error = %v", err)
 	}
 	if err := repo.MarkInstalled(ctx, installation.ID, "/opt/devbox/php/8.4.6/bin/php", "/opt/devbox/php/8.4.6", map[string]string{
-		"php":      "/opt/devbox/php/8.4.6/bin/php",
-		"php-fpm":  "/opt/devbox/php/8.4.6/sbin/php-fpm",
+		"php":     "/opt/devbox/php/8.4.6/bin/php",
+		"php-fpm": "/opt/devbox/php/8.4.6/sbin/php-fpm",
 	}); err != nil {
 		t.Fatalf("MarkInstalled() error = %v", err)
 	}
