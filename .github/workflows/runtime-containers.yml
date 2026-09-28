@@ -19,6 +19,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Exact source snapshot
+        run: git archive --format=tar.gz HEAD > "$RUNNER_TEMP/source.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-container-source
+          path: ${{ runner.temp }}/source.tar.gz
+          retention-days: 1
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
