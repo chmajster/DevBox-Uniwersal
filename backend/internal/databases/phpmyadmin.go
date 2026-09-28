@@ -65,8 +65,11 @@ func (m *PHPMyAdminManager) Install(ctx context.Context) (PHPMyAdminStatus, erro
 	args := []string{
 		"create",
 		"--name", m.cfg.Container,
-		"-p", "127.0.0.1:" + strconv.Itoa(m.cfg.HostPort) + ":80",
 	}
+	if m.cfg.Network != "" {
+		args = append(args, "--network", m.cfg.Network)
+	}
+	args = append(args, "-p", "127.0.0.1:"+strconv.Itoa(m.cfg.HostPort)+":80")
 	if addHostGateway {
 		args = append(args, "--add-host", "host.docker.internal:host-gateway")
 	}
