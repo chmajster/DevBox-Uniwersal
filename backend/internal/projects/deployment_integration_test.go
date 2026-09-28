@@ -18,9 +18,9 @@ import (
 
 func TestDeploymentIntegrationManagedAllocatesPortDetectsRuntimeBuildsAndRoutes(t *testing.T) {
 	repo, project, deploymentID := integrationProject(t, Project{
-		Runtime:          "",
-		ContainerPolicy:  ContainerPolicyAuto,
-		DeploymentMode:   "docker",
+		Runtime:         "",
+		ContainerPolicy: ContainerPolicyAuto,
+		DeploymentMode:  "docker",
 	})
 
 	runtimeProvider := &integrationRuntime{name: "static", healthy: true, state: "stopped"}
@@ -169,20 +169,20 @@ func integrationProject(t *testing.T, overrides Project) (*Repository, Project, 
 	}
 	now := time.Now().UTC()
 	project := Project{
-		ID:             NewID(),
-		Name:           "Integration App",
-		Slug:           "integration-app",
-		Status:         "ready",
-		SourceType:     SourceLocal,
-		LocalPath:      workDir,
+		ID:              NewID(),
+		Name:            "Integration App",
+		Slug:            "integration-app",
+		Status:          "ready",
+		SourceType:      SourceLocal,
+		LocalPath:       workDir,
 		Runtime:         overrides.Runtime,
 		RuntimeVersion:  overrides.RuntimeVersion,
 		ContainerPolicy: overrides.ContainerPolicy,
 		DeploymentMode:  "docker",
 		Healthcheck:     overrides.Healthcheck,
-		AutoStart:      overrides.AutoStart,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		AutoStart:       overrides.AutoStart,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	if project.ContainerPolicy == "" {
 		project.ContainerPolicy = ContainerPolicyAuto
@@ -303,11 +303,11 @@ func (r *integrationRoutes) EnsureProjectRoute(_ context.Context, projectID, hos
 }
 
 type integrationManaged struct {
-	built      bool
-	replaced   bool
+	built       bool
+	replaced    bool
 	imageExists bool
-	replaceErr error
-	spec       containerspec.DeploymentSpec
+	replaceErr  error
+	spec        containerspec.DeploymentSpec
 }
 
 func (m *integrationManaged) Available(context.Context) error { return nil }
