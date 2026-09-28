@@ -112,6 +112,12 @@ tbody tr:last-child td { border-bottom: 0; }
 .log-line span:last-child { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .job-details { margin-top: 18px; border: 1px solid var(--border); background: var(--panel); border-radius: 10px; padding: 16px; }
+.job-row.is-expanded td { background: var(--panel-alt); border-bottom-color: transparent; }
+.job-details-row td { padding: 0 12px 14px; background: var(--panel-alt); }
+.job-details-inline { margin-top: 0; border-radius: 10px; box-shadow: var(--shadow); }
+.job-details-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.job-details-heading h2 { margin: 2px 0 4px; }
+.job-details-heading p { margin: 0; overflow-wrap: anywhere; }
 .job-progress { display: grid; gap: 12px; }
 .job-progress-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .job-progress-grid > div { display: grid; gap: 4px; }
