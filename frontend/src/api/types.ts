@@ -25,6 +25,19 @@ export interface UpdateStatus {
   checked_at: string
 }
 
+export interface UpdateProgress {
+  state: 'idle' | 'starting' | 'running' | 'succeeded' | 'failed' | 'no_update' | 'unknown'
+  percent: number
+  stage: string
+  message?: string
+  current_version?: string
+  target_version?: string
+  started_at?: string
+  updated_at?: string
+  finished_at?: string
+  error?: string
+}
+
 export interface User {
   id: string
   username: string
