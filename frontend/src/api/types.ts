@@ -228,6 +228,40 @@ export interface ComposeProcess {
   image?: string
 }
 
+export type DatabaseMode = 'none' | 'managed' | 'compose' | 'external'
+
+export interface DatabaseBinding {
+  id?: string
+  project_id: string
+  mode: DatabaseMode
+  database_id?: string
+  application_service?: string
+  compose_service?: string
+  engine?: string
+  host?: string
+  port?: number
+  database?: string
+  username?: string
+  has_secret: boolean
+  application_host?: string
+  application_port?: number
+  status?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface DatabaseBindingInput {
+  mode: DatabaseMode
+  application_service?: string
+  compose_service?: string
+  engine?: string
+  host?: string
+  port?: number
+  database?: string
+  username?: string
+  password?: string
+}
+
 export interface DatabaseRecord {
   id: string
   project_id?: string
