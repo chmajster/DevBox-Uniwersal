@@ -56,6 +56,8 @@ export function PortsPage() {
     }
   }
 
+  const applicationAddress = (port: number) => `http://${window.location.hostname || 'localhost'}:${port}/`
+
   return <>
     <div className="page-heading">
       <div>
@@ -83,18 +85,23 @@ export function PortsPage() {
 
     <div className="table-wrap">
       <table>
-        <thead><tr><th>Port</th><th>Aplikacja</th><th>Przeznaczenie</th><th>Status</th><th>Socket</th><th>Utworzono</th>{canMutate && <th>Akcje</th>}</tr></thead>
+        <thead><tr><th>Port</th><th>Aplikacja</th><th>Adres</th><th>Przeznaczenie</th><th>Status</th><th>Socket</th><th>Utworzono</th>{canMutate && <th>Akcje</th>}</tr></thead>
         <tbody>
           {ports.map((port) => <tr key={port.id}>
             <td><strong>{port.port}</strong></td>
             <td>{port.application ?? port.project_id ?? '—'}</td>
+            <td>
+              {port.state !== 'released'
+                ? <a href={applicationAddress(port.port)} target="_blank" rel="noopener noreferrer" className="mono">{applicationAddress(port.port)}</a>
+                : <span className="muted">—</span>}
+            </td>
             <td>{port.purpose}</td>
             <td><span className={'badge ' + (port.state === 'released' ? 'badge-muted' : 'badge-ok')}>{port.state}</span></td>
             <td>{port.socket_available ? 'wolny' : 'zajęty'}</td>
             <td>{new Date(port.created_at).toLocaleString()}</td>
             {canMutate && <td>{port.state !== 'released' ? <button type="button" className="danger" onClick={() => void release(port.port)}>Zwolnij</button> : '—'}</td>}
           </tr>)}
-          {ports.length === 0 && <tr><td colSpan={canMutate ? 7 : 6} className="muted">Brak zapisanych portów.</td></tr>}
+          {ports.length === 0 && <tr><td colSpan={canMutate ? 8 : 7} className="muted">Brak zapisanych portów.</td></tr>}
         </tbody>
       </table>
     </div>
