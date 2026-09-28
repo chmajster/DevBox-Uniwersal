@@ -19,6 +19,7 @@ DevBox Universal is an integrated local development control plane.
 - Session charts retain up to two hours / 721 real samples; no synthetic history, network counters or temperature readings. See `docs/control-room-ui.md` for exact semantics.
 - Persistent compact sidebar, mobile drawer and role-aware Ctrl/Cmd+K navigation/application search.
 - Searchable applications in persistent card/table views, status filtering, deployment queue feedback and archive confirmation.
+- Project Overview exposes the active HTTP application address as a direct new-tab link using the DevBox browser host and the project's resolved host port.
 - Dashboard links select active jobs, job details and full log-source filters; existing SSE views remain available.
 - Redesigned login, persistent dark/light theme and shared module forms, tables, statuses and logs.
 - Native accessible dialogs, keyboard navigation, visible focus, reduced-motion support and graceful handling of disabled browser storage.
