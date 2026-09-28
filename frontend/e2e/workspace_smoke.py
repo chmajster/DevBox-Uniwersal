@@ -118,18 +118,23 @@ def main():
             state = install_api(context)
             page = context.new_page()
             page.on('pageerror', lambda error: errors.append(str(error)))
+            # Install before the application registers any timer; otherwise those
+            # native timers cannot be advanced by the Playwright clock.
+            page.clock.install()
             page.goto(BASE)
             expect(page.locator('html')).to_have_attribute('data-theme', 'dark')
             expect(page.get_by_role('heading', name='Przegląd', exact=True)).to_be_visible()
             expect(page.get_by_text('System OK', exact=True)).to_be_visible()
             expect(page.locator('.console-kpi').nth(3).locator('strong')).to_have_text('1')
             expect(page.locator('.console-log-line')).to_have_count(8)
+            expect(page.locator('.gauge-value')).to_have_count(3)
             expect(page.get_by_text('Temperatura CPU', exact=True).locator('..').get_by_text('Brak danych')).to_be_visible()
             no_overflow(page)
-            page.clock.install()
+            page.screenshot(path=str(OUT / 'control-room-first-read.png'), full_page=True)
             for _ in range(4):
-                page.clock.fast_forward(11000)
-                page.wait_for_timeout(50)
+                with page.expect_response(lambda response: '/monitoring/snapshot' in response.url):
+                    page.clock.fast_forward(11000)
+                expect(page.get_by_role('button', name='Odśwież', exact=True)).to_be_enabled()
             expect(page.locator('.chart-line')).to_have_count(1)
             page.screenshot(path=str(OUT / 'control-room-dark.png'), full_page=True)
             page.get_by_role('button', name='Pamięć', exact=True).click()
@@ -206,6 +211,7 @@ def main():
             expect(page.get_by_text('Sprawdź usługi', exact=True)).to_be_visible()
             expect(page.locator('.console-services').get_by_text('NIEZNANY', exact=True)).to_be_visible()
             expect(page.get_by_text('Aplikacje: Test: API niedostępne', exact=True)).to_be_visible()
+            page.screenshot(path=str(OUT / 'control-room-api-errors.png'), full_page=True)
             state['failures'].clear()
             state['projects'] = None
             page.goto(BASE + '/apps')

@@ -97,7 +97,7 @@ func scanBackup(scan rowScanner) (Backup, error) {
 	var item Backup
 	var created string
 	var completed sql.NullString
-	if err := scan(&item.ID,&item.FileName,&item.Status,&item.SizeBytes,&item.SHA256,&item.RequestedBy,&item.Error,&created,&completed); err != nil {
+	if err := scan(&item.ID, &item.FileName, &item.Status, &item.SizeBytes, &item.SHA256, &item.RequestedBy, &item.Error, &created, &completed); err != nil {
 		return Backup{}, err
 	}
 	var err error
@@ -120,10 +120,10 @@ func formatTime(value time.Time) string {
 }
 
 func parseTime(value string) (time.Time, error) {
-	for _, layout := range []string{time.RFC3339Nano,time.RFC3339,"2006-01-02 15:04:05"} {
-		if parsed, err := time.Parse(layout,value); err == nil {
-			return parsed.UTC(),nil
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed.UTC(), nil
 		}
 	}
-	return time.Time{},fmt.Errorf("invalid backup timestamp %q",value)
+	return time.Time{}, fmt.Errorf("invalid backup timestamp %q", value)
 }
