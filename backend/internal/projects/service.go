@@ -84,7 +84,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 	}
 
 	id := NewID()
-	p := Project{ID: id, Name: input.Name, Slug: slug, Description: strings.TrimSpace(input.Description), SourceType: input.SourceType, RepositoryURL: strings.TrimSpace(input.RepositoryURL), Branch: strings.TrimSpace(input.Branch), Runtime: input.Runtime, RuntimeVersion: strings.TrimSpace(input.RuntimeVersion), ContainerPolicy: input.ContainerPolicy, DeploymentMode: "docker", WorkingDirectory: strings.TrimSpace(input.WorkingDirectory), BuildCommand: strings.TrimSpace(input.BuildCommand), StartCommand: strings.TrimSpace(input.StartCommand), Healthcheck: strings.TrimSpace(input.Healthcheck), AutoStart: input.AutoStart, CredentialKind: input.CredentialKind, CredentialID: strings.TrimSpace(input.CredentialID), CreatedBy: actor, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	p := Project{ID: id, Name: input.Name, Slug: slug, Description: strings.TrimSpace(input.Description), SourceType: input.SourceType, RepositoryURL: strings.TrimSpace(input.RepositoryURL), Branch: strings.TrimSpace(input.Branch), Runtime: input.Runtime, RuntimeVersion: strings.TrimSpace(input.RuntimeVersion), ContainerPolicy: input.ContainerPolicy, WorkingDirectory: strings.TrimSpace(input.WorkingDirectory), BuildCommand: strings.TrimSpace(input.BuildCommand), StartCommand: strings.TrimSpace(input.StartCommand), Healthcheck: strings.TrimSpace(input.Healthcheck), AutoStart: input.AutoStart, CredentialKind: input.CredentialKind, CredentialID: strings.TrimSpace(input.CredentialID), CreatedBy: actor, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 	if p.SourceType == "" {
 		p.SourceType = SourceEmpty
 	}
