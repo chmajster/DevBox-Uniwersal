@@ -303,3 +303,45 @@ input[type="checkbox"] { width: auto; margin: 0; }
 @media (max-width: 900px) {
   .phpmyadmin-install-progress { width: 100%; }
 }
+
+
+/* Runtime Version Manager and Source Control integrations */
+.runtime-search, .integration-search { width: min(360px, 100%); margin-top: 0; }
+.runtime-version-grid, .integration-grid { display: grid; gap: 16px; }
+.runtime-version-card, .integration-card { margin: 0; }
+.runtime-version-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.runtime-version-heading h2, .runtime-version-heading h3 { margin: 0; }
+.runtime-version-heading p { margin: 5px 0 0; }
+.runtime-install-row { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 10px; align-items: end; margin: 16px 0; }
+.runtime-install-row button { height: 39px; }
+.runtime-version-table { min-width: 1080px; }
+.runtime-job { display: grid; gap: 7px; }
+.runtime-assignment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.runtime-assignment-card { margin: 0; display: grid; gap: 12px; }
+.runtime-assignment-card h3 { margin: 0; }
+.runtime-assignment-details { display: grid; gap: 5px; }
+.runtime-assignment-details code { overflow-wrap: anywhere; white-space: normal; }
+.integration-form { margin-bottom: 18px; }
+.integration-metrics { margin: 16px 0; }
+.integration-metrics small { color: var(--muted); }
+.repository-results { max-height: 310px; overflow: auto; display: grid; gap: 6px; margin-top: 8px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-alt); }
+.repository-result { display: grid; gap: 3px; text-align: left; background: var(--panel); border-color: var(--border); color: var(--text); }
+.repository-result span { color: var(--muted); font-size: 12px; }
+.repository-result.selected { border-color: var(--accent); }
+.source-selected { display: grid; align-content: end; gap: 6px; padding-bottom: 2px; }
+.source-checkout { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 10px; align-items: end; }
+.source-checkout .warning-banner { grid-column: 1 / -1; margin: 0; }
+.source-control-section { display: grid; gap: 16px; }
+.source-control-section > .panel { margin: 0; }
+.source-control-split { align-items: start; }
+.source-control-split .panel { margin: 0; }
+.source-pr-list { display: grid; gap: 8px; }
+.source-pr-item { display: grid; gap: 4px; padding: 10px; border: 1px solid var(--border-soft); border-radius: 8px; text-decoration: none; color: var(--text); }
+.source-pr-item span, .source-pr-item small { color: var(--muted); }
+.pagination-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+@media (max-width: 900px) {
+  .runtime-assignment-grid { grid-template-columns: 1fr; }
+  .source-checkout { grid-template-columns: 1fr; }
+  .runtime-install-row { grid-template-columns: 1fr; }
+}
