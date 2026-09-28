@@ -51,6 +51,8 @@ var documentedRoutes = []documentedRoute{
 	{"POST", "/api/v1/projects/{id}/git/checkout", "Checkout project branch", "operator"},
 	{"POST", "/api/v1/projects/{id}/deploy", "Deploy project", "operator"},
 	{"GET", "/api/v1/projects/{id}/deployments", "Project deployment history", "viewer"},
+	{"GET", "/api/v1/projects/{id}/ports/config", "Get project Docker port publishing configuration", "viewer"},
+	{"PUT", "/api/v1/projects/{id}/ports/config", "Update project Docker port publishing configuration", "operator"},
 	{"GET", "/api/v1/runtimes", "Runtime inventory", "viewer"},
 	{"GET", "/api/v1/runtimes/detect", "Detect project runtime", "viewer"},
 	{"GET", "/api/v1/projects/{id}/runtime", "Project runtime details", "viewer"},
