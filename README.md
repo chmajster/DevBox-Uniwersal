@@ -29,8 +29,8 @@ The piped installer installs required packages, downloads the current `main` sou
 Requirements: Go 1.23+, Node.js 22+, npm. Docker is optional; the backend remains available when Docker is missing.
 
 ```bash
+export DEVBOX_AUTH_DISABLED=true
 export DEVBOX_BOOTSTRAP_ADMIN_USERNAME=admin
-export DEVBOX_BOOTSTRAP_ADMIN_PASSWORD='replace-with-a-long-password'
 export DEVBOX_MASTER_KEY="$(openssl rand -base64 32)"
 export DEVBOX_PROJECTS_ROOT="./projects"
 ./scripts/dev.sh
@@ -39,7 +39,7 @@ export DEVBOX_PROJECTS_ROOT="./projects"
 Backend: `http://127.0.0.1:8787`  
 Frontend: `http://127.0.0.1:5173`
 
-The bootstrap admin is created only when the users table is empty. Do not store production credentials in shell history or repository files.
+By default DevBox is local-only and passwordless: the UI opens directly as the local admin while the HTTP listener remains bound to loopback. Set DEVBOX_AUTH_DISABLED=false and configure bootstrap credentials before exposing DevBox beyond localhost.
 
 ## API
 
