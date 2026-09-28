@@ -7,6 +7,7 @@ describe('workspace navigation', () => {
     expect(paths).not.toContain('/backups')
     expect(paths).not.toContain('/audit')
     expect(paths).toContain('/apps')
+    expect(paths).toContain('/plugins')
     expect(new Set(paths).size).toBe(paths.length)
   })
   it('preserves operator and admin visibility', () => {
@@ -20,6 +21,7 @@ describe('workspace navigation', () => {
     expect(navigationForPath('/apps/new')?.to).toBe('/apps')
     expect(navigationForPath('/projects/id/runtime')?.to).toBe('/apps')
     expect(navigationForPath('/apps-other')).toBeUndefined()
+    expect(navigationForPath('/plugins')?.label).toBe('Pluginy')
     expect(navigationForPath('/backups', 'viewer')).toBeUndefined()
   })
   it('does not require browser storage during server rendering', () => {
