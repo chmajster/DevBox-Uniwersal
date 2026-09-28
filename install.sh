@@ -571,7 +571,7 @@ wait_for_health() {
 run_doctor() {
   if [[ -x "$LIBEXEC_DIR/devbox" ]]; then
     set +e
-    "$LIBEXEC_DIR/devbox" doctor
+    DEVBOX_ENV_FILE="$ENV_FILE" "$LIBEXEC_DIR/devbox" doctor
     local rc
     rc=$?
     set -e
