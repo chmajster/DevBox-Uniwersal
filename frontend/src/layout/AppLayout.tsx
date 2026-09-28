@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { DEVBOX_LOGO } from '../assets/devboxBrand'
 import { Icon } from '../components/Icon'
 import { Modal } from '../components/Modal'
 import { ControlRoomProvider, useControlRoom } from '../control-room/ControlRoomContext'
@@ -59,10 +60,10 @@ function ControlRoomShell() {
   function toggleSidebar() { setCollapsed((value) => { savePreference('devbox-sidebar', value ? 'expanded' : 'collapsed'); return !value }) }
   function navigation(mobile = false) {
     return <>
-      <Link to="/" className="workspace-brand" aria-label="DevBox Universal — przegląd" onClick={() => setMobileOpen(false)}><span className="brand-mark"><Icon name="box" size={25} /></span><span className="brand-copy">DevBox<span>UNIVERSAL</span></span></Link>
+      <Link to="/" className="workspace-brand" aria-label="DevBox Universal — przegląd" onClick={() => setMobileOpen(false)}><span className="brand-mark"><img className="brand-logo" src={DEVBOX_LOGO} alt="" /></span><span className="brand-copy">DevBox<span>UNIVERSAL</span></span></Link>
       {mobile && <button className="icon-button drawer-close" aria-label="Zamknij menu" onClick={() => setMobileOpen(false)}><Icon name="close" /></button>}
       <nav className="workspace-nav" aria-label={mobile ? 'Nawigacja mobilna' : 'Nawigacja główna'}>{Array.from(new Set(items.map((item) => item.group))).map((group) => <div className="nav-group" key={group}><div className="nav-group-label">{group}</div>{items.filter((item) => item.group === group).map((item) => <NavLink to={item.to} end={item.to === '/'} key={item.to} title={item.label} aria-label={item.label} onClick={() => setMobileOpen(false)}><Icon name={item.icon} size={19} /><span className="nav-label">{item.label}</span></NavLink>)}</div>)}</nav>
-      <div className="console-host-summary"><div><span className="brand-mark"><Icon name="box" size={20} /></span><span><strong>DevBox Universal</strong><small>{overview.data?.system?.version || 'Wersja niedostępna'}</small></span></div><p><span className={`status-dot ${systemOK ? '' : 'dot-unknown'}`} />{overview.data?.system?.hostname || 'Host nieznany'}</p><progress max={4} value={stale ? 0 : healthy} aria-label="Usługi z prawidłowym odczytem" /><small>{stale ? 'Brak aktualnego odczytu' : `${healthy}/4 usług z prawidłowym odczytem`}</small></div>
+      <div className="console-host-summary"><div><span className="brand-mark"><img className="brand-logo" src={DEVBOX_LOGO} alt="" /></span><span><strong>DevBox Universal</strong><small>{overview.data?.system?.version || 'Wersja niedostępna'}</small></span></div><p><span className={`status-dot ${systemOK ? '' : 'dot-unknown'}`} />{overview.data?.system?.hostname || 'Host nieznany'}</p><progress max={4} value={stale ? 0 : healthy} aria-label="Usługi z prawidłowym odczytem" /><small>{stale ? 'Brak aktualnego odczytu' : `${healthy}/4 usług z prawidłowym odczytem`}</small></div>
       <div className="sidebar-footer">{!mobile ? <button className="icon-button collapse-button" title={collapsed ? 'Rozwiń menu' : 'Zwiń menu'} aria-label={collapsed ? 'Rozwiń menu' : 'Zwiń menu'} aria-pressed={collapsed} onClick={toggleSidebar}><Icon name="panel" size={18} /><span className="nav-label">Zminimalizuj menu</span></button> : <div className="user-caption"><strong>{user?.username}</strong><span>{role}</span></div>}</div>
     </>
   }
