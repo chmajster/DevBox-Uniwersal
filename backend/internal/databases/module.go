@@ -129,7 +129,7 @@ func (m *Module) createUser(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		DatabaseID string   `json:"database_id"`
 		Username   string   `json:"username"`
-		Password   string   `json:"password"`
+		Password   *string  `json:"password"`
 		Privileges []string `json:"privileges"`
 	}
 	if err := decodeBody(w, r, &input); err != nil {
@@ -162,7 +162,7 @@ func (m *Module) deleteUser(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) changePassword(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Password string `json:"password"`
+		Password *string `json:"password"`
 	}
 	if r.ContentLength != 0 {
 		if err := decodeBody(w, r, &input); err != nil {
