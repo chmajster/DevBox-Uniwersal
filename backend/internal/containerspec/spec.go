@@ -241,7 +241,7 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 		ProjectID: projectID, Runtime: runtime, Version: version, ContextDir: abs, Dockerfile: dockerfile,
 		Image: image, ContainerName: name, HostPort: hostPort, ContainerPort: port,
 		Environment: env, BindMounts: bindMounts, AnonymousVolumes: anonymousVolumes,
-		Labels: labels,
+		Labels:      labels,
 		Fingerprint: fingerprint, ReadOnly: readOnly,
 	}, nil
 }
