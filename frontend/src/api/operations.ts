@@ -2,11 +2,14 @@ import { request } from './client'
 import type {
   DatabaseResource,
   DockerContainer,
+  DockerStatus,
   Job,
   LogEntry,
   MonitoringSnapshot,
+  MySQLStatus,
   PortResource,
   Project,
+  ProxyStatus,
   ServiceProbe
 } from './types'
 
@@ -59,7 +62,7 @@ export async function listDatabases(projectID?: string) {
 
 export async function listPorts(projectID?: string) {
   const suffix = projectID ? `?project_id=${encodeURIComponent(projectID)}` : ''
-  return asCollection(await request<CollectionPayload<PortResource>>(`/networking/ports${suffix}`))
+  return asCollection(await request<CollectionPayload<PortResource>>(`/ports${suffix}`))
 }
 
 export function getMonitoringSnapshot() {
@@ -71,12 +74,30 @@ export async function getServiceProbe(name: ServiceProbe['name']): Promise<Servi
     await request<unknown>('/health')
     return { name, status: 'RUNNING' }
   }
-  const endpoint = name === 'Docker' ? '/docker/status' : name === 'MySQL' ? '/databases/status' : '/proxy/status'
-  const result = await request<{ status?: string; message?: string }>(endpoint)
+
+  if (name === 'Docker') {
+    const result = await request<DockerStatus>('/docker/status')
+    return {
+      name,
+      status: result.available ? 'RUNNING' : 'UNHEALTHY',
+      message: result.error ?? result.server_version ?? result.client_version
+    }
+  }
+
+  if (name === 'MySQL') {
+    const result = await request<MySQLStatus>('/mysql/status')
+    return {
+      name,
+      status: result.running ? 'RUNNING' : 'UNHEALTHY',
+      message: result.running ? result.version : result.connection_state
+    }
+  }
+
+  const result = await request<ProxyStatus>('/proxy/status')
   return {
     name,
-    status: result.status ?? 'UNHEALTHY',
-    message: result.message
+    status: result.detected && result.config_valid ? 'RUNNING' : 'UNHEALTHY',
+    message: result.error ?? result.version
   }
 }
 
