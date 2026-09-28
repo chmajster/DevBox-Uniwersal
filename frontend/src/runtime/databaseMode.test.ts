@@ -8,7 +8,7 @@ describe('project database mode field contract', () => {
 
   it('renders managed database identity and application endpoint fields', () => {
     expect(databaseModeFields('managed')).toEqual([
-      'application_service', 'engine', 'database', 'username', 'application_host', 'application_port',
+      'application_service', 'engine', 'database', 'username', 'application_host', 'application_port', 'status', 'created_at',
     ])
   })
 
