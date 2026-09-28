@@ -247,6 +247,9 @@ tbody tr:hover { background: var(--panel-alt); }
 .command-results small { color: var(--muted); font-size: 10px; }
 .command-footer { display: flex; justify-content: space-between; gap: 10px; padding-top: 16px; margin-top: 12px; border-top: 1px solid var(--border-soft); font-size: 10px; color: var(--muted); }
 .confirm-dialog { max-width: 440px; }
+.database-user-edit-modal { width: min(1050px, calc(100% - 32px)); }
+.database-user-edit-modal .database-password-editor { padding-top: 18px; border-top: 1px solid var(--border-soft); }
+.database-user-edit-modal h3 { margin: 0 0 10px; font-size: 13px; }
 .confirm-dialog h2 { font-size: 20px; margin: 18px 0 8px; }
 .confirm-dialog p { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
