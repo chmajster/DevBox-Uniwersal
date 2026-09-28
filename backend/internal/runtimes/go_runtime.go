@@ -70,7 +70,7 @@ func (r *GoRuntime) Validate(_ context.Context, project ProjectContext) (Validat
 		result.Valid = false
 		result.Errors = append(result.Errors, "go.mod was not found")
 	}
-	if _, err := findExecutable("go"); err != nil {
+	if _, err := projectExecutable(project, "go", "go"); err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, err.Error())
 	}
@@ -81,7 +81,7 @@ func (r *GoRuntime) Validate(_ context.Context, project ProjectContext) (Validat
 }
 
 func (r *GoRuntime) InstallDependencies(ctx context.Context, project ProjectContext) error {
-	goTool, err := findExecutable("go")
+	goTool, err := projectExecutable(project, "go", "go")
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func (r *GoRuntime) InstallDependencies(ctx context.Context, project ProjectCont
 }
 
 func (r *GoRuntime) Build(ctx context.Context, project ProjectContext) error {
-	goTool, err := findExecutable("go")
+	goTool, err := projectExecutable(project, "go", "go")
 	if err != nil {
 		return err
 	}
