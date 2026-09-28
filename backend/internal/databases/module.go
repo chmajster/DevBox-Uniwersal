@@ -258,8 +258,9 @@ func (m *Module) composeServices(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) provisionProject(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Engine  string `json:"engine"`
-		Charset string `json:"charset"`
+		Engine             string `json:"engine"`
+		Charset            string `json:"charset"`
+		ApplicationService string `json:"application_service"`
 	}
 	if r.ContentLength != 0 {
 		if err := decodeBody(w, r, &input); err != nil {
@@ -268,7 +269,7 @@ func (m *Module) provisionProject(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	actor, remote := requestIdentity(r)
-	result, err := m.service.ProvisionProject(r.Context(), r.PathValue("id"), input.Engine, input.Charset, actor, remote)
+	result, err := m.service.ProvisionProject(r.Context(), r.PathValue("id"), input.Engine, input.Charset, actor, remote, input.ApplicationService)
 	if err != nil {
 		writeModuleError(w, err)
 		return
