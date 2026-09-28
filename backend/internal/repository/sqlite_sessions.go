@@ -50,6 +50,13 @@ func (r *SQLiteSessions) DeleteByTokenHash(ctx context.Context, hash string) err
 	return nil
 }
 
+func (r *SQLiteSessions) DeleteByUserID(ctx context.Context, userID string) error {
+	if _, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID); err != nil {
+		return fmt.Errorf("delete user sessions: %w", err)
+	}
+	return nil
+}
+
 func (r *SQLiteSessions) DeleteExpired(ctx context.Context, now time.Time) error {
 	if _, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, now.UTC().Format(time.RFC3339Nano)); err != nil {
 		return fmt.Errorf("delete expired sessions: %w", err)
