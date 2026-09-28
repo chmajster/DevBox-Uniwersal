@@ -351,7 +351,16 @@ cleanup_source_tree() {
 }
 
 ensure_source_tree() {
+  local has_local_source=0
   if [[ -f "$ROOT_DIR/backend/go.mod" && -f "$ROOT_DIR/frontend/package-lock.json" ]]; then
+    has_local_source=1
+  fi
+
+  # A direct --update must not silently rebuild an old checkout. This was the
+  # reason already-fixed backend code could remain active after an update.
+  # The dedicated updater sets DEVBOX_USE_CURRENT_SOURCE=1 after it has cloned
+  # the requested ref into a fresh temporary directory.
+  if (( has_local_source == 1 )) && { [[ "$MODE" != "--update" ]] || [[ "${DEVBOX_USE_CURRENT_SOURCE:-0}" == "1" ]]; }; then
     return 0
   fi
 
