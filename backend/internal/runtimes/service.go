@@ -56,40 +56,6 @@ func NewService(registry Registry, resolver ProjectResolver, secretStore secrets
 	return &Service{registry: registry, resolver: resolver, secrets: secretStore}
 }
 
-func (s *Service) ResolveEnvironment(ctx context.Context, projectID string) (ResolvedEnvironment, error) {
-	resolved, err := s.resolver.Resolve(ctx, projectID)
-	if err != nil {
-		return ResolvedEnvironment{}, err
-	}
-	result := ResolvedEnvironment{
-		Environment:          make(map[string]string),
-		SensitiveEnvironment: make(map[string]string),
-	}
-	for key, value := range resolved.Config.Environment {
-		if sensitiveEnvironmentKey(key) {
-			result.SensitiveEnvironment[key] = value
-			continue
-		}
-		result.Environment[key] = value
-	}
-	for key, reference := range resolved.Config.SecretEnvironment {
-		scope := reference.Scope
-		if scope == "" {
-			scope = "project:" + projectID + ":runtime"
-		}
-		if s.secrets == nil {
-			return ResolvedEnvironment{}, fmt.Errorf("secret environment %s cannot be resolved because SecretStore is not configured", key)
-		}
-		plaintext, err := s.secrets.Get(ctx, scope, reference.Name)
-		if err != nil {
-			return ResolvedEnvironment{}, fmt.Errorf("secret environment %s cannot be resolved", key)
-		}
-		result.SensitiveEnvironment[key] = string(plaintext)
-		clear(plaintext)
-	}
-	return result, nil
-}
-
 func (s *Service) ListRuntimes(ctx context.Context) []RuntimeInfo {
 	result := make([]RuntimeInfo, 0, len(s.registry.List()))
 	for _, name := range s.registry.List() {
