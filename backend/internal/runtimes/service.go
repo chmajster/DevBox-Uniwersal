@@ -94,20 +94,16 @@ func (s *Service) ProjectRuntime(ctx context.Context, projectID string) (Project
 	if err != nil {
 		return ProjectRuntimeView{}, err
 	}
-	info := RuntimeInfo{Runtime: runtime.Name(), Status: AvailabilityInvalid}
-	if inspector, ok := runtime.(Inspector); ok {
-		info = inspector.Inspect(ctx)
-	}
 	view := detectionView(detection)
+	version := detection.Version
 	return ProjectRuntimeView{
 		ProjectID:         projectID,
 		Runtime:           view.Runtime,
 		Framework:         view.Framework,
 		Confidence:        view.Confidence,
 		DetectedFiles:     view.DetectedFiles,
-		Version:           info.Version,
-		Availability:      info.Status,
-		Dependencies:      info.Dependencies,
+		Version:           version,
+		Availability:      AvailabilityAvailable,
 		BuildCommand:      view.SuggestedBuildCommand,
 		StartCommand:      view.SuggestedStartCommand,
 		Environment:       maskedEnvironment(resolved.Config),
@@ -125,30 +121,17 @@ func (s *Service) Validate(ctx context.Context, projectID string) (RuntimeValida
 	if err != nil {
 		return RuntimeValidationView{}, err
 	}
-	project, secretErrors := s.resolveSecrets(ctx, resolved)
-	validation, err := runtime.Validate(ctx, project)
-	if err != nil {
-		return RuntimeValidationView{}, err
-	}
-	if len(secretErrors) > 0 {
-		validation.Valid = false
-		validation.Errors = append(validation.Errors, secretErrors...)
-	}
-	sort.Strings(validation.Warnings)
-	sort.Strings(validation.Errors)
-
-	info := RuntimeInfo{Runtime: runtime.Name(), Status: AvailabilityInvalid}
-	if inspector, ok := runtime.(Inspector); ok {
-		info = inspector.Inspect(ctx)
-	}
+	_, secretErrors := s.resolveSecrets(ctx, resolved)
+	warnings := []string{"runtime projektu jest uruchamiany w kontenerze; binaria runtime hosta nie są wymagane"}
+	sort.Strings(secretErrors)
 	return RuntimeValidationView{
 		ProjectID:    projectID,
-		Runtime:      detection.Runtime,
-		Availability: info.Status,
-		Version:      info.Version,
-		Valid:        validation.Valid,
-		Warnings:     validation.Warnings,
-		Errors:       validation.Errors,
+		Runtime:      runtime.Name(),
+		Availability: AvailabilityAvailable,
+		Version:      detection.Version,
+		Valid:        len(secretErrors) == 0,
+		Warnings:     warnings,
+		Errors:       secretErrors,
 	}, nil
 }
 
