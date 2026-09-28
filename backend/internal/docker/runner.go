@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -32,10 +33,7 @@ func (r execRunner) RunEnv(ctx context.Context, environment map[string]string, a
 func (r execRunner) run(ctx context.Context, environment map[string]string, args ...string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, r.binary, args...)
 	if len(environment) > 0 {
-		cmd.Env = append([]string(nil), os.Environ()...)
-		for key, value := range environment {
-			cmd.Env = append(cmd.Env, key+"="+value)
-		}
+		cmd.Env = mergeProcessEnvironment(os.Environ(), environment)
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -46,6 +44,28 @@ func (r execRunner) run(ctx context.Context, environment map[string]string, args
 		return stdout.Bytes(), stderr.Bytes(), commandError(r.binary, stderr.String(), err)
 	}
 	return stdout.Bytes(), stderr.Bytes(), nil
+}
+
+func mergeProcessEnvironment(base []string, overrides map[string]string) []string {
+	result := make([]string, 0, len(base)+len(overrides))
+	for _, entry := range base {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok {
+			if _, replaced := overrides[key]; replaced {
+				continue
+			}
+		}
+		result = append(result, entry)
+	}
+	keys := make([]string, 0, len(overrides))
+	for key := range overrides {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		result = append(result, key+"="+overrides[key])
+	}
+	return result
 }
 
 func (r execRunner) Stream(ctx context.Context, args ...string) (io.ReadCloser, error) {
