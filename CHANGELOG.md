@@ -70,6 +70,8 @@
 
 ### Fixed
 
+- Local-directory Git repositories opened from WSL/Windows mounts are now trusted only for the current Git command with `safe.directory`, avoiding false `Git repository is not available` errors when the DevBox service account differs from the filesystem owner.
+- Git-tab provider errors are now shown inside the Git tab and Fetch/Pull actions are hidden until a valid repository with a remote is available.
 - Hardened the local-directory browser against symlink escapes and recursive symlink cycles; traversal is restricted to configured roots and capped at 500 entries.
 - Reconciled STATUS/TODO documentation with the integrated implementation so completed foundation work is no longer presented as outstanding.
 - Consolidated the duplicate Applications/Aplikacje navigation onto the canonical `/apps` workflow and kept `/applications` as a compatibility redirect.
