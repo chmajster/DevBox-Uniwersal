@@ -33,7 +33,6 @@ func TestReconcileAutoStartQueuesOnceAndMarksReconcilePayload(t *testing.T) {
 		LocalPath:       t.TempDir(),
 		Runtime:         "static",
 		ContainerPolicy: ContainerPolicyAuto,
-		DeploymentMode:  "docker",
 		AutoStart:       true,
 		CreatedAt:       now,
 		UpdatedAt:       now,
