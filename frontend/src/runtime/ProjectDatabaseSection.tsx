@@ -273,6 +273,8 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         <label>Silnik<input readOnly value={binding?.engine || draft.engine || 'mysql'} /></label>
         <label>Nazwa bazy<input readOnly value={binding?.database || '—'} /></label>
         <label>Użytkownik<input readOnly value={binding?.username || '—'} /></label>
+        <label>Status<input readOnly value={binding?.status || '—'} /></label>
+        <label>Data utworzenia<input readOnly value={binding?.created_at ? new Date(binding.created_at).toLocaleString('pl-PL') : '—'} /></label>
       </>}
 
       {modeFields.includes('compose_service') && <>
