@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Brand image rendering fix
+
+- Replaced the truncated hand-copied PNG data URL with the intact 32x32 frame extracted from the existing approved favicon; the sidebar, login and host-summary logo consumers retain their layout.
+- Stored the original ICO and recovered PNG as binary assets emitted with content-hashed, same-origin URLs rather than inline base64 strings.
+- Added five standard-library asset-integrity tests and Chromium production-bundle decoding checks for both themes, collapsed sidebar and mobile drawer, including a same-origin-only image CSP.
+- Documented asset provenance and native resolution in `docs/branding.md`. No backend contract, database migration or runtime dependency changes.
+
 ### Managed runtime containers
 
 - Removed native host runtime deployment for applications. PHP, Node.js, Python, Go and static projects now execute through Docker.
@@ -32,7 +39,7 @@
 
 - Replaced the basic shell with grouped, icon-based navigation, persistent compact sidebar, mobile drawer and role-aware Ctrl/Cmd+K navigation search.
 - Redesigned the dashboard into application/resource summaries, CPU/RAM/disk meters, service states and application shortcuts; unavailable API data is no longer presented as zero.
-- Added searchable card/table application views with persistent view preference, status filtering, archive confirmation and deployment queue feedback while preserving existing API actions and CSRF handling.
+- Added searchable card/table application views with persistent view preference, status filtering, deployment queue feedback and archive confirmation.
 - Redesigned the login page and unified light/dark tokens across shared module forms, tables, statuses and log viewers; no new frontend runtime dependencies or external assets.
 - Added native modal focus handling, visible keyboard focus, reduced-motion support and graceful operation when browser preference storage is blocked.
 - Added navigation/filter unit coverage and a Chromium smoke workflow producing screenshots and a report. Browser fixtures are synthetic; real Docker, database, proxy and deployment integration testing remains a separate requirement.
@@ -58,14 +65,13 @@
 - MIT license.
 - Initial DevBox Universal repository architecture.
 - Go backend bootstrap, environment configuration and graceful HTTP shutdown.
-- SQLite bootstrap and ordered SQL migration engine.
 - Complete initial schema for users, sessions, projects, project sources, runtime configs, ports, domains, databases, database users, deployments, jobs, job logs, secrets, health checks, audit events and settings.
 - Authentication foundation with opaque sessions, bcrypt passwords and Admin/Operator/Viewer RBAC.
 - Versioned `/api/v1` endpoints and normalized success/error envelopes.
 - Audit event foundation.
 - AES-256-GCM encryption and `SecretStore` abstraction.
 - Job Engine and Runtime contracts.
-- Git, process, Docker, database, reverse proxy, port allocator and system service provider contracts.
+- Git, process, Docker, database, reverse-proxy, port and system service provider contracts.
 - React/TypeScript/Vite frontend shell, login flow and protected layout.
 - Reproducible `go.sum` and `package-lock.json`.
 - CI for backend and frontend quality gates.
