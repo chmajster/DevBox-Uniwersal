@@ -24,6 +24,8 @@ export function ProjectsPage() {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState('')
   const [archiveTarget, setArchiveTarget] = useState<Project | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const mutationLock = useRef(false)
   const statusParam = params.get('status') ?? ''
   const status = projectStatuses.some((value) => value === statusParam) ? statusParam : ''
@@ -34,13 +36,13 @@ export function ProjectsPage() {
     let cancelled = false
     setLoading(true)
     setLoadError('')
-    listProjects().then((items) => {
+    listProjects(showArchived).then((items) => {
       if (!cancelled) { setProjects(items); setLoaded(true) }
     }).catch((cause: unknown) => {
       if (!cancelled) setLoadError(cause instanceof Error ? cause.message : 'Nie udało się pobrać aplikacji.')
     }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [reload])
+  }, [reload, showArchived])
 
   function changeStatus(value: string) {
     const next = new URLSearchParams(params)
@@ -65,16 +67,35 @@ export function ProjectsPage() {
     } finally { mutationLock.current = false; setBusy('') }
   }
 
+  async function removeProject(project: Project) {
+    if (mutationLock.current) return
+    mutationLock.current = true
+    setBusy(`${project.id}:delete`)
+    setOperationError('')
+    setNotice('')
+    try {
+      await request<{ status: string }>(`/projects/${encodeURIComponent(project.id)}`, { method: 'DELETE' })
+      setNotice(`Usunięto aplikację „${project.name}”.`)
+      setDeleteTarget(null)
+      setReload((value) => value + 1)
+    } catch (cause) {
+      setOperationError(cause instanceof Error ? cause.message : 'Nie udało się usunąć aplikacji.')
+    } finally { mutationLock.current = false; setBusy('') }
+  }
+
   function actions(project: Project) {
+    const archived = Boolean(project.archived_at)
     return <div className="project-actions">
       <Link className="project-details-link" to={`/apps/${encodeURIComponent(project.id)}`}>Szczegóły <Icon name="arrow" size={15} /></Link>
-      {canManage && <>
+      {canManage && !archived && <>
         <button className="secondary-button button-compact" disabled={!!busy} onClick={() => void mutate(project, 'deploy')} aria-label={`Wdróż ${project.name}`}>
           <Icon name="play" size={14} />{busy === `${project.id}:deploy` ? 'Zlecanie…' : 'Wdróż'}
         </button>
         <button className="icon-button archive-action" disabled={!!busy} title={`Archiwizuj ${project.name}`} aria-label={`Archiwizuj ${project.name}`}
           onClick={() => { setOperationError(''); setArchiveTarget(project) }}><Icon name="archive" size={17} /></button>
       </>}
+      {user?.role === 'admin' && <button className="icon-button danger" disabled={!!busy} title={`Usuń ${project.name}`} aria-label={`Usuń ${project.name}`}
+        onClick={() => { setOperationError(''); setDeleteTarget(project) }}><Icon name="trash" size={17} /></button>}
     </div>
   }
 
@@ -88,6 +109,7 @@ export function ProjectsPage() {
     <div className="project-toolbar">
       <label className="search-field"><Icon name="search" size={18} /><input aria-label="Szukaj aplikacji" placeholder="Szukaj po nazwie, runtime, domenie…" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
       <label className="status-filter"><span className="sr-only">Filtr statusu</span><select value={status} onChange={(event) => changeStatus(event.target.value)}><option value="">Wszystkie statusy</option>{projectStatuses.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+      {user?.role === 'admin' && <label className="checkbox"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /> Pokaż zarchiwizowane</label>}
       <div className="view-switch" role="group" aria-label="Widok aplikacji">
         <button className="icon-button" aria-label="Widok kafelków" aria-pressed={view === 'grid'} onClick={() => { setView('grid'); savePreference('devbox-project-view', 'grid') }}><Icon name="apps" size={18} /></button>
         <button className="icon-button" aria-label="Widok tabeli" aria-pressed={view === 'list'} onClick={() => { setView('list'); savePreference('devbox-project-view', 'list') }}><Icon name="list" size={18} /></button>
@@ -120,6 +142,12 @@ export function ProjectsPage() {
       <p>Potwierdź archiwizację aplikacji <strong>{archiveTarget?.name}</strong> w DevBox.</p>
       {operationError && <div role="alert" className="error-banner">{operationError}</div>}
       <div className="modal-actions"><button className="secondary-button" disabled={!!busy} onClick={() => setArchiveTarget(null)}>Anuluj</button><button className="danger" disabled={!!busy} onClick={() => { if (archiveTarget) void mutate(archiveTarget, 'archive') }}>{busy ? 'Archiwizowanie…' : 'Archiwizuj aplikację'}</button></div>
+    </Modal>
+    <Modal open={deleteTarget !== null} onClose={() => { if (!busy) setDeleteTarget(null) }} labelId="delete-project-title" className="confirm-dialog">
+      <span className="empty-icon warning-icon"><Icon name="trash" size={26} /></span><h2 id="delete-project-title">Usunąć aplikację?</h2>
+      <p>Ta operacja trwale usunie wpis projektu <strong>{deleteTarget?.name}</strong> i powiązane dane DevBox. Pliki lokalnego katalogu projektu nie są kasowane przez ten przycisk.</p>
+      {operationError && <div role="alert" className="error-banner">{operationError}</div>}
+      <div className="modal-actions"><button className="secondary-button" disabled={!!busy} onClick={() => setDeleteTarget(null)}>Anuluj</button><button className="danger" disabled={!!busy} onClick={() => { if (deleteTarget) void removeProject(deleteTarget) }}>{busy ? 'Usuwanie…' : 'Usuń trwale'}</button></div>
     </Modal>
   </>
 }
