@@ -110,6 +110,34 @@ func TestPortConfigurationDefaultsValidationAndDeploymentLock(t *testing.T) {
 	}
 }
 
+func TestPortConfigurationIgnoresCancelledQueuedDeploymentJob(t *testing.T) {
+	repo, project, deploymentID := integrationProject(t, Project{Runtime: "static"})
+	ctx := context.Background()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	jobID := NewID()
+	if _, err := repo.db.ExecContext(ctx,
+		`INSERT INTO jobs(id,type,status,project_id,payload_json,created_at,finished_at) VALUES(?,?,?,?,?,?,?)`,
+		jobID, JobDeploy, "cancelled", project.ID, "{}", now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.BindDeploymentJob(ctx, deploymentID, jobID); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(repo, nil, nil, nil, t.TempDir())
+	settings := DefaultPortSettings()
+	settings.ContainerPort = 80
+	settings.HostPort = 9080
+	saved, err := service.UpdatePortConfiguration(ctx, project.ID, settings)
+	if err != nil {
+		t.Fatalf("cancelled queued deployment must not lock port settings: %v", err)
+	}
+	if !saved.Configured || saved.Settings.HostPort != 9080 {
+		t.Fatalf("unexpected saved settings after cancelled job: %+v", saved)
+	}
+}
+
 func TestPortPlanPersistsFallbackAndPreservesOldLeaseOnFailure(t *testing.T) {
 	repo, project, _ := integrationProject(t, Project{Runtime: "static"})
 	ctx := context.Background()
