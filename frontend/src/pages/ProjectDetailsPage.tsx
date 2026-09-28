@@ -84,7 +84,8 @@ function TabContent({ project, tab }: { project: Project; tab: ProjectTab }) {
         {field('Name', project.name)}
         {field('Status', project.status)}
         {field('Runtime', project.runtime)}
-        {field('Deployment mode', project.deployment_mode)}
+        {field('Runtime version', project.runtime_version)}
+        {field('Container policy', project.container_policy === 'custom' ? 'Custom Docker' : 'Managed Docker')}
         {field('Working directory', project.working_directory ?? project.local_path)}
         {field('Healthcheck', project.healthcheck)}
       </div>
