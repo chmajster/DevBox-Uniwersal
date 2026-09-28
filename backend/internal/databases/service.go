@@ -89,7 +89,19 @@ func NewService(repo *Repository, engine databaseEngine, secretStore secrets.Sec
 }
 
 func (s *Service) MySQLStatus(ctx context.Context) MySQLStatus {
-	return s.engine.Status(ctx)
+	status := s.engine.Status(ctx)
+	if engine, ok := s.engine.(endpointDatabaseEngine); ok {
+		admin := engine.AdminEndpoint()
+		application := engine.ApplicationEndpoint()
+		status.AdminHost = admin.Host
+		status.AdminPort = admin.Port
+		status.ApplicationHost = application.Host
+		status.ApplicationPort = application.Port
+	}
+	if s.managed != nil {
+		status.Network = s.managed.Network()
+	}
+	return status
 }
 
 func (s *Service) ListDatabases(ctx context.Context) ([]Database, error) {
