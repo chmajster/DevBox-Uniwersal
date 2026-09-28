@@ -14,6 +14,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/auth"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
 )
 
@@ -177,8 +178,6 @@ func TestAdminUserManagement(t *testing.T) {
 		t.Fatalf("change password status=%d body=%s", changed.Code, changed.Body.String())
 	}
 
-	selfDemote := request(http.MethodPatch, "/api/v1/users/"+createEnvelope.Data.User.ID, `{"role":"viewer","active":false}`)
-	_ = selfDemote
 
 	admin, err := users.ByUsername(context.Background(), "admin")
 	if err != nil {
