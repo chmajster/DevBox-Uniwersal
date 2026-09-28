@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -117,7 +118,6 @@ func TestComposePSFallsBackWhenLegacyFormatJSONIsUnsupported(t *testing.T) {
 	}
 }
 
-
 func TestComposeTargetPortDetectsPlanStyleWebBinding(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services:\n  web:\n    image: php:8.2-apache\n    ports:\n      - \"8080:80\"\n"), 0o600); err != nil {
@@ -182,7 +182,6 @@ func TestComposeTargetPortRejectsAmbiguousPublishedPorts(t *testing.T) {
 		t.Fatalf("expected ambiguous published port error, got %v", err)
 	}
 }
-
 
 func TestSelectComposePortBindingPrefersWebHTTPPort(t *testing.T) {
 	data := []byte(`{
