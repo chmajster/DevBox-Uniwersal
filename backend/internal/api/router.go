@@ -19,6 +19,7 @@ type API struct {
 	jobs         repository.JobRepository
 	version      string
 	cookieSecure bool
+	authDisabled bool
 }
 
 type Dependencies struct {
@@ -28,11 +29,12 @@ type Dependencies struct {
 	Jobs         repository.JobRepository
 	Version      string
 	CookieSecure bool
+	AuthDisabled bool
 	Modules      []Module
 }
 
 func New(deps Dependencies) http.Handler {
-	a := &API{db: deps.DB, auth: deps.Auth, audit: deps.Audit, jobs: deps.Jobs, version: deps.Version, cookieSecure: deps.CookieSecure}
+	a := &API{db: deps.DB, auth: deps.Auth, audit: deps.Audit, jobs: deps.Jobs, version: deps.Version, cookieSecure: deps.CookieSecure, authDisabled: deps.AuthDisabled}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", a.health)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
