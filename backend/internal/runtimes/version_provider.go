@@ -198,12 +198,12 @@ func (p *nodeVersionProvider) Install(ctx context.Context, version, targetRoot s
 		return ManagedRuntime{}, err
 	}
 	result := ManagedRuntime{
-		ExecutablePath: filepath.Join(targetRoot, "bin", "node"),
+		ExecutablePath:   filepath.Join(targetRoot, "bin", "node"),
 		InstallationRoot: targetRoot,
 		Tools: map[string]string{
-			"node": filepath.Join(targetRoot, "bin", "node"),
-			"npm": filepath.Join(targetRoot, "bin", "npm"),
-			"npx": filepath.Join(targetRoot, "bin", "npx"),
+			"node":     filepath.Join(targetRoot, "bin", "node"),
+			"npm":      filepath.Join(targetRoot, "bin", "npm"),
+			"npx":      filepath.Join(targetRoot, "bin", "npx"),
 			"corepack": filepath.Join(targetRoot, "bin", "corepack"),
 		},
 	}
@@ -423,9 +423,9 @@ func (p *phpVersionProvider) Install(ctx context.Context, version, targetRoot st
 	defer cleanup()
 	return buildSourceRuntime(ctx, sourceBuildSpec{
 		RuntimeType: "php", Version: version, ArchivePath: archivePath, SourcePrefix: "php-" + version, TargetRoot: targetRoot,
-		ConfigureArgs: []string{"--enable-cli", "--enable-fpm", "--disable-cgi", "--without-pear"},
+		ConfigureArgs:   []string{"--enable-cli", "--enable-fpm", "--disable-cgi", "--without-pear"},
 		PrimaryRelative: filepath.Join("bin", "php"),
-		Tools: map[string]string{"php": filepath.Join("bin", "php"), "php-fpm": filepath.Join("sbin", "php-fpm")},
+		Tools:           map[string]string{"php": filepath.Join("bin", "php"), "php-fpm": filepath.Join("sbin", "php-fpm")},
 	}, reporter)
 }
 
@@ -492,9 +492,9 @@ func (p *pythonVersionProvider) Install(ctx context.Context, version, targetRoot
 	defer cleanup()
 	result, err := buildSourceRuntime(ctx, sourceBuildSpec{
 		RuntimeType: "python", Version: version, ArchivePath: archivePath, SourcePrefix: "Python-" + version, TargetRoot: targetRoot,
-		ConfigureArgs: []string{"--with-ensurepip=install"},
+		ConfigureArgs:   []string{"--with-ensurepip=install"},
 		PrimaryRelative: filepath.Join("bin", "python3"),
-		Tools: map[string]string{"python": filepath.Join("bin", "python3"), "python3": filepath.Join("bin", "python3"), "pip": filepath.Join("bin", "pip3"), "pip3": filepath.Join("bin", "pip3")},
+		Tools:           map[string]string{"python": filepath.Join("bin", "python3"), "python3": filepath.Join("bin", "python3"), "pip": filepath.Join("bin", "pip3"), "pip3": filepath.Join("bin", "pip3")},
 	}, reporter)
 	if err != nil {
 		return ManagedRuntime{}, err
@@ -511,14 +511,14 @@ func (p *pythonVersionProvider) Remove(ctx context.Context, installation Install
 }
 
 type sourceBuildSpec struct {
-	RuntimeType      string
-	Version          string
-	ArchivePath      string
-	SourcePrefix     string
-	TargetRoot       string
-	ConfigureArgs    []string
+	RuntimeType     string
+	Version         string
+	ArchivePath     string
+	SourcePrefix    string
+	TargetRoot      string
+	ConfigureArgs   []string
 	PrimaryRelative string
-	Tools            map[string]string
+	Tools           map[string]string
 }
 
 func buildSourceRuntime(ctx context.Context, spec sourceBuildSpec, reporter InstallReporter) (ManagedRuntime, error) {
@@ -664,7 +664,6 @@ func detectLocalExecutables(ctx context.Context, runtimeType string, pathNames, 
 	}
 	return items, nil
 }
-
 
 func discoverRuntimeTools(runtimeType, executable, version string) map[string]string {
 	tools := map[string]string{runtimeType: executable}

@@ -30,24 +30,24 @@ var (
 )
 
 type Integration struct {
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	Provider        string    `json:"provider"`
-	WebURL          string    `json:"web_url"`
-	APIURL          string    `json:"api_url"`
-	CredentialID    string    `json:"credential_id"`
-	Enabled         bool      `json:"enabled"`
-	Status          string    `json:"status"`
-	AccountUsername string    `json:"account_username,omitempty"`
-	AccountID       string    `json:"account_id,omitempty"`
-	Scopes          []string  `json:"scopes,omitempty"`
-	RepositoryCount int       `json:"repository_count"`
-	NamespaceCount  int       `json:"namespace_count"`
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	Provider        string     `json:"provider"`
+	WebURL          string     `json:"web_url"`
+	APIURL          string     `json:"api_url"`
+	CredentialID    string     `json:"credential_id"`
+	Enabled         bool       `json:"enabled"`
+	Status          string     `json:"status"`
+	AccountUsername string     `json:"account_username,omitempty"`
+	AccountID       string     `json:"account_id,omitempty"`
+	Scopes          []string   `json:"scopes,omitempty"`
+	RepositoryCount int        `json:"repository_count"`
+	NamespaceCount  int        `json:"namespace_count"`
 	LastTestedAt    *time.Time `json:"last_tested_at,omitempty"`
 	LastSyncedAt    *time.Time `json:"last_synced_at,omitempty"`
-	CreatedBy       *string   `json:"created_by,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	CreatedBy       *string    `json:"created_by,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 type IntegrationInput struct {
@@ -250,7 +250,9 @@ func NewService(repo *Repository, credentialRepo *credentials.Repository, secret
 }
 
 func (s *Service) List(ctx context.Context) ([]Integration, error) { return s.repo.List(ctx) }
-func (s *Service) Get(ctx context.Context, id string) (Integration, error) { return s.repo.Get(ctx, id) }
+func (s *Service) Get(ctx context.Context, id string) (Integration, error) {
+	return s.repo.Get(ctx, id)
+}
 
 func (s *Service) Create(ctx context.Context, input IntegrationInput, actor *string) (Integration, error) {
 	item, err := s.prepareInput(ctx, Integration{}, input, true)

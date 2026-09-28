@@ -30,24 +30,24 @@ var (
 )
 
 type Installation struct {
-	ID                string            `json:"id"`
-	RuntimeType       string            `json:"runtime_type"`
-	Version           string            `json:"version"`
-	ExecutablePath    string            `json:"executable_path"`
-	InstallationRoot  string            `json:"installation_root"`
-	Architecture      string            `json:"architecture"`
-	Platform          string            `json:"platform"`
-	InstallationMethod string           `json:"installation_method"`
-	ManagedByDevBox   bool              `json:"managed_by_devbox"`
-	Source            string            `json:"source"`
-	Status            string            `json:"status"`
-	Tools             map[string]string `json:"tools,omitempty"`
-	Error             string            `json:"error,omitempty"`
-	InstalledAt       *time.Time         `json:"installed_at,omitempty"`
-	LastValidatedAt   *time.Time         `json:"last_validated_at,omitempty"`
-	CreatedAt         time.Time          `json:"created_at"`
-	UpdatedAt         time.Time          `json:"updated_at"`
-	UsedByProjects    []ProjectUsage     `json:"used_by_projects,omitempty"`
+	ID                 string            `json:"id"`
+	RuntimeType        string            `json:"runtime_type"`
+	Version            string            `json:"version"`
+	ExecutablePath     string            `json:"executable_path"`
+	InstallationRoot   string            `json:"installation_root"`
+	Architecture       string            `json:"architecture"`
+	Platform           string            `json:"platform"`
+	InstallationMethod string            `json:"installation_method"`
+	ManagedByDevBox    bool              `json:"managed_by_devbox"`
+	Source             string            `json:"source"`
+	Status             string            `json:"status"`
+	Tools              map[string]string `json:"tools,omitempty"`
+	Error              string            `json:"error,omitempty"`
+	InstalledAt        *time.Time        `json:"installed_at,omitempty"`
+	LastValidatedAt    *time.Time        `json:"last_validated_at,omitempty"`
+	CreatedAt          time.Time         `json:"created_at"`
+	UpdatedAt          time.Time         `json:"updated_at"`
+	UsedByProjects     []ProjectUsage    `json:"used_by_projects,omitempty"`
 }
 
 type ProjectUsage struct {
@@ -64,8 +64,8 @@ type RuntimeDefault struct {
 }
 
 type ProjectRuntimeAssignment struct {
-	ProjectID         string    `json:"project_id"`
-	RuntimeType       string    `json:"runtime_type"`
+	ProjectID        string    `json:"project_id"`
+	RuntimeType      string    `json:"runtime_type"`
 	InstallationID   string    `json:"runtime_installation_id"`
 	RequestedVersion string    `json:"requested_version"`
 	ResolvedVersion  string    `json:"resolved_version"`

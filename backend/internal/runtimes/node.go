@@ -258,7 +258,6 @@ func loadNodeManifest(workDir string) (*nodeManifest, error) {
 	return &manifest, nil
 }
 
-
 func nodeVersionRequirement(workDir string, manifest *nodeManifest) string {
 	for _, filename := range []string{".nvmrc", ".node-version"} {
 		content, err := readProjectFile(workDir, filename)

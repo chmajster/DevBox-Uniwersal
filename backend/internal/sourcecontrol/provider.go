@@ -275,10 +275,10 @@ func githubNextPage(headers http.Header) int {
 type githubProvider struct{ providerClient }
 
 type githubUser struct {
-	ID        int64  `json:"id"`
-	Login     string `json:"login"`
-	Name      string `json:"name"`
-	HTMLURL   string `json:"html_url"`
+	ID      int64  `json:"id"`
+	Login   string `json:"login"`
+	Name    string `json:"name"`
+	HTMLURL string `json:"html_url"`
 }
 
 func (p *githubProvider) TestConnection(ctx context.Context) (providers.SourceControlUser, error) {
@@ -504,15 +504,15 @@ func (p *githubProvider) GetCommitStatus(ctx context.Context, repository, commit
 	var actions struct {
 		TotalCount int `json:"total_count"`
 		Runs       []struct {
-			ID          int64      `json:"id"`
-			Name        string     `json:"name"`
-			RunNumber   int64      `json:"run_number"`
-			Status      string     `json:"status"`
-			Conclusion  string     `json:"conclusion"`
-			HTMLURL     string     `json:"html_url"`
-			HeadSHA     string     `json:"head_sha"`
-			RunStarted  *time.Time `json:"run_started_at"`
-			UpdatedAt   *time.Time `json:"updated_at"`
+			ID         int64      `json:"id"`
+			Name       string     `json:"name"`
+			RunNumber  int64      `json:"run_number"`
+			Status     string     `json:"status"`
+			Conclusion string     `json:"conclusion"`
+			HTMLURL    string     `json:"html_url"`
+			HeadSHA    string     `json:"head_sha"`
+			RunStarted *time.Time `json:"run_started_at"`
+			UpdatedAt  *time.Time `json:"updated_at"`
 		} `json:"workflow_runs"`
 	}
 	_, err = p.request(ctx, http.MethodGet, "/repos/"+repository+"/actions/runs", url.Values{"head_sha": {commitSHA}, "per_page": {"1"}}, &actions)
@@ -616,12 +616,12 @@ type gitlabRepository struct {
 	ID                int64  `json:"id"`
 	Name              string `json:"name"`
 	PathWithNamespace string `json:"path_with_namespace"`
-	HTTPURL            string `json:"http_url_to_repo"`
-	SSHURL             string `json:"ssh_url_to_repo"`
-	WebURL             string `json:"web_url"`
-	DefaultBranch      string `json:"default_branch"`
-	Visibility         string `json:"visibility"`
-	Namespace          struct {
+	HTTPURL           string `json:"http_url_to_repo"`
+	SSHURL            string `json:"ssh_url_to_repo"`
+	WebURL            string `json:"web_url"`
+	DefaultBranch     string `json:"default_branch"`
+	Visibility        string `json:"visibility"`
+	Namespace         struct {
 		ID       int64  `json:"id"`
 		FullPath string `json:"full_path"`
 		Path     string `json:"path"`

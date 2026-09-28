@@ -213,7 +213,6 @@ func (r *PHPRuntime) HealthCheck(ctx context.Context, project ProjectContext) (H
 	}, nil
 }
 
-
 func composerInvocation(project ProjectContext) (string, []string, error) {
 	composer, err := findExecutable("composer")
 	if err != nil {

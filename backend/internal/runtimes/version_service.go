@@ -205,8 +205,8 @@ func (s *VersionService) EnqueueInstall(ctx context.Context, runtimeType, reques
 	}
 	job, err := s.jobs.Enqueue(ctx, jobs.Request{Type: JobRuntimeInstall, RequestedBy: actor, Payload: map[string]any{
 		"installation_id": installation.ID,
-		"runtime_type": runtimeType,
-		"version": resolved,
+		"runtime_type":    runtimeType,
+		"version":         resolved,
 	}})
 	if err != nil {
 		_ = s.repo.MarkFailed(context.Background(), installation.ID, err.Error())
@@ -239,8 +239,8 @@ func (s *VersionService) EnqueueRemove(ctx context.Context, installationID strin
 	}
 	job, err := s.jobs.Enqueue(ctx, jobs.Request{Type: JobRuntimeRemove, RequestedBy: actor, Payload: map[string]any{
 		"installation_id": installation.ID,
-		"runtime_type": installation.RuntimeType,
-		"version": installation.Version,
+		"runtime_type":    installation.RuntimeType,
+		"version":         installation.Version,
 	}})
 	if err != nil {
 		_ = s.repo.MarkValidation(context.Background(), installation.ID, InstallationInstalled, "")

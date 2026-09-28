@@ -23,7 +23,6 @@ type GitProvider interface {
 	Revision(ctx context.Context, workDir string) (string, error)
 }
 
-
 type SourceControlUser struct {
 	ID       string
 	Username string
@@ -33,11 +32,11 @@ type SourceControlUser struct {
 }
 
 type SourceControlNamespace struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	Kind     string `json:"kind"`
-	WebURL   string `json:"web_url,omitempty"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Kind   string `json:"kind"`
+	WebURL string `json:"web_url,omitempty"`
 }
 
 type SourceControlRepository struct {

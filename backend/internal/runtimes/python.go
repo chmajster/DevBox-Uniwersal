@@ -296,7 +296,6 @@ func (r *PythonRuntime) HealthCheck(ctx context.Context, project ProjectContext)
 	return r.base.httpHealth(ctx, project)
 }
 
-
 func pythonVersionRequirement(workDir, pyproject string) string {
 	for _, filename := range []string{".python-version", "runtime.txt"} {
 		content, err := readProjectFile(workDir, filename)
