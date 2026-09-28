@@ -115,7 +115,8 @@ type ComposeDeployer interface {
 	ComposeValidate(ctx context.Context, directory, projectName string) error
 	ComposePull(ctx context.Context, directory, projectName, service string) error
 	ComposeBuild(ctx context.Context, directory, projectName, service string) error
-	ComposeUp(ctx context.Context, directory, projectName, service string) error
+	ComposePortBinding(ctx context.Context, directory, projectName string) (providers.ComposePortBinding, error)
+	ComposeUp(ctx context.Context, directory, projectName, service string, binding *providers.ComposePortBinding) error
 	ComposeDown(ctx context.Context, directory, projectName string) error
 	ComposeHealthy(ctx context.Context, directory, projectName string) error
 	ComposeTargetPort(ctx context.Context, directory, projectName string) (int, error)
@@ -287,10 +288,40 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 				return nil, fmt.Errorf("docker compose build: %w", err)
 			}
 		}
+
+		binding, err := h.integrations.Compose.ComposePortBinding(ctx, composeDir, composeName)
+		if err != nil {
+			return nil, fmt.Errorf("docker compose port discovery: %w", err)
+		}
+		assignedPort := 0
+		if p.Port != nil && *p.Port > 0 {
+			assignedPort = *p.Port
+		} else {
+			if h.integrations.Ports == nil {
+				return nil, errors.New("provider unavailable: port allocator")
+			}
+			startPort := binding.RequestedHostPort
+			if parsed, ok := healthcheckPort(p.Healthcheck); ok {
+				startPort = parsed
+			}
+			lease, reserveErr := h.integrations.Ports.ReserveFrom(ctx, p.ID, "application", startPort)
+			if reserveErr != nil {
+				return nil, fmt.Errorf("allocate compose host port from %d: %w", startPort, reserveErr)
+			}
+			assignedPort = lease.Port
+			allocatedPort = lease.Port
+			_ = h.logger.Log(ctx, job.ID, "info", "deployment.compose.port.allocated", map[string]any{
+				"project_id":     p.ID,
+				"requested_port": startPort,
+				"assigned_port":  assignedPort,
+			})
+		}
+		binding.HostPort = assignedPort
+
 		if err := setStage(DeploymentStarting); err != nil {
 			return nil, err
 		}
-		if err := h.integrations.Compose.ComposeUp(ctx, composeDir, composeName, ""); err != nil {
+		if err := h.integrations.Compose.ComposeUp(ctx, composeDir, composeName, "", &binding); err != nil {
 			return nil, fmt.Errorf("docker compose up: %w", err)
 		}
 		composeStarted = true
@@ -301,28 +332,12 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			return nil, fmt.Errorf("docker compose healthcheck: %w", err)
 		}
 
-		targetPort := 0
-		if p.Port != nil && *p.Port > 0 {
-			targetPort = *p.Port
-		} else if parsed, ok := healthcheckPort(p.Healthcheck); ok {
-			targetPort = parsed
-		}
 		if h.integrations.Routes != nil {
-			if targetPort == 0 {
-				detectedPort, detectErr := h.integrations.Compose.ComposeTargetPort(ctx, composeDir, composeName)
-				if detectErr != nil {
-					return nil, fmt.Errorf("detect compose reverse proxy target port: %w", detectErr)
-				}
-				targetPort = detectedPort
-				_ = h.logger.Log(ctx, job.ID, "info", "deployment.compose.target_port.detected", map[string]any{
-					"project_id": p.ID,
-					"port":       targetPort,
-				})
-			}
-			if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), targetPort); err != nil {
+			if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), assignedPort); err != nil {
 				return nil, fmt.Errorf("reverse proxy: %w", err)
 			}
 		}
+		allocatedPort = 0
 		return h.finishSuccess(ctx, deploymentID, p.ID, commitBefore, commitAfter, started, setStage)
 	}
 
