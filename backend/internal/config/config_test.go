@@ -20,7 +20,21 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsPartialBootstrapCredentials(t *testing.T) {
+func TestLoadAllowsPasswordlessBootstrapAdminByDefault(t *testing.T) {
+	t.Setenv("DEVBOX_AUTH_DISABLED", "true")
+	t.Setenv("DEVBOX_BOOTSTRAP_ADMIN_USERNAME", "admin")
+	t.Setenv("DEVBOX_BOOTSTRAP_ADMIN_PASSWORD", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.AuthDisabled {
+		t.Fatal("expected passwordless auth to be enabled")
+	}
+}
+
+func TestLoadRejectsPartialBootstrapCredentialsWhenAuthEnabled(t *testing.T) {
+	t.Setenv("DEVBOX_AUTH_DISABLED", "false")
 	t.Setenv("DEVBOX_BOOTSTRAP_ADMIN_USERNAME", "admin")
 	t.Setenv("DEVBOX_BOOTSTRAP_ADMIN_PASSWORD", "")
 	if _, err := Load(); err == nil {

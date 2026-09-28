@@ -17,6 +17,7 @@ type Config struct {
 	DirectoryBrowseRoots   []string
 	SessionTTL             time.Duration
 	CookieSecure           bool
+	AuthDisabled           bool
 	BootstrapAdminUsername string
 	BootstrapAdminPassword string
 	MasterKeyBase64        string
@@ -64,6 +65,10 @@ func Load() (Config, error) {
 	cookieSecure, err := strconv.ParseBool(getEnv("DEVBOX_COOKIE_SECURE", "false"))
 	if err != nil {
 		return Config{}, fmt.Errorf("parse DEVBOX_COOKIE_SECURE: %w", err)
+	}
+	authDisabled, err := strconv.ParseBool(getEnv("DEVBOX_AUTH_DISABLED", "true"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse DEVBOX_AUTH_DISABLED: %w", err)
 	}
 	mysqlPort, err := getEnvInt("DEVBOX_MYSQL_PORT", 3306)
 	if err != nil {
@@ -115,6 +120,7 @@ func Load() (Config, error) {
 		DirectoryBrowseRoots:       parsePathList(os.Getenv("DEVBOX_DIRECTORY_BROWSE_ROOTS")),
 		SessionTTL:                 ttl,
 		CookieSecure:               cookieSecure,
+		AuthDisabled:               authDisabled,
 		BootstrapAdminUsername:     strings.TrimSpace(os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_USERNAME")),
 		BootstrapAdminPassword:     os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_PASSWORD"),
 		MasterKeyBase64:            strings.TrimSpace(os.Getenv("DEVBOX_MASTER_KEY")),
@@ -150,7 +156,7 @@ func Load() (Config, error) {
 	if cfg.HTTPAddr == "" || cfg.DatabasePath == "" || cfg.MigrationsDir == "" || cfg.ProjectsRoot == "" {
 		return Config{}, fmt.Errorf("HTTP address, database path, migrations directory and projects root are required")
 	}
-	if (cfg.BootstrapAdminUsername == "") != (cfg.BootstrapAdminPassword == "") {
+	if !cfg.AuthDisabled && (cfg.BootstrapAdminUsername == "") != (cfg.BootstrapAdminPassword == "") {
 		return Config{}, fmt.Errorf("bootstrap admin username and password must be configured together")
 	}
 	if cfg.MySQLPort < 1 || cfg.MySQLPort > 65535 {

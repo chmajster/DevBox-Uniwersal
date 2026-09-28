@@ -107,6 +107,9 @@ func serve() error {
 	jobRunner := jobs.NewRunner(jobsRepo)
 	auditRepo := repository.NewSQLiteAudit(db)
 	authService := auth.NewService(users, sessions, cfg.SessionTTL)
+	if cfg.AuthDisabled && cfg.BootstrapAdminUsername == "" {
+		cfg.BootstrapAdminUsername = "admin"
+	}
 	if err := authService.BootstrapAdmin(context.Background(), cfg.BootstrapAdminUsername, cfg.BootstrapAdminPassword); err != nil {
 		logger.Error("bootstrap admin failed", "error", err)
 		os.Exit(1)
@@ -291,6 +294,7 @@ func serve() error {
 		Jobs:         jobsRepo,
 		Version:      cfg.AppVersion,
 		CookieSecure: cfg.CookieSecure,
+		AuthDisabled: cfg.AuthDisabled,
 		Modules:      modules,
 	})
 	handler := webui.Wrap(apiHandler, cfg.FrontendDir)
