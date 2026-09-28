@@ -308,6 +308,23 @@ func (s *Service) ComposeServices(ctx context.Context, projectID string) ([]stri
 	return s.compose.InspectComposeServices(ctx, workDir, project.Slug)
 }
 
+func (s *Service) ManagedMySQLAction(ctx context.Context, action string, actor, remote *string) (MySQLStatus, error) {
+	if s.managed == nil {
+		return MySQLStatus{}, errors.New("managed MySQL lifecycle is not configured")
+	}
+	if err := s.managed.Action(ctx, action); err != nil {
+		return MySQLStatus{}, err
+	}
+	if action != "stop" {
+		if err := s.ensureManagedReady(ctx); err != nil {
+			return MySQLStatus{}, err
+		}
+	}
+	status := s.engine.Status(ctx)
+	s.recordAudit(ctx, actor, "mysql."+action, "mysql", nil, map[string]any{"running": status.Running}, remote)
+	return status, nil
+}
+
 func (s *Service) ensureManagedReady(ctx context.Context) error {
 	if s.managed != nil {
 		if err := s.managed.Ensure(ctx); err != nil {
