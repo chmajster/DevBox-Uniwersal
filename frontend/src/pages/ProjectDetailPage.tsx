@@ -5,6 +5,7 @@ import { listLogs, logQuery } from '../api/operations'
 import type { Deployment, GitState, Job, LogEntry, Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { ProjectRuntimeSection } from '../runtime/ProjectRuntimeSection'
+import { ProjectDatabaseSection } from '../runtime/ProjectDatabaseSection'
 
 type Tab = 'overview' | 'git' | 'deployments' | 'logs' | 'configuration'
 
@@ -12,12 +13,13 @@ function tabFromParam(value: string | null): Tab {
   return value === 'git' || value === 'deployments' || value === 'logs' || value === 'configuration' ? value : 'overview'
 }
 
-const deploymentStages = ['QUEUED', 'PREPARING', 'UPDATING_SOURCE', 'DEPENDENCIES', 'BUILDING', 'STARTING', 'HEALTHCHECK', 'SUCCESS'] as const
+const deploymentStages = ['QUEUED', 'PREPARING', 'UPDATING_SOURCE', 'DATABASE', 'DEPENDENCIES', 'BUILDING', 'STARTING', 'HEALTHCHECK', 'SUCCESS'] as const
 
 const deploymentStageLabels: Record<string, string> = {
   QUEUED: 'W kolejce',
   PREPARING: 'Przygotowanie',
   UPDATING_SOURCE: 'Aktualizacja źródła',
+  DATABASE: 'Konfiguracja bazy danych',
   DEPENDENCIES: 'Instalacja zależności',
   BUILDING: 'Budowanie obrazu',
   STARTING: 'Uruchamianie kontenera',
@@ -305,6 +307,7 @@ export function ProjectDetailPage() {
     </div>}
     {tab === 'configuration' && <div className="stack">
       <ProjectRuntimeSection projectId={id} />
+      <ProjectDatabaseSection projectId={id} />
       <form className="panel form-grid" onSubmit={save}>
         <label className="span-2">Working directory<input disabled={user?.role === 'viewer'} value={config.working_directory} onChange={(e) => setConfig({ ...config, working_directory: e.target.value })} /></label>
         <label className="span-2">Build command (własny Docker/Compose)<input disabled={user?.role === 'viewer'} value={config.build_command} onChange={(e) => setConfig({ ...config, build_command: e.target.value })} /></label>
