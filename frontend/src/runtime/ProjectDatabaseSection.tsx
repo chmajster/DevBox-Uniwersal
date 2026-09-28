@@ -131,7 +131,11 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     await perform('provision', async () => {
       await request<unknown>(`/projects/${encodeURIComponent(projectId)}/database/provision`, {
         method: 'POST',
-        body: JSON.stringify({ engine: draft.engine || 'mysql', charset: 'utf8mb4' }),
+        body: JSON.stringify({
+          engine: draft.engine || 'mysql',
+          charset: 'utf8mb4',
+          application_service: draft.application_service || '',
+        }),
       })
       await load()
       setMessage('Baza, użytkownik i ograniczone granty zostały utworzone. Poświadczenia zapisano w SecretStore.')
