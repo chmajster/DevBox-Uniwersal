@@ -165,6 +165,11 @@ func (s *Service) DeleteDatabase(ctx context.Context, id string, actor *string, 
 	if err := s.engine.DeleteDatabase(ctx, item.Name); err != nil {
 		return err
 	}
+	if item.ProjectID != nil {
+		if err := s.repo.DeleteDatabaseBinding(ctx, *item.ProjectID); err != nil {
+			return err
+		}
+	}
 	if err := s.repo.DeleteDatabase(ctx, id); err != nil {
 		return err
 	}
@@ -195,6 +200,10 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	}
 	if engine == "" {
 		engine = "mysql"
+	}
+	engine = strings.ToLower(strings.TrimSpace(engine))
+	if s.managed != nil && engine != "mysql" {
+		return ProvisionResult{}, errors.New("managed database engine must be mysql; use Compose or external mode for MariaDB")
 	}
 	if charset == "" {
 		charset = "utf8mb4"
