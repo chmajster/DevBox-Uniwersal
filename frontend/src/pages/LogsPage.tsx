@@ -4,13 +4,15 @@ import { listLogSources, listLogs, listProjects, logQuery } from '../api/operati
 import type { LogEntry, Project } from '../api/types'
 import { ErrorState } from '../components/ErrorState'
 
-const requiredSources = ['devbox', 'project', 'deployment', 'docker', 'nginx']
+const requiredSources = ['all', 'devbox', 'project', 'deployment', 'job', 'docker']
 
 export function LogsPage() {
-  const [source, setSource] = useState('devbox')
+  const [source, setSource] = useState('all')
   const [project, setProject] = useState('')
   const [level, setLevel] = useState('')
   const [search, setSearch] = useState('')
+  const [since, setSince] = useState('')
+  const [until, setUntil] = useState('')
   const [live, setLive] = useState(false)
   const [sources, setSources] = useState<string[]>(requiredSources)
   const [projects, setProjects] = useState<Project[]>([])
@@ -30,8 +32,10 @@ export function LogsPage() {
     project: project || undefined,
     level: level || undefined,
     search: search || undefined,
+    since: since ? new Date(since).toISOString() : undefined,
+    until: until ? new Date(until).toISOString() : undefined,
     limit: 300
-  }), [source, project, level, search])
+  }), [source, project, level, search, since, until])
 
   useEffect(() => {
     let cancelled = false
@@ -64,6 +68,21 @@ export function LogsPage() {
     return () => stream.close()
   }, [live, filters, source])
 
+  async function exportLogs() {
+    const response = await fetch(apiURL(`/logs/export?${logQuery(filters)}`), { credentials: 'include' })
+    if (!response.ok) {
+      setError(`Log export failed: HTTP ${response.status}`)
+      return
+    }
+    const blob = await response.blob()
+    const href = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = href
+    anchor.download = 'devbox-logs.log'
+    anchor.click()
+    URL.revokeObjectURL(href)
+  }
+
   return <>
     <div className="page-heading">
       <div>
@@ -88,7 +107,10 @@ export function LogsPage() {
         <option value="error">ERROR</option>
       </select></label>
       <label className="search-filter">Search<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Message text" /></label>
+      <label>Od<input type="datetime-local" value={since} onChange={(event) => setSince(event.target.value)} /></label>
+      <label>Do<input type="datetime-local" value={until} onChange={(event) => setUntil(event.target.value)} /></label>
       <label className="live-toggle"><input type="checkbox" checked={live} onChange={(event) => setLive(event.target.checked)} /> Live tail</label>
+      <button type="button" className="secondary" onClick={() => void exportLogs()}>Eksportuj</button>
     </div>
 
     {error && <ErrorState message={error} />}
