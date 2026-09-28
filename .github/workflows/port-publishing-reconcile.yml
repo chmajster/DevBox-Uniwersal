@@ -1,0 +1,34 @@
+name: Reconcile port publishing with main
+on:
+  push:
+    branches: ['agent/62-port-publishing-prepare']
+    paths: ['.github/workflows/port-publishing-reconcile.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Three-way merge diagnostics
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout --detach 943253b5c26efcc89f9983b5686203c4eadf7956
+          git diff --stat 3c2f3cabe24304f0704ffe87733cd7abc9aa6723 ca66cd3e9b61bffb734d9a4af970ffad8f806d0c
+          git merge --no-commit --no-ff ca66cd3e9b61bffb734d9a4af970ffad8f806d0c || true
+          python - <<'PY'
+          import re, subprocess
+          from pathlib import Path
+          names = subprocess.check_output(['git','diff','--name-only','--diff-filter=U'], text=True).splitlines()
+          for name in names:
+              print('\nCONFLICT FILE:', name)
+              data = Path(name).read_text()
+              for block in re.findall(r'^<<<<<<< .*?^>>>>>>> .*?$', data, re.M | re.S):
+                  print(block)
+          print('\nALL CONFLICTS:', names)
+          PY
