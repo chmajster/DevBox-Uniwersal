@@ -148,8 +148,7 @@ export function UpdatesPage() {
         <div><span>Gałąź</span><strong>{status?.ref??'—'}</strong></div>
         <div><span>Ostatnie sprawdzenie</span><strong>{formatDate(status?.checked_at)}</strong></div>
         <div><span>Wersja zainstalowana</span><strong className="mono">{shortVersion(status?.current_version)}</strong></div>
-        <div><span>Najnowszy commit</span><strong className="mono">{shortVersion(status?.latest_version)}</strong></div>
-        <div><span>Data ostatniego commita</span><strong>{formatDate(status?.latest_commit_at)}</strong></div>
+        <div><span>Najnowszy commit</span><strong><span className="mono">{shortVersion(status?.latest_version)}</span>{status?.latest_commit_at ? ` (${formatDate(status.latest_commit_at)})` : ''}</strong></div>
         <div><span>Auto-update</span><strong>{status?.auto_update?'Włączony':'Wyłączony / niedostępny'}</strong></div>
         <div><span>Harmonogram</span><strong>{status?.schedule??'—'}</strong></div>
       </div>
