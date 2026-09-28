@@ -1,0 +1,351 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { apiURL, request } from '../api/client'
+import type {
+  DatabaseBackup,
+  DatabaseBinding,
+  DatabaseBindingInput,
+  DatabaseMode,
+  Job,
+  PHPMyAdminStatus,
+  ProjectRuntimeInfo,
+  RuntimeContainerConfig,
+} from '../api/types'
+import { useAuth } from '../auth/AuthContext'
+import { databaseModeFields } from './databaseMode'
+
+interface Props {
+  projectId: string
+}
+
+const emptyDraft: DatabaseBindingInput = {
+  mode: 'none',
+  application_service: '',
+  compose_service: '',
+  engine: 'mysql',
+  host: '',
+  port: 3306,
+  database: '',
+  username: '',
+  password: '',
+}
+
+function bindingToDraft(binding: DatabaseBinding): DatabaseBindingInput {
+  return {
+    mode: binding.mode,
+    application_service: binding.application_service ?? '',
+    compose_service: binding.compose_service ?? '',
+    engine: binding.engine ?? 'mysql',
+    host: binding.host ?? '',
+    port: binding.port || 3306,
+    database: binding.database ?? '',
+    username: binding.username ?? '',
+    password: '',
+  }
+}
+
+function modeLabel(mode: DatabaseMode) {
+  switch (mode) {
+    case 'managed': return 'Baza zarządzana przez DevBox'
+    case 'compose': return 'Baza z Docker Compose projektu'
+    case 'external': return 'Zewnętrzna baza danych'
+    default: return 'Brak'
+  }
+}
+
+export function ProjectDatabaseSection({ projectId }: Props) {
+  const { user } = useAuth()
+  const readOnly = user?.role === 'viewer'
+  const [binding, setBinding] = useState<DatabaseBinding | null>(null)
+  const [draft, setDraft] = useState<DatabaseBindingInput>(emptyDraft)
+  const [composeServices, setComposeServices] = useState<string[]>([])
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeContainerConfig | null>(null)
+  const [runtimeInfo, setRuntimeInfo] = useState<ProjectRuntimeInfo | null>(null)
+  const [backups, setBackups] = useState<DatabaseBackup[]>([])
+  const [showBackups, setShowBackups] = useState(false)
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+
+  const load = useCallback(async () => {
+    const [currentBinding, config, runtime] = await Promise.all([
+      request<DatabaseBinding>(`/projects/${encodeURIComponent(projectId)}/database-binding`),
+      request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`).catch(() => null),
+      request<ProjectRuntimeInfo>(`/projects/${encodeURIComponent(projectId)}/runtime`).catch(() => null),
+    ])
+    setBinding(currentBinding)
+    setDraft(bindingToDraft(currentBinding))
+    setRuntimeConfig(config)
+    setRuntimeInfo(runtime)
+  }, [projectId])
+
+  const loadComposeServices = useCallback(async () => {
+    try {
+      const services = await request<string[]>(`/projects/${encodeURIComponent(projectId)}/database-binding/compose-services`)
+      setComposeServices(services ?? [])
+    } catch {
+      setComposeServices([])
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    setError('')
+    setMessage('')
+    void load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Nie udało się pobrać konfiguracji bazy danych'))
+    void loadComposeServices()
+  }, [load, loadComposeServices])
+
+  const modeFields = databaseModeFields(draft.mode)
+  const effectiveRuntime = (runtimeConfig?.runtime || runtimeInfo?.runtime || '').toLowerCase()
+  const phpModules = useMemo(() => new Set((runtimeConfig?.modules ?? []).map((item) => item.name.toLowerCase())), [runtimeConfig])
+  const needsPHPMySQLDriver = draft.mode !== 'none' && effectiveRuntime === 'php' && !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
+
+  async function perform(name: string, action: () => Promise<void>) {
+    setBusy(name)
+    setError('')
+    setMessage('')
+    try {
+      await action()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Operacja bazy danych nie powiodła się')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function saveBinding() {
+    await perform('save', async () => {
+      if (draft.mode === 'none') {
+        await request<DatabaseBinding>(`/projects/${encodeURIComponent(projectId)}/database-binding`, { method: 'DELETE' })
+      } else {
+        await request<DatabaseBinding>(`/projects/${encodeURIComponent(projectId)}/database-binding`, {
+          method: 'PUT',
+          body: JSON.stringify(draft),
+        })
+      }
+      await load()
+      setMessage(`Tryb bazy został zapisany: ${modeLabel(draft.mode)}.`)
+    })
+  }
+
+  async function provisionManaged() {
+    await perform('provision', async () => {
+      await request<unknown>(`/projects/${encodeURIComponent(projectId)}/database/provision`, {
+        method: 'POST',
+        body: JSON.stringify({
+          engine: draft.engine || 'mysql',
+          charset: 'utf8mb4',
+          application_service: draft.application_service || '',
+        }),
+      })
+      await load()
+      setMessage('Baza, użytkownik i ograniczone granty zostały utworzone. Poświadczenia zapisano w SecretStore.')
+    })
+  }
+
+  async function testConnection() {
+    await perform('test', async () => {
+      await request<{ status: string }>(`/projects/${encodeURIComponent(projectId)}/database-binding/test`, {
+        method: 'POST',
+        body: '{}',
+      })
+      setMessage('Połączenie z bazą działa — SELECT 1 zakończył się powodzeniem.')
+      await load()
+    })
+  }
+
+  async function rotatePassword() {
+    if (!window.confirm('Zmienić hasło zarządzanego użytkownika bazy? Kolejny deploy otrzyma nowe hasło z SecretStore.')) return
+    await perform('password', async () => {
+      await request<{ status: string }>(`/projects/${encodeURIComponent(projectId)}/database-binding/password`, {
+        method: 'POST',
+        body: '{}',
+      })
+      setMessage('Hasło użytkownika bazy zostało zmienione i zapisane w SecretStore.')
+      await load()
+    })
+  }
+
+  async function addPDODriver() {
+    if (!runtimeConfig) return
+    await perform('pdo', async () => {
+      const modules = runtimeConfig.modules.some((item) => item.name === 'pdo_mysql')
+        ? runtimeConfig.modules
+        : [...runtimeConfig.modules, { name: 'pdo_mysql' }]
+      const saved = await request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...runtimeConfig, modules }),
+      })
+      setRuntimeConfig(saved)
+      setMessage('PDO MySQL dodano do konfiguracji runtime projektu. Zostanie zainstalowane przy przebudowie obrazu.')
+    })
+  }
+
+  async function openPHPMyAdmin() {
+    await perform('phpmyadmin', async () => {
+      let status = await request<PHPMyAdminStatus>('/phpmyadmin/install', { method: 'POST', body: '{}' })
+      if (!status.running) {
+        status = await request<PHPMyAdminStatus>('/phpmyadmin/start', { method: 'POST', body: '{}' })
+      }
+      if (!status.url) throw new Error('phpMyAdmin nie zwrócił adresu aplikacji')
+      window.open(status.url, '_blank', 'noopener,noreferrer')
+    })
+  }
+
+  async function loadBackups() {
+    if (!binding?.database_id) return
+    const items = await request<DatabaseBackup[]>(`/databases/${encodeURIComponent(binding.database_id)}/backups`)
+    setBackups(items ?? [])
+    setShowBackups(true)
+  }
+
+  async function queueBackup() {
+    if (!binding?.database_id) return
+    await perform('backup', async () => {
+      const result = await request<{ job: Job; backup: DatabaseBackup }>(`/databases/${encodeURIComponent(binding.database_id!)}/backup`, { method: 'POST', body: '{}' })
+      setMessage(`Backup dodano do kolejki jako zadanie ${result.job.id}.`)
+      await loadBackups()
+    })
+  }
+
+  async function restoreBackup(backup: DatabaseBackup) {
+    if (!binding?.database_id) return
+    if (!window.confirm(`Przywrócić backup ${backup.file_name} do przypisanej bazy projektu?`)) return
+    await perform('restore', async () => {
+      const job = await request<Job>(`/databases/${encodeURIComponent(binding.database_id!)}/restore`, {
+        method: 'POST',
+        body: JSON.stringify({ backup_id: backup.id }),
+      })
+      setMessage(`Restore dodano do kolejki jako zadanie ${job.id}.`)
+    })
+  }
+
+  async function deleteBackup(backup: DatabaseBackup) {
+    await perform('delete-backup', async () => {
+      await request<{ status: string }>(`/database-backups/${encodeURIComponent(backup.id)}`, { method: 'DELETE' })
+      await loadBackups()
+    })
+  }
+
+  const serviceOptions = composeServices.length > 0
+    ? composeServices
+    : [draft.application_service, draft.compose_service].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
+
+  const managedExists = binding?.mode === 'managed' && Boolean(binding.database_id)
+
+  return <section className="panel runtime-section">
+    <div className="section-heading">
+      <div>
+        <h2>Baza danych</h2>
+        <p className="muted">DevBox rozwiązuje właściwy endpoint z perspektywy kontenera aplikacji. Hasła są pobierane z SecretStore dopiero podczas uruchomienia.</p>
+      </div>
+      <span className="status-chip" data-ok={binding?.status === 'ready' || binding?.status === 'configured' ? 'true' : 'false'}>
+        {binding?.mode ? modeLabel(binding.mode) : 'Ładowanie'}
+      </span>
+    </div>
+
+    {error && <div className="error-banner">{error}</div>}
+    {message && <div className="success-banner">{message}</div>}
+
+    <fieldset disabled={readOnly || busy !== ''} className="form-grid">
+      <legend>Tryb</legend>
+      {([
+        ['none', 'Brak'],
+        ['managed', 'Baza zarządzana przez DevBox'],
+        ['compose', 'Baza z Docker Compose projektu'],
+        ['external', 'Zewnętrzna baza danych'],
+      ] as Array<[DatabaseMode, string]>).map(([mode, label]) =>
+        <label className="checkbox" key={mode}>
+          <input type="radio" name={`database-mode-${projectId}`} checked={draft.mode === mode} onChange={() => setDraft({ ...emptyDraft, mode, application_service: draft.application_service })} />
+          {label}
+        </label>
+      )}
+    </fieldset>
+
+    {draft.mode !== 'none' && <div className="form-grid">
+      {modeFields.includes('application_service') && <label>Application service
+        <select disabled={readOnly || busy !== ''} value={draft.application_service ?? ''} onChange={(event) => setDraft({ ...draft, application_service: event.target.value })}>
+          <option value="">Automatycznie wykryj</option>
+          {serviceOptions.map((service) => <option key={service} value={service}>{service}</option>)}
+        </select>
+      </label>}
+
+      {modeFields.includes('engine') && draft.mode === 'managed' && <>
+        <label>Silnik<input readOnly value={binding?.engine || draft.engine || 'mysql'} /></label>
+        <label>Nazwa bazy<input readOnly value={binding?.database || '—'} /></label>
+        <label>Użytkownik<input readOnly value={binding?.username || '—'} /></label>
+        <label>Status<input readOnly value={binding?.status || '—'} /></label>
+        <label>Data utworzenia<input readOnly value={binding?.created_at ? new Date(binding.created_at).toLocaleString('pl-PL') : '—'} /></label>
+      </>}
+
+      {modeFields.includes('compose_service') && <>
+        <label>Database service
+          <select disabled={readOnly || busy !== ''} required value={draft.compose_service ?? ''} onChange={(event) => setDraft({ ...draft, compose_service: event.target.value })}>
+            <option value="">Wybierz service bazy</option>
+            {serviceOptions.map((service) => <option key={service} value={service}>{service}</option>)}
+          </select>
+        </label>
+        <label>Port wewnętrzny<input disabled={readOnly || busy !== ''} type="number" min={1} max={65535} value={draft.port ?? 3306} onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })} /></label>
+        <label>Nazwa bazy<input disabled={readOnly || busy !== ''} value={draft.database ?? ''} onChange={(event) => setDraft({ ...draft, database: event.target.value })} /></label>
+        <label>Użytkownik<input disabled={readOnly || busy !== ''} value={draft.username ?? ''} onChange={(event) => setDraft({ ...draft, username: event.target.value })} /></label>
+        <label className="span-2">Hasło / Secret
+          <input disabled={readOnly || busy !== ''} type="password" autoComplete="new-password" value={draft.password ?? ''} onChange={(event) => setDraft({ ...draft, password: event.target.value })} placeholder={binding?.has_secret ? 'pozostaw puste, aby zachować obecny SecretStore secret' : 'wymagane'} />
+        </label>
+      </>}
+
+      {modeFields.includes('host') && draft.mode === 'external' && <>
+        <label>Host<input disabled={readOnly || busy !== ''} value={draft.host ?? ''} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="mysql.example.internal" /></label>
+        <label>Port<input disabled={readOnly || busy !== ''} type="number" min={1} max={65535} value={draft.port ?? 3306} onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })} /></label>
+        <label>Nazwa bazy<input disabled={readOnly || busy !== ''} value={draft.database ?? ''} onChange={(event) => setDraft({ ...draft, database: event.target.value })} /></label>
+        <label>Użytkownik<input disabled={readOnly || busy !== ''} value={draft.username ?? ''} onChange={(event) => setDraft({ ...draft, username: event.target.value })} /></label>
+        <label className="span-2">Hasło / Secret
+          <input disabled={readOnly || busy !== ''} type="password" autoComplete="new-password" value={draft.password ?? ''} onChange={(event) => setDraft({ ...draft, password: event.target.value })} placeholder={binding?.has_secret ? 'pozostaw puste, aby zachować obecny SecretStore secret' : 'wymagane'} />
+        </label>
+      </>}
+
+      {modeFields.includes('application_host') && <label>Host używany przez aplikację
+        <input readOnly value={draft.mode === 'managed' ? (binding?.application_host || 'devbox-mysql') : draft.mode === 'compose' ? (draft.compose_service || '—') : draft.mode === 'external' ? (draft.host || '—') : '—'} />
+      </label>}
+      {modeFields.includes('application_port') && <label>Port używany przez aplikację<input readOnly value={draft.mode === 'managed' ? (binding?.application_port || 3306) : (draft.port || 3306)} /></label>}
+    </div>}
+
+    {needsPHPMySQLDriver && <div className="validation-box">
+      <strong>Projekt korzysta z MySQL, ale kontener PHP nie posiada wybranego sterownika MySQL.</strong>
+      {!readOnly && <div className="actions"><button type="button" className="secondary" disabled={busy !== '' || !runtimeConfig} onClick={() => void addPDODriver()}>Dodaj PDO MySQL</button></div>}
+    </div>}
+
+    {!readOnly && <div className="actions">
+      {draft.mode === 'managed' && !managedExists
+        ? <button type="button" disabled={busy !== ''} onClick={() => void provisionManaged()}>{busy === 'provision' ? 'Tworzenie…' : 'Utwórz bazę dla projektu'}</button>
+        : <button type="button" disabled={busy !== ''} onClick={() => void saveBinding()}>{busy === 'save' ? 'Zapisywanie…' : 'Zapisz konfigurację bazy'}</button>}
+      {binding?.mode !== 'none' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void testConnection()}>{busy === 'test' ? 'Testowanie…' : 'Testuj połączenie'}</button>}
+      {binding?.mode === 'managed' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void openPHPMyAdmin()}>Otwórz phpMyAdmin</button>}
+      {binding?.mode === 'managed' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void rotatePassword()}>Zmień hasło</button>}
+      {binding?.database_id && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void perform('backups', loadBackups)}>Kopie zapasowe</button>}
+    </div>}
+
+    {showBackups && binding?.database_id && <div className="backup-panel">
+      <div className="section-heading">
+        <div><h3>Kopie zapasowe przypisanej bazy</h3><p className="muted">{binding.database || binding.database_id}</p></div>
+        {!readOnly && <button type="button" disabled={busy !== ''} onClick={() => void queueBackup()}>Utwórz kopię</button>}
+      </div>
+      <div className="table-scroll">
+        <table>
+          <thead><tr><th>Plik</th><th>Status</th><th>Utworzono</th><th>Akcje</th></tr></thead>
+          <tbody>
+            {backups.map((backup) => <tr key={backup.id}>
+              <td>{backup.file_name}</td>
+              <td>{backup.status}</td>
+              <td>{new Date(backup.created_at).toLocaleString('pl-PL')}</td>
+              <td className="actions">
+                {backup.status === 'ready' && <button type="button" className="secondary" onClick={() => window.open(apiURL(`/database-backups/${encodeURIComponent(backup.id)}/download`), '_blank', 'noopener,noreferrer')}>Pobierz</button>}
+                {!readOnly && backup.status === 'ready' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void restoreBackup(backup)}>Restore</button>}
+                {!readOnly && <button type="button" className="danger" disabled={busy !== ''} onClick={() => void deleteBackup(backup)}>Usuń</button>}
+              </td>
+            </tr>)}
+            {backups.length === 0 && <tr><td colSpan={4} className="muted">Brak kopii zapasowych dla tej bazy.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>}
+  </section>
+}

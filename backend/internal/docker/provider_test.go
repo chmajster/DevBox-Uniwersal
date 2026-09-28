@@ -79,3 +79,19 @@ func TestLogsClampTailAndDoNotAcceptArguments(t *testing.T) {
 		t.Fatalf("unexpected docker arguments: %s", got)
 	}
 }
+
+func TestMergeProcessEnvironmentReplacesExistingSecret(t *testing.T) {
+	got := mergeProcessEnvironment(
+		[]string{"PATH=/usr/bin", "MYSQL_PWD=host-value", "OTHER=keep"},
+		map[string]string{"MYSQL_PWD": "binding-secret", "DB_HOST": "devbox-mysql"},
+	)
+	joined := strings.Join(got, "\n")
+	if strings.Contains(joined, "MYSQL_PWD=host-value") {
+		t.Fatalf("inherited secret was not replaced: %s", joined)
+	}
+	if !strings.Contains(joined, "MYSQL_PWD=binding-secret") ||
+		!strings.Contains(joined, "DB_HOST=devbox-mysql") ||
+		!strings.Contains(joined, "OTHER=keep") {
+		t.Fatalf("unexpected merged process environment: %s", joined)
+	}
+}

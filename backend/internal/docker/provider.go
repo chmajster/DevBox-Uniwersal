@@ -179,7 +179,21 @@ func (p *CLIProvider) Create(ctx context.Context, spec providers.ContainerSpec) 
 	if err := validateImageRef(spec.Image); err != nil {
 		return providers.ContainerInfo{}, err
 	}
+	if err := validateRestartPolicy(spec.RestartPolicy); err != nil {
+		return providers.ContainerInfo{}, err
+	}
 	args := []string{"container", "create", "--name", spec.Name}
+	if spec.RestartPolicy != "" && spec.RestartPolicy != "no" {
+		args = append(args, "--restart", spec.RestartPolicy)
+	}
+	for i, network := range spec.Networks {
+		if err := validateNetworkRef(network); err != nil {
+			return providers.ContainerInfo{}, err
+		}
+		if i == 0 {
+			args = append(args, "--network", network)
+		}
+	}
 	envKeys := sortedKeys(spec.Environment)
 	for _, key := range envKeys {
 		if err := validateEnvironmentName(key); err != nil {
@@ -189,6 +203,14 @@ func (p *CLIProvider) Create(ctx context.Context, spec providers.ContainerSpec) 
 			return providers.ContainerInfo{}, err
 		}
 		args = append(args, "--env", key+"="+spec.Environment[key])
+	}
+	envFile, cleanupEnv, err := secureEnvFile(spec.SensitiveEnvironment)
+	if err != nil {
+		return providers.ContainerInfo{}, err
+	}
+	defer cleanupEnv()
+	if envFile != "" {
+		args = append(args, "--env-file", envFile)
 	}
 	hostPorts := make([]int, 0, len(spec.Ports))
 	for host := range spec.Ports {
@@ -201,6 +223,13 @@ func (p *CLIProvider) Create(ctx context.Context, spec providers.ContainerSpec) 
 			return providers.ContainerInfo{}, fmt.Errorf("%w: port out of range", ErrInvalidInput)
 		}
 		args = append(args, "--publish", strconv.Itoa(host)+":"+strconv.Itoa(containerPort))
+	}
+	for _, binding := range spec.PortBindings {
+		value, err := containerPortBindingArg(binding)
+		if err != nil {
+			return providers.ContainerInfo{}, err
+		}
+		args = append(args, "--publish", value)
 	}
 	volumeKeys := sortedKeys(spec.Volumes)
 	for _, source := range volumeKeys {
@@ -228,6 +257,12 @@ func (p *CLIProvider) Create(ctx context.Context, spec providers.ContainerSpec) 
 		return providers.ContainerInfo{}, err
 	}
 	id := strings.TrimSpace(string(out))
+	for _, network := range spec.Networks[1:] {
+		if err := p.ConnectNetwork(ctx, spec.Name, network); err != nil {
+			_, _, _ = p.runner.Run(context.Background(), "container", "rm", "-f", spec.Name)
+			return providers.ContainerInfo{}, err
+		}
+	}
 	return providers.ContainerInfo{ID: id, Name: spec.Name, State: "created"}, nil
 }
 

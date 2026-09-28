@@ -38,10 +38,22 @@ type Service struct {
 	jobs       jobs.JobRunner
 	audit      *audit.Service
 	phpMyAdmin *PHPMyAdminManager
+	managed    *ManagedMySQLManager
+	compose    providers.ComposeDatabaseProvider
 	backupDir  string
 }
 
-func NewService(repo *Repository, engine databaseEngine, secretStore secrets.SecretStore, runner jobs.JobRunner, auditService *audit.Service, phpMyAdmin *PHPMyAdminManager, backupDir string) (*Service, error) {
+type ServiceOption func(*Service)
+
+func WithManagedMySQL(manager *ManagedMySQLManager) ServiceOption {
+	return func(service *Service) { service.managed = manager }
+}
+
+func WithComposeDatabaseProvider(provider providers.ComposeDatabaseProvider) ServiceOption {
+	return func(service *Service) { service.compose = provider }
+}
+
+func NewService(repo *Repository, engine databaseEngine, secretStore secrets.SecretStore, runner jobs.JobRunner, auditService *audit.Service, phpMyAdmin *PHPMyAdminManager, backupDir string, options ...ServiceOption) (*Service, error) {
 	if repo == nil || engine == nil || runner == nil {
 		return nil, errors.New("database service dependencies are incomplete")
 	}
@@ -57,11 +69,21 @@ func NewService(repo *Repository, engine databaseEngine, secretStore secrets.Sec
 		phpMyAdmin: phpMyAdmin,
 		backupDir:  backupDir,
 	}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
 	if err := runner.Register(NewBackupJobHandler(repo, engine, backupDir)); err != nil {
 		return nil, err
 	}
 	if err := runner.Register(NewRestoreJobHandler(repo, engine, backupDir)); err != nil {
 		return nil, err
+	}
+	if service.managed != nil {
+		if err := runner.Register(NewManagedMySQLJobHandler(service.managed)); err != nil {
+			return nil, err
+		}
 	}
 	return service, nil
 }
@@ -143,6 +165,11 @@ func (s *Service) DeleteDatabase(ctx context.Context, id string, actor *string, 
 	if err := s.engine.DeleteDatabase(ctx, item.Name); err != nil {
 		return err
 	}
+	if item.ProjectID != nil {
+		if err := s.repo.DeleteDatabaseBinding(ctx, *item.ProjectID); err != nil {
+			return err
+		}
+	}
 	if err := s.repo.DeleteDatabase(ctx, id); err != nil {
 		return err
 	}
@@ -150,9 +177,22 @@ func (s *Service) DeleteDatabase(ctx context.Context, id string, actor *string, 
 	return nil
 }
 
-func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, charset string, actor *string, remote *string) (ProvisionResult, error) {
+func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, charset string, actor *string, remote *string, applicationService ...string) (ProvisionResult, error) {
 	if s.secrets == nil {
 		return ProvisionResult{}, ErrSecretsUnavailable
+	}
+	if engine == "" {
+		engine = "mysql"
+	}
+	engine = strings.ToLower(strings.TrimSpace(engine))
+	if s.managed != nil && engine != "mysql" {
+		return ProvisionResult{}, errors.New("managed database engine must be mysql; use Compose or external mode for MariaDB")
+	}
+	if charset == "" {
+		charset = "utf8mb4"
+	}
+	if binding, err := s.GetDatabaseBinding(ctx, projectID); err == nil && binding.Mode != DatabaseModeNone && binding.Mode != DatabaseModeManaged {
+		return ProvisionResult{}, fmt.Errorf("project database binding is already configured in %s mode", binding.Mode)
 	}
 	if existing, err := s.repo.DatabaseByProject(ctx, projectID); err == nil {
 		return ProvisionResult{}, fmt.Errorf("project already has database %s", existing.Name)
@@ -163,11 +203,10 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	if err != nil {
 		return ProvisionResult{}, err
 	}
-	if engine == "" {
-		engine = "mysql"
-	}
-	if charset == "" {
-		charset = "utf8mb4"
+	if s.managed != nil {
+		if err := s.ensureManagedReady(ctx); err != nil {
+			return ProvisionResult{}, err
+		}
 	}
 	dbName := projectDatabaseName(project)
 	username := projectDatabaseUsername(project)
@@ -246,10 +285,21 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	if err := s.repo.UpdateDatabaseStatus(ctx, database.ID, "ready"); err != nil {
 		return ProvisionResult{}, err
 	}
+	bindingInput := DatabaseBindingInput{Mode: DatabaseModeManaged, Engine: engine, Port: 3306}
+	if len(applicationService) > 0 {
+		bindingInput.ApplicationService = strings.TrimSpace(applicationService[0])
+	}
+	if _, err := s.UpdateDatabaseBinding(ctx, projectID, bindingInput, actor, remote); err != nil {
+		return ProvisionResult{}, err
+	}
 	rollbackDatabase = false
 	database.Status = "ready"
 	database.Username = username
 	host, port := s.engine.Endpoint()
+	if endpointEngine, ok := s.engine.(endpointDatabaseEngine); ok {
+		endpoint := endpointEngine.ApplicationEndpoint()
+		host, port = endpoint.Host, endpoint.Port
+	}
 	s.recordAudit(ctx, actor, "database.provision", "project", &project.ID, map[string]any{"database_id": database.ID, "database": dbName, "username": username}, remote)
 	return ProvisionResult{
 		Database: database,
@@ -517,6 +567,11 @@ func (s *Service) PHPMyAdminAction(ctx context.Context, action string, actor *st
 	if s.phpMyAdmin == nil {
 		return PHPMyAdminStatus{}, errors.New("phpMyAdmin manager is not configured")
 	}
+	if action != "stop" && s.managed != nil {
+		if err := s.ensureManagedReady(ctx); err != nil {
+			return PHPMyAdminStatus{}, err
+		}
+	}
 	var (
 		status PHPMyAdminStatus
 		err    error
@@ -525,11 +580,15 @@ func (s *Service) PHPMyAdminAction(ctx context.Context, action string, actor *st
 	case "install":
 		status, err = s.phpMyAdmin.Install(ctx)
 	case "start":
-		status, err = s.phpMyAdmin.Start(ctx)
+		if _, err = s.phpMyAdmin.Install(ctx); err == nil {
+			status, err = s.phpMyAdmin.Start(ctx)
+		}
 	case "stop":
 		status, err = s.phpMyAdmin.Stop(ctx)
 	case "restart":
-		status, err = s.phpMyAdmin.Restart(ctx)
+		if _, err = s.phpMyAdmin.Install(ctx); err == nil {
+			status, err = s.phpMyAdmin.Restart(ctx)
+		}
 	default:
 		return PHPMyAdminStatus{}, errors.New("unsupported phpMyAdmin action")
 	}

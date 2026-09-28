@@ -19,6 +19,10 @@ type composeRunner struct {
 	legacy bool
 }
 
+type environmentCommandRunner interface {
+	RunEnv(ctx context.Context, environment map[string]string, args ...string) ([]byte, []byte, error)
+}
+
 func (p *CLIProvider) resolveComposeRunner(ctx context.Context) (composeRunner, error) {
 	_, _, pluginErr := p.runner.Run(ctx, "compose", "version")
 	if pluginErr == nil {
@@ -61,6 +65,24 @@ func (p *CLIProvider) runCompose(ctx context.Context, args ...string) ([]byte, [
 		return legacyStdout, legacyStderr, fmt.Errorf("docker compose failed: %v; docker-compose fallback failed: %w", runErr, legacyErr)
 	}
 	return legacyStdout, legacyStderr, nil
+}
+
+func (p *CLIProvider) runComposeEnv(ctx context.Context, environment map[string]string, args ...string) ([]byte, []byte, error) {
+	resolved, err := p.resolveComposeRunner(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	envRunner, ok := resolved.runner.(environmentCommandRunner)
+	if !ok {
+		return nil, nil, fmt.Errorf("%w: Docker runner does not support environment injection", ErrUnavailable)
+	}
+	if resolved.legacy {
+		if len(args) == 0 || args[0] != "compose" {
+			return nil, nil, fmt.Errorf("%w: invalid compose invocation", ErrInvalidInput)
+		}
+		return envRunner.RunEnv(ctx, environment, args[1:]...)
+	}
+	return envRunner.RunEnv(ctx, environment, args...)
 }
 
 func (p *CLIProvider) streamCompose(ctx context.Context, args ...string) (io.ReadCloser, error) {
@@ -714,5 +736,9 @@ func composeArgs(directory, projectName string) ([]string, error) {
 	// Docker Compose v2 and the legacy docker-compose binary. Do not pass
 	// --project-directory; the absolute -f path already gives Compose the
 	// directory used for relative paths.
-	return withPortOverride(directory, projectName, []string{"compose", "-p", projectName, "-f", configFile})
+	args, err := withPortOverride(directory, projectName, []string{"compose", "-p", projectName, "-f", configFile})
+	if err != nil {
+		return nil, err
+	}
+	return withDatabaseOverride(directory, projectName, args)
 }

@@ -37,6 +37,7 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	}
 
 	mux.Handle("GET /api/v1/mysql/status", viewer(http.HandlerFunc(m.mysqlStatus)))
+	mux.Handle("POST /api/v1/mysql/{action}", operator(http.HandlerFunc(m.mysqlAction)))
 	mux.Handle("GET /api/v1/databases", viewer(http.HandlerFunc(m.listDatabases)))
 	mux.Handle("POST /api/v1/databases", operator(http.HandlerFunc(m.createDatabase)))
 	mux.Handle("DELETE /api/v1/databases/{id}", operator(http.HandlerFunc(m.deleteDatabase)))
@@ -47,6 +48,12 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/database-users/{id}/password", operator(http.HandlerFunc(m.changePassword)))
 	mux.Handle("POST /api/v1/database-users/{id}/grants", operator(http.HandlerFunc(m.changeGrants)))
 
+	mux.Handle("GET /api/v1/projects/{id}/database-binding", viewer(http.HandlerFunc(m.getDatabaseBinding)))
+	mux.Handle("PUT /api/v1/projects/{id}/database-binding", operator(http.HandlerFunc(m.updateDatabaseBinding)))
+	mux.Handle("DELETE /api/v1/projects/{id}/database-binding", operator(http.HandlerFunc(m.deleteDatabaseBinding)))
+	mux.Handle("POST /api/v1/projects/{id}/database-binding/test", operator(http.HandlerFunc(m.testDatabaseBinding)))
+	mux.Handle("POST /api/v1/projects/{id}/database-binding/password", operator(http.HandlerFunc(m.rotateDatabasePassword)))
+	mux.Handle("GET /api/v1/projects/{id}/database-binding/compose-services", viewer(http.HandlerFunc(m.composeServices)))
 	mux.Handle("POST /api/v1/projects/{id}/database/provision", operator(http.HandlerFunc(m.provisionProject)))
 	mux.Handle("POST /api/v1/databases/{id}/backup", operator(http.HandlerFunc(m.backupDatabase)))
 	mux.Handle("GET /api/v1/databases/{id}/backups", viewer(http.HandlerFunc(m.listBackups)))
@@ -60,6 +67,16 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 
 func (m *Module) mysqlStatus(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, m.service.MySQLStatus(r.Context()))
+}
+
+func (m *Module) mysqlAction(w http.ResponseWriter, r *http.Request) {
+	actor, remote := requestIdentity(r)
+	job, err := m.service.QueueManagedMySQLAction(r.Context(), r.PathValue("action"), actor, remote)
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusAccepted, job)
 }
 
 func (m *Module) listDatabases(w http.ResponseWriter, r *http.Request) {
@@ -180,10 +197,70 @@ func (m *Module) changeGrants(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, user)
 }
 
+func (m *Module) getDatabaseBinding(w http.ResponseWriter, r *http.Request) {
+	item, err := m.service.GetDatabaseBinding(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, item)
+}
+
+func (m *Module) updateDatabaseBinding(w http.ResponseWriter, r *http.Request) {
+	var input DatabaseBindingInput
+	if err := decodeBody(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+	actor, remote := requestIdentity(r)
+	item, err := m.service.UpdateDatabaseBinding(r.Context(), r.PathValue("id"), input, actor, remote)
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, item)
+}
+
+func (m *Module) deleteDatabaseBinding(w http.ResponseWriter, r *http.Request) {
+	actor, remote := requestIdentity(r)
+	if err := m.service.DeleteDatabaseBinding(r.Context(), r.PathValue("id"), actor, remote); err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, DatabaseBinding{ProjectID: r.PathValue("id"), Mode: DatabaseModeNone})
+}
+
+func (m *Module) testDatabaseBinding(w http.ResponseWriter, r *http.Request) {
+	if err := m.service.TestApplicationConnection(r.Context(), r.PathValue("id")); err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]string{"status": "connected"})
+}
+
+func (m *Module) rotateDatabasePassword(w http.ResponseWriter, r *http.Request) {
+	actor, remote := requestIdentity(r)
+	if err := m.service.RotateProjectDatabasePassword(r.Context(), r.PathValue("id"), actor, remote); err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]string{"status": "rotated"})
+}
+
+func (m *Module) composeServices(w http.ResponseWriter, r *http.Request) {
+	items, err := m.service.ComposeServices(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, items)
+}
+
 func (m *Module) provisionProject(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Engine  string `json:"engine"`
-		Charset string `json:"charset"`
+		Engine             string `json:"engine"`
+		Charset            string `json:"charset"`
+		ApplicationService string `json:"application_service"`
 	}
 	if r.ContentLength != 0 {
 		if err := decodeBody(w, r, &input); err != nil {
@@ -192,7 +269,7 @@ func (m *Module) provisionProject(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	actor, remote := requestIdentity(r)
-	result, err := m.service.ProvisionProject(r.Context(), r.PathValue("id"), input.Engine, input.Charset, actor, remote)
+	result, err := m.service.ProvisionProject(r.Context(), r.PathValue("id"), input.Engine, input.Charset, actor, remote, input.ApplicationService)
 	if err != nil {
 		writeModuleError(w, err)
 		return
@@ -326,7 +403,9 @@ func writeModuleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "database resource not found", nil)
-	case errors.Is(err, ErrInvalidIdentifier), errors.Is(err, ErrInvalidPrivilege):
+	case errors.Is(err, ErrInvalidIdentifier), errors.Is(err, ErrInvalidPrivilege),
+		strings.Contains(strings.ToLower(err.Error()), "invalid "),
+		strings.Contains(err.Error(), "not selected"):
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error(), nil)
 	case errors.Is(err, ErrSecretsUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "secret_store_unavailable", err.Error(), nil)

@@ -46,13 +46,23 @@ type ProcessManager interface {
 	Logs(ctx context.Context, name string, tail int, follow bool) (io.ReadCloser, error)
 }
 
+type ContainerPortBinding struct {
+	HostIP        string
+	HostPort      int
+	ContainerPort int
+}
+
 type ContainerSpec struct {
-	Name        string
-	Image       string
-	Command     []string
-	Environment map[string]string
-	Ports       map[int]int
-	Volumes     map[string]string
+	Name                 string
+	Image                string
+	Command              []string
+	Environment          map[string]string
+	SensitiveEnvironment map[string]string
+	Ports                map[int]int
+	PortBindings         []ContainerPortBinding
+	Volumes              map[string]string
+	Networks             []string
+	RestartPolicy        string
 }
 
 type ContainerInfo struct {

@@ -23,6 +23,12 @@ type Config struct {
 	MasterKeyBase64        string
 	AppVersion             string
 
+	ManagedMySQLEnabled   bool
+	ManagedMySQLImage     string
+	ManagedMySQLContainer string
+	ManagedMySQLNetwork   string
+	ManagedMySQLVolume    string
+
 	MySQLHost             string
 	MySQLPort             int
 	MySQLAdminUser        string
@@ -73,6 +79,10 @@ func Load() (Config, error) {
 	mysqlPort, err := getEnvInt("DEVBOX_MYSQL_PORT", 3306)
 	if err != nil {
 		return Config{}, err
+	}
+	managedMySQL, err := strconv.ParseBool(getEnv("DEVBOX_MYSQL_MANAGED", "true"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse DEVBOX_MYSQL_MANAGED: %w", err)
 	}
 	phpMyAdminPort, err := getEnvInt("DEVBOX_PHPMYADMIN_PORT", 8081)
 	if err != nil {
@@ -125,6 +135,11 @@ func Load() (Config, error) {
 		BootstrapAdminPassword:     os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_PASSWORD"),
 		MasterKeyBase64:            strings.TrimSpace(os.Getenv("DEVBOX_MASTER_KEY")),
 		AppVersion:                 getEnv("DEVBOX_VERSION", "dev"),
+		ManagedMySQLEnabled:        managedMySQL,
+		ManagedMySQLImage:          getEnv("DEVBOX_MYSQL_IMAGE", "mysql:8.4"),
+		ManagedMySQLContainer:      getEnv("DEVBOX_MYSQL_CONTAINER", "devbox-mysql"),
+		ManagedMySQLNetwork:        getEnv("DEVBOX_MYSQL_NETWORK", "devbox-apps"),
+		ManagedMySQLVolume:         getEnv("DEVBOX_MYSQL_VOLUME", "devbox-mysql-data"),
 		MySQLHost:                  getEnv("DEVBOX_MYSQL_HOST", "127.0.0.1"),
 		MySQLPort:                  mysqlPort,
 		MySQLAdminUser:             getEnv("DEVBOX_MYSQL_ADMIN_USER", "devbox_admin"),

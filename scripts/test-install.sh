@@ -22,6 +22,24 @@ if parse_args --install --status; then
   exit 1
 fi
 
+mysql_env="$tmp/mysql.env"
+ENV_FILE="$mysql_env"
+LOG_FILE="$tmp/install.log"
+unset DEVBOX_MYSQL_MANAGED || true
+mysql_managed_mode
+
+upsert_env_file "$mysql_env" DEVBOX_MYSQL_ADMIN_PASSWORD legacy-secret
+if mysql_managed_mode; then
+  echo "legacy MySQL installation was incorrectly switched to managed mode" >&2
+  exit 1
+fi
+
+DEVBOX_MYSQL_MANAGED=true
+mysql_managed_mode
+unset DEVBOX_MYSQL_MANAGED
+remove_env_key "$mysql_env" DEVBOX_MYSQL_ADMIN_PASSWORD
+mysql_managed_mode
+
 fake_bin="$tmp/bin"
 mkdir -p "$fake_bin"
 original_path="$PATH"
@@ -69,14 +87,20 @@ exit 1
 EOF_DPKG
 cat >"$fake_bin/apt-cache" <<'EOF_APT_CACHE'
 #!/usr/bin/env bash
-if [[ "$1" == "show" && "$2" == "docker-compose-v2" ]]; then
-  echo "Package: docker-compose-v2"
-  exit 0
+if [[ "$1" == "show" ]]; then
+  case "$2" in
+    docker-compose-v2|default-mysql-client|default-mysql-server)
+      echo "Package: $2"
+      exit 0
+      ;;
+  esac
 fi
 exit 100
 EOF_APT_CACHE
 chmod +x "$fake_bin/dpkg-query" "$fake_bin/apt-cache"
 [[ "$(select_docker_compose_package)" == "docker-compose-v2" ]]
+[[ "$(select_mysql_client_package)" == "default-mysql-client" ]]
+[[ "$(select_mysql_server_package)" == "default-mysql-server" ]]
 
 PATH="$original_path"
 

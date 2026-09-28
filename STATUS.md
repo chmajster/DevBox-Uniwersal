@@ -31,6 +31,7 @@ DevBox Universal is an integrated local development control plane.
 - Project CRUD/archive, Git fetch/pull/checkout/history and credential masking.
 - Operator-only local-directory browser constrained to configured roots, with canonical symlink handling, traversal limits and audit events.
 - Deployment state machine uses Docker as the mandatory application execution boundary; project Compose/Dockerfile definitions take precedence, otherwise DevBox builds a managed runtime image.
+- Deployment has a dedicated database-resolution stage that resolves project/runtime environment, waits for managed MySQL when required, injects database credentials at runtime and runs real connectivity checks before activation.
 - Deploy from the applications list opens the application's Deployments tab immediately; application details show the live stage, refresh it every second through completion and keep the last success/failure visible; concurrent Deploy clicks are blocked while one is active.
 - Project-level application health configuration.
 
@@ -56,9 +57,14 @@ DevBox Universal is an integrated local development control plane.
 
 ## Databases
 
-- MySQL/MariaDB status, database/user/grant lifecycle and per-project provisioning.
-- SecretStore-backed generated credentials.
-- Database backup/restore jobs and phpMyAdmin lifecycle.
+- Per-project database bindings support `none`, DevBox-managed MySQL, project-owned Compose MySQL/MariaDB and external MySQL/MariaDB.
+- Managed MySQL runs as `devbox-mysql` on the shared `devbox-apps` network with persistent `devbox-mysql-data`, loopback-only admin publication and durable lifecycle jobs.
+- Admin and application endpoints are separate: control-plane operations use the loopback endpoint while application containers use `devbox-mysql:3306`.
+- Existing database/user/grant provisioning is reused; generated credentials and external/Compose passwords are SecretStore-backed and injected only at runtime.
+- Project Compose files remain untouched; DevBox creates a mode-0600 override outside the repository for environment/network additions and detects or explicitly selects the application service.
+- Connection tests execute real `SELECT 1`; managed tests traverse Docker DNS on `devbox-apps`, Compose tests use the selected database service and external tests run from the Docker execution boundary.
+- PHP projects with an active database binding require `pdo_mysql` or `mysqli` in their project container configuration.
+- Database backup/restore jobs remain unchanged and the project database tab exposes assigned backups; phpMyAdmin uses `devbox-mysql` over `devbox-apps` in managed mode.
 - Admin-only full control-plane backup/import/download/restore workflow with SQLite snapshot, checksum, encrypted-secret state, managed Nginx files and controlled Docker/Compose manifests. Restore is validated and applied before database open on the next service start.
 
 ## Networking
@@ -77,7 +83,7 @@ DevBox Universal is an integrated local development control plane.
 ## Windows / WSL / installer
 
 - Windows PowerShell bootstrap with WSL distribution detection and Linux handoff.
-- Linux installer with install/status/repair/update/uninstall/help.
+- Linux installer with install/status/repair/update/uninstall/help; clean installations default to Docker-managed MySQL and install only the host client, while existing pre-binding host-MySQL installations remain legacy unless explicitly migrated.
 - `devbox status`, `devbox doctor` and allowlisted privileged helper.
 
 ## Current hardening work

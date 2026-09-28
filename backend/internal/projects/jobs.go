@@ -130,10 +130,12 @@ type ManagedContainerDeployer interface {
 }
 
 type DeploymentIntegrations struct {
-	Ports   providers.PortAllocator
-	Routes  ProjectRouteManager
-	Compose ComposeDeployer
-	Managed ManagedContainerDeployer
+	Ports       providers.PortAllocator
+	Routes      ProjectRouteManager
+	Compose     ComposeDeployer
+	Managed     ManagedContainerDeployer
+	Database    providers.ProjectDatabaseResolver
+	Environment runtimes.EnvironmentResolver
 }
 
 type DeploymentHandler struct {
@@ -194,6 +196,9 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		composeStarted         bool
 		composeDir             string
 		composeName            string
+		databaseRuntime        = providers.ProjectDatabaseRuntime{Connection: providers.DatabaseConnection{Mode: providers.DatabaseModeNone}}
+		databaseCleanup        func() error
+		projectEnvironment     = runtimes.ResolvedEnvironment{Plain: map[string]string{}, Sensitive: map[string]string{}}
 	)
 	defer func() {
 		if runErr == nil {
@@ -221,6 +226,12 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 					_ = h.logger.Log(cleanupCtx, job.ID, "error", "deployment.compose.restore_failed", map[string]any{"error": err.Error()})
 				}
 			}
+		}
+		if databaseCleanup != nil {
+			if err := databaseCleanup(); err != nil {
+				_ = h.logger.Log(cleanupCtx, job.ID, "error", "deployment.database.cleanup_failed", map[string]any{"error": err.Error()})
+			}
+			databaseCleanup = nil
 		}
 		portPlan.rollback()
 		if legacyAllocatedPort > 0 && cleanupSafe && !composeCommitted {
@@ -285,6 +296,34 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		return nil, errors.New("custom container policy requires compose.yaml/docker-compose.yml or Dockerfile")
 	}
 
+	if err := setStage(DeploymentDatabase); err != nil {
+		return nil, err
+	}
+	if h.integrations.Environment != nil {
+		projectEnvironment, err = h.integrations.Environment.ResolveEnvironment(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if h.integrations.Database != nil {
+		databaseRuntime, err = h.integrations.Database.ResolveRuntimeDatabase(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		if len(databaseRuntime.Secret) > 0 {
+			defer clear(databaseRuntime.Secret)
+		}
+		if databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
+			_ = h.logger.Log(ctx, job.ID, "info", "deployment.database.resolved", databaseLogFields(databaseRuntime))
+			if databaseRuntime.Connection.Mode != providers.DatabaseModeCompose {
+				if err := h.integrations.Database.TestApplicationConnection(ctx, p.ID); err != nil {
+					return nil, err
+				}
+				_ = h.logger.Log(ctx, job.ID, "info", "deployment.database.tested", map[string]any{"mode": databaseRuntime.Connection.Mode})
+			}
+		}
+	}
+
 	// Project-owned Compose takes precedence. There is no host-runtime fallback.
 	if hasCompose {
 		if h.integrations.Compose == nil {
@@ -295,6 +334,30 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 		composeDir = workDir
 		composeName = p.Slug
+		composeEnvironment := mergedComposeEnvironment(projectEnvironment, databaseRuntime)
+		if len(composeEnvironment) > 0 || databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
+			databaseProvider, ok := h.integrations.Compose.(providers.ComposeDatabaseProvider)
+			if !ok {
+				return nil, errors.New("provider unavailable: Compose environment/database integration")
+			}
+			if databaseRuntime.Connection.Mode == providers.DatabaseModeCompose {
+				services, err := databaseProvider.InspectComposeServices(ctx, composeDir, composeName)
+				if err != nil {
+					return nil, err
+				}
+				if !containsString(services, databaseRuntime.DatabaseService) {
+					return nil, fmt.Errorf("Compose database service does not exist: %s", databaseRuntime.DatabaseService)
+				}
+			}
+			databaseCleanup, err = databaseProvider.ConfigureComposeDatabase(ctx, composeDir, composeName, providers.ComposeDatabaseConfig{
+				ApplicationService: databaseRuntime.ApplicationService,
+				Environment:        composeEnvironment,
+				Network:            databaseRuntime.Network,
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
 		network, err := h.repo.PortConfiguration(ctx, p.ID)
 		if err != nil {
 			return nil, err
@@ -400,6 +463,12 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		if err := h.integrations.Compose.ComposeHealthy(ctx, composeDir, composeName); err != nil {
 			return nil, fmt.Errorf("docker compose healthcheck: %w", err)
 		}
+		if databaseRuntime.Connection.Mode == providers.DatabaseModeCompose && h.integrations.Database != nil {
+			if err := h.integrations.Database.TestApplicationConnection(ctx, p.ID); err != nil {
+				return nil, err
+			}
+			_ = h.logger.Log(ctx, job.ID, "info", "deployment.database.tested", map[string]any{"mode": databaseRuntime.Connection.Mode})
+		}
 
 		targetPort := 0
 		if p.Port != nil {
@@ -437,7 +506,15 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 				"warning":    routeWarning,
 			})
 		}
-		return h.finishSuccess(ctx, deploymentID, p.ID, commitBefore, commitAfter, started, setStage, routeWarning)
+		var databaseCleanupWarning string
+		if databaseCleanup != nil {
+			if err := databaseCleanup(); err != nil {
+				databaseCleanupWarning = "database runtime override cleanup: " + err.Error()
+				_ = h.logger.Log(ctx, job.ID, "warn", "deployment.database.cleanup_warning", map[string]any{"warning": databaseCleanupWarning})
+			}
+			databaseCleanup = nil
+		}
+		return h.finishSuccess(ctx, deploymentID, p.ID, commitBefore, commitAfter, started, setStage, routeWarning, databaseCleanupWarning)
 	}
 
 	if h.integrations.Managed == nil {
@@ -480,9 +557,20 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		for _, module := range config.Modules {
 			modules = append(modules, containerspec.Module{Name: module.Name, Version: module.Version})
 		}
+		if databaseRuntime.Connection.Mode != providers.DatabaseModeNone && runtimeName == "php" && !hasPHPMySQLDriver(config.Modules) {
+			return nil, errors.New("project PHP runtime does not contain pdo_mysql or mysqli")
+		}
 		spec, err = containerspec.GenerateManaged(p.ID, workDir, runtimeName, config.RuntimeVersion, modules, commitAfter, port)
 		if err != nil {
 			return nil, fmt.Errorf("managed runtime specification: %w", err)
+		}
+	}
+
+	mergeProjectEnvironment(&spec, projectEnvironment)
+	if databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
+		mergeDatabaseEnvironment(&spec, projectDatabaseEnvironment(databaseRuntime))
+		if databaseRuntime.Network != "" {
+			spec.Networks = append(spec.Networks, databaseRuntime.Network)
 		}
 	}
 
@@ -701,8 +789,109 @@ func payloadBool(payload map[string]any, key string) bool {
 }
 
 func validDeploymentTransition(from, to string) bool {
-	next := map[string]string{DeploymentQueued: DeploymentPreparing, DeploymentPreparing: DeploymentUpdatingSource, DeploymentUpdatingSource: DeploymentDependencies, DeploymentDependencies: DeploymentBuilding, DeploymentBuilding: DeploymentStarting, DeploymentStarting: DeploymentHealthcheck, DeploymentHealthcheck: DeploymentSuccess}
+	next := map[string]string{
+		DeploymentQueued:         DeploymentPreparing,
+		DeploymentPreparing:      DeploymentUpdatingSource,
+		DeploymentUpdatingSource: DeploymentDatabase,
+		DeploymentDatabase:       DeploymentDependencies,
+		DeploymentDependencies:   DeploymentBuilding,
+		DeploymentBuilding:       DeploymentStarting,
+		DeploymentStarting:       DeploymentHealthcheck,
+		DeploymentHealthcheck:    DeploymentSuccess,
+	}
 	return next[from] == to
+}
+
+func mergedComposeEnvironment(environment runtimes.ResolvedEnvironment, database providers.ProjectDatabaseRuntime) map[string]string {
+	result := make(map[string]string, len(environment.Plain)+len(environment.Sensitive)+10)
+	for key, value := range environment.Plain {
+		result[key] = value
+	}
+	for key, value := range environment.Sensitive {
+		result[key] = value
+	}
+	if database.Connection.Mode != providers.DatabaseModeNone {
+		for key, value := range projectDatabaseEnvironment(database) {
+			result[key] = value
+		}
+	}
+	return result
+}
+
+func mergeProjectEnvironment(spec *containerspec.DeploymentSpec, environment runtimes.ResolvedEnvironment) {
+	if spec.Environment == nil {
+		spec.Environment = map[string]string{}
+	}
+	if spec.SensitiveEnvironment == nil {
+		spec.SensitiveEnvironment = map[string]string{}
+	}
+	for key, value := range environment.Plain {
+		spec.Environment[key] = value
+		delete(spec.SensitiveEnvironment, key)
+	}
+	for key, value := range environment.Sensitive {
+		delete(spec.Environment, key)
+		spec.SensitiveEnvironment[key] = value
+	}
+}
+
+func mergeDatabaseEnvironment(spec *containerspec.DeploymentSpec, database map[string]string) {
+	if spec.SensitiveEnvironment == nil {
+		spec.SensitiveEnvironment = map[string]string{}
+	}
+	for key, value := range database {
+		delete(spec.Environment, key)
+		spec.SensitiveEnvironment[key] = value
+	}
+}
+
+func databaseLogFields(runtime providers.ProjectDatabaseRuntime) map[string]any {
+	connection := runtime.Connection
+	return map[string]any{
+		"mode":     connection.Mode,
+		"host":     connection.Host,
+		"port":     connection.Port,
+		"database": connection.Database,
+		"username": connection.Username,
+	}
+}
+
+func projectDatabaseEnvironment(runtime providers.ProjectDatabaseRuntime) map[string]string {
+	connection := runtime.Connection
+	port := strconv.Itoa(connection.Port)
+	password := string(runtime.Secret)
+	return map[string]string{
+		"DB_DRIVER":         "mysql",
+		"DB_HOST":           connection.Host,
+		"DB_PORT":           port,
+		"DB_DATABASE":       connection.Database,
+		"DB_USERNAME":       connection.Username,
+		"DB_PASSWORD":       password,
+		"DATABASE_HOST":     connection.Host,
+		"DATABASE_PORT":     port,
+		"DATABASE_NAME":     connection.Database,
+		"DATABASE_USER":     connection.Username,
+		"DATABASE_PASSWORD": password,
+	}
+}
+
+func hasPHPMySQLDriver(modules []RuntimeModule) bool {
+	for _, module := range modules {
+		switch strings.ToLower(strings.TrimSpace(module.Name)) {
+		case "pdo_mysql", "mysqli":
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 var _ jobpkg.Handler = (*GitJobHandler)(nil)

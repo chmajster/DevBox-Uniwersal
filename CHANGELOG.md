@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Unified project database connectivity
+
+- Added migration `009_project_database_bindings.sql` with `none`, `managed`, `compose` and `external` project database modes plus backfill for existing per-project databases.
+- Split database administration and application endpoints so host control-plane operations can use loopback while containers use Docker DNS `devbox-mysql:3306`.
+- Added a persistent managed MySQL 8.4 container on `devbox-apps` with `devbox-mysql-data`, loopback-only admin publishing, SecretStore root credentials, restart reconciliation and durable lifecycle jobs.
+- Added runtime SecretStore/environment merging with database binding variables at highest precedence for generated runtimes, project Dockerfiles and project Compose.
+- Added private mode-0600 Compose overrides outside application repositories, application-service detection/selection and support for both project `db` service DNS and managed `devbox-mysql`.
+- Added real `SELECT 1` connection testing from the Docker execution boundary, secret-safe Docker env handling, PHP MySQL-driver validation and project database UI/actions.
+- Kept existing provisioning, scoped grants, backups/restores, phpMyAdmin, RBAC and audit behavior; phpMyAdmin now reconciles onto the managed MySQL network.
+- Changed clean Linux installs to use managed MySQL without installing a host database server; legacy host-MySQL installs remain unchanged on repair/update unless explicitly opted into managed mode.
+- Added unit/integration coverage plus a Docker E2E that provisions a real database, builds PHP with `pdo_mysql` and validates `SELECT 1` over Docker networking.
+- Added ADR-011 documenting binding resolution, endpoint separation, environment precedence, Compose override security and WSL behavior.
+
 ### Configurable Docker port publishing
 
 - Added project HTTP/internal and published-port settings, optional HTTPS passthrough, high defaults (8080/8443), sequential collision fallback and durable resolved-port persistence.

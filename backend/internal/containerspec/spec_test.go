@@ -183,3 +183,19 @@ func TestGenerateCustomDockerfileReadsExpose(t *testing.T) {
 		t.Fatalf("expected EXPOSE 9000, got %d", spec.ContainerPort)
 	}
 }
+
+func TestDatabaseSecretIsNeverWrittenToManagedDockerfile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("<?php echo 'ok';"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := GenerateManaged("project-secret", dir, "php", "8.3", []Module{{Name: "pdo_mysql"}}, "abc123", 18080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := "never-write-this-database-secret"
+	spec.SensitiveEnvironment = map[string]string{"DB_PASSWORD": secret}
+	if strings.Contains(spec.Dockerfile, secret) || strings.Contains(spec.Dockerfile, "DB_PASSWORD") {
+		t.Fatalf("runtime database secret leaked into generated Dockerfile:\n%s", spec.Dockerfile)
+	}
+}

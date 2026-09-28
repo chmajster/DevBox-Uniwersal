@@ -23,13 +23,17 @@ var (
 )
 
 type MySQLConfig struct {
-	Host            string
-	Port            int
-	AdminUser       string
-	AdminPassword   string
-	ApplicationHost string
-	MySQLBinary     string
-	DumpBinary      string
+	Host                    string
+	Port                    int
+	AdminUser               string
+	AdminPassword           string
+	AdminSecretScope        string
+	AdminSecretRef          string
+	ApplicationHost         string
+	ApplicationEndpointHost string
+	ApplicationEndpointPort int
+	MySQLBinary             string
+	DumpBinary              string
 }
 
 type mysqlExecutor interface {
@@ -40,7 +44,8 @@ type mysqlExecutor interface {
 }
 
 type cliMySQLExecutor struct {
-	cfg MySQLConfig
+	cfg     MySQLConfig
+	secrets secrets.SecretStore
 }
 
 type MySQLProvider struct {
@@ -62,17 +67,67 @@ func NewMySQLProvider(cfg MySQLConfig, secretStore secrets.SecretStore) *MySQLPr
 	if cfg.ApplicationHost == "" {
 		cfg.ApplicationHost = "%"
 	}
+	if cfg.ApplicationEndpointHost == "" {
+		cfg.ApplicationEndpointHost = DefaultManagedMySQLContainer
+	}
+	if cfg.ApplicationEndpointPort == 0 {
+		cfg.ApplicationEndpointPort = 3306
+	}
+	if cfg.AdminSecretScope == "" {
+		cfg.AdminSecretScope = managedMySQLSecretScope
+	}
 	if cfg.MySQLBinary == "" {
 		cfg.MySQLBinary = "mysql"
 	}
 	if cfg.DumpBinary == "" {
 		cfg.DumpBinary = "mysqldump"
 	}
-	return &MySQLProvider{cfg: cfg, secrets: secretStore, exec: &cliMySQLExecutor{cfg: cfg}}
+	return &MySQLProvider{cfg: cfg, secrets: secretStore, exec: &cliMySQLExecutor{cfg: cfg, secrets: secretStore}}
 }
 
+func (p *MySQLProvider) AdminEndpoint() providers.DatabaseEndpoint {
+	return providers.DatabaseEndpoint{Host: p.cfg.Host, Port: p.cfg.Port}
+}
+
+func (p *MySQLProvider) ApplicationEndpoint() providers.DatabaseEndpoint {
+	return providers.DatabaseEndpoint{Host: p.cfg.ApplicationEndpointHost, Port: p.cfg.ApplicationEndpointPort}
+}
+
+// Endpoint is retained for internal compatibility and always means the control-plane endpoint.
 func (p *MySQLProvider) Endpoint() (string, int) {
-	return p.cfg.Host, p.cfg.Port
+	endpoint := p.AdminEndpoint()
+	return endpoint.Host, endpoint.Port
+}
+
+func (p *MySQLProvider) TestConnection(ctx context.Context, connection providers.DatabaseConnection, password []byte) error {
+	if err := ValidateIdentifier(connection.Database); err != nil {
+		return err
+	}
+	if err := validateUsername(connection.Username); err != nil {
+		return err
+	}
+	if strings.TrimSpace(connection.Host) == "" || connection.Port < 1 || connection.Port > 65535 {
+		return errors.New("invalid database connection endpoint")
+	}
+	cfg := p.cfg
+	cfg.Host = connection.Host
+	cfg.Port = connection.Port
+	cfg.AdminUser = connection.Username
+	cfg.AdminPassword = string(password)
+	cfg.AdminSecretRef = ""
+	executor := &cliMySQLExecutor{cfg: cfg}
+	out, err := executor.QuerySQL(ctx, "USE "+quoteIdentifierMust(connection.Database)+"; SELECT 1;")
+	if err != nil {
+		return fmt.Errorf("database connection test failed: %w", err)
+	}
+	if strings.TrimSpace(out) != "1" {
+		return fmt.Errorf("database connection test failed: unexpected SELECT 1 result")
+	}
+	return nil
+}
+
+func quoteIdentifierMust(value string) string {
+	return "`" + value + "`"
 }
 
 func (p *MySQLProvider) Validate(ctx context.Context) error {
@@ -342,7 +397,7 @@ func (e *cliMySQLExecutor) QuerySQL(ctx context.Context, statement string) (stri
 }
 
 func (e *cliMySQLExecutor) runMySQL(ctx context.Context, statement string) (string, error) {
-	defaults, cleanup, err := e.defaultsFile()
+	defaults, cleanup, err := e.defaultsFile(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -365,7 +420,7 @@ func (e *cliMySQLExecutor) runMySQL(ctx context.Context, statement string) (stri
 }
 
 func (e *cliMySQLExecutor) Dump(ctx context.Context, database string, out io.Writer) error {
-	defaults, cleanup, err := e.defaultsFile()
+	defaults, cleanup, err := e.defaultsFile(ctx)
 	if err != nil {
 		return err
 	}
@@ -396,7 +451,7 @@ func (e *cliMySQLExecutor) Dump(ctx context.Context, database string, out io.Wri
 }
 
 func (e *cliMySQLExecutor) Restore(ctx context.Context, in io.Reader) error {
-	defaults, cleanup, err := e.defaultsFile()
+	defaults, cleanup, err := e.defaultsFile(ctx)
 	if err != nil {
 		return err
 	}
@@ -447,16 +502,32 @@ func sanitizeMySQLError(raw string) string {
 	return message
 }
 
-func (e *cliMySQLExecutor) defaultsFile() (string, func(), error) {
-	if strings.ContainsAny(e.cfg.Host, "\r\n") || strings.ContainsAny(e.cfg.AdminUser, "\r\n") || strings.ContainsAny(e.cfg.AdminPassword, "\r\n") {
+func (e *cliMySQLExecutor) defaultsFile(ctx context.Context) (string, func(), error) {
+	password := e.cfg.AdminPassword
+	var decrypted []byte
+	if e.cfg.AdminSecretRef != "" {
+		if e.secrets == nil {
+			return "", func() {}, errors.New("secret store is not configured for MySQL admin credential")
+		}
+		value, err := e.secrets.Get(ctx, e.cfg.AdminSecretScope, e.cfg.AdminSecretRef)
+		if err != nil {
+			return "", func() {}, fmt.Errorf("load MySQL admin credential: %w", err)
+		}
+		decrypted = value
+		password = string(value)
+	}
+	if strings.ContainsAny(e.cfg.Host, "\r\n") || strings.ContainsAny(e.cfg.AdminUser, "\r\n") || strings.ContainsAny(password, "\r\n") {
+		clear(decrypted)
 		return "", func() {}, errors.New("mysql connection settings contain invalid newline")
 	}
 	file, err := os.CreateTemp("", "devbox-mysql-client-*")
 	if err != nil {
+		clear(decrypted)
 		return "", func() {}, fmt.Errorf("create mysql credentials file: %w", err)
 	}
 	path := file.Name()
 	cleanup := func() {
+		clear(decrypted)
 		_ = os.Remove(path)
 	}
 	if err := file.Chmod(0o600); err != nil {
@@ -464,7 +535,7 @@ func (e *cliMySQLExecutor) defaultsFile() (string, func(), error) {
 		cleanup()
 		return "", func() {}, fmt.Errorf("secure mysql credentials file: %w", err)
 	}
-	_, err = fmt.Fprintf(file, "[client]\nhost=%s\nport=%d\nuser=%s\npassword=%s\nprotocol=tcp\n", e.cfg.Host, e.cfg.Port, e.cfg.AdminUser, e.cfg.AdminPassword)
+	_, err = fmt.Fprintf(file, "[client]\nhost=%s\nport=%d\nuser=%s\npassword=%s\nprotocol=tcp\n", e.cfg.Host, e.cfg.Port, e.cfg.AdminUser, password)
 	closeErr := file.Close()
 	if err != nil {
 		cleanup()
