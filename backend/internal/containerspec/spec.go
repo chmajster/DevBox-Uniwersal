@@ -252,7 +252,7 @@ func GenerateCustomDockerfile(projectID, workDir string, hostPort int) (Deployme
 	}
 	return DeploymentSpec{
 		ProjectID: projectID, Runtime: "custom", ContextDir: abs, DockerfilePath: dockerfile,
-		Image: "devbox/custom-"+short+":"+fingerprint[:16], ContainerName: "devbox-app-" + short,
+		Image: "devbox/custom-" + short + ":" + fingerprint[:16], ContainerName: "devbox-app-" + short,
 		HostPort: hostPort, ContainerPort: port,
 		Labels: map[string]string{
 			"io.devbox.managed":     "true",
@@ -303,16 +303,16 @@ func dockerfileFor(runtime, version string, modules []Module) (string, int, bool
 		}
 		runLine := ""
 		if len(run) > 0 {
-			runLine = "RUN " + strings.Join(run, " && ") + "\n"
+				runLine = "RUN " + strings.Join(run, " && ") + "\n"
 		}
 		return "FROM composer:2 AS composer\nFROM php:" + version + "-cli-bookworm\n" +
-			"COPY --from=composer /usr/bin/composer /usr/local/bin/composer\n" +
-			runLine +
-			"WORKDIR /app\nCOPY . /app\n" +
-			"RUN if [ -f composer.json ]; then composer install --no-interaction --prefer-dist --optimize-autoloader; fi\n" +
-			"RUN useradd -u 10001 -r -s /usr/sbin/nologin devbox && chown -R 10001:0 /app\n" +
-			"USER 10001\nENV APP_PORT=8080\nEXPOSE 8080\n" +
-			"CMD [\"sh\",\"-lc\",\"if [ -d public ]; then exec php -S 0.0.0.0:8080 -t public; else exec php -S 0.0.0.0:8080 -t .; fi\"]\n",
+				"COPY --from=composer /usr/bin/composer /usr/local/bin/composer\n" +
+				runLine +
+				"WORKDIR /app\nCOPY . /app\n" +
+				"RUN if [ -f composer.json ]; then composer install --no-interaction --prefer-dist --optimize-autoloader; fi\n" +
+				"RUN useradd -u 10001 -r -s /usr/sbin/nologin devbox && chown -R 10001:0 /app\n" +
+				"USER 10001\nENV APP_PORT=8080\nEXPOSE 8080\n" +
+				"CMD [\"sh\",\"-lc\",\"if [ -d public ]; then exec php -S 0.0.0.0:8080 -t public; else exec php -S 0.0.0.0:8080 -t .; fi\"]\n",
 			8080, false, map[string]string{"APP_PORT": "8080"}, nil
 	case "node":
 		install := ""
@@ -320,10 +320,10 @@ func dockerfileFor(runtime, version string, modules []Module) (string, int, bool
 			install = "RUN apt-get update && apt-get install -y --no-install-recommends " + strings.Join(apt, " ") + " && rm -rf /var/lib/apt/lists/*\n"
 		}
 		return "FROM node:" + version + "-bookworm-slim\n" + install +
-			"WORKDIR /app\nCOPY . /app\nRUN corepack enable && if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; elif [ -f yarn.lock ]; then yarn install --frozen-lockfile; elif [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi\n" +
-			"RUN if [ -f package.json ]; then npm run build --if-present; fi\n" +
-			"USER node\nENV PORT=8080 HOST=0.0.0.0\nEXPOSE 8080\n" +
-			"CMD [\"sh\",\"-lc\",\"if [ -f package.json ] && node -e 'const p=require(\\\"./package.json\\\");process.exit(p.scripts&&p.scripts.start?0:1)'; then exec npm start; elif [ -f server.js ]; then exec node server.js; elif [ -f index.js ]; then exec node index.js; else echo 'No Node start script/server.js/index.js found' >&2; exit 1; fi\"]\n",
+				"WORKDIR /app\nCOPY . /app\nRUN corepack enable && if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; elif [ -f yarn.lock ]; then yarn install --frozen-lockfile; elif [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi\n" +
+				"RUN if [ -f package.json ]; then npm run build --if-present; fi\n" +
+				"USER node\nENV PORT=8080 HOST=0.0.0.0\nEXPOSE 8080\n" +
+				"CMD [\"sh\",\"-lc\",\"if [ -f package.json ] && node -e 'const p=require(\\\"./package.json\\\");process.exit(p.scripts&&p.scripts.start?0:1)'; then exec npm start; elif [ -f server.js ]; then exec node server.js; elif [ -f index.js ]; then exec node index.js; else echo 'No Node start script/server.js/index.js found' >&2; exit 1; fi\"]\n",
 			8080, false, map[string]string{"PORT": "8080", "HOST": "0.0.0.0"}, nil
 	case "python":
 		install := ""
@@ -331,10 +331,10 @@ func dockerfileFor(runtime, version string, modules []Module) (string, int, bool
 			install = "RUN apt-get update && apt-get install -y --no-install-recommends " + strings.Join(apt, " ") + " && rm -rf /var/lib/apt/lists/*\n"
 		}
 		return "FROM python:" + version + "-slim-bookworm\n" + install +
-			"WORKDIR /app\nCOPY . /app\nRUN python -m pip install --no-cache-dir --upgrade pip && if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; elif [ -f pyproject.toml ]; then pip install --no-cache-dir .; fi\n" +
-			"RUN useradd -u 10001 -r -s /usr/sbin/nologin devbox && chown -R 10001:0 /app\n" +
-			"USER 10001\nENV PORT=8080 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\nEXPOSE 8080\n" +
-			"CMD [\"sh\",\"-lc\",\"if [ -f manage.py ]; then exec python manage.py runserver 0.0.0.0:8080; elif [ -f main.py ] && python -c 'import uvicorn' >/dev/null 2>&1; then exec python -m uvicorn main:app --host 0.0.0.0 --port 8080; elif [ -f app.py ] && python -c 'import uvicorn' >/dev/null 2>&1; then exec python -m uvicorn app:app --host 0.0.0.0 --port 8080; elif [ -f app.py ]; then exec python app.py; elif [ -f main.py ]; then exec python main.py; else echo 'No Python entry point found' >&2; exit 1; fi\"]\n",
+				"WORKDIR /app\nCOPY . /app\nRUN python -m pip install --no-cache-dir --upgrade pip && if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; elif [ -f pyproject.toml ]; then pip install --no-cache-dir .; fi\n" +
+				"RUN useradd -u 10001 -r -s /usr/sbin/nologin devbox && chown -R 10001:0 /app\n" +
+				"USER 10001\nENV PORT=8080 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\nEXPOSE 8080\n" +
+				"CMD [\"sh\",\"-lc\",\"if [ -f manage.py ]; then exec python manage.py runserver 0.0.0.0:8080; elif [ -f main.py ] && python -c 'import uvicorn' >/dev/null 2>&1; then exec python -m uvicorn main:app --host 0.0.0.0 --port 8080; elif [ -f app.py ] && python -c 'import uvicorn' >/dev/null 2>&1; then exec python -m uvicorn app:app --host 0.0.0.0 --port 8080; elif [ -f app.py ]; then exec python app.py; elif [ -f main.py ]; then exec python main.py; else echo 'No Python entry point found' >&2; exit 1; fi\"]\n",
 			8080, false, map[string]string{"PORT": "8080", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1"}, nil
 	case "go":
 		install := ""
@@ -342,8 +342,8 @@ func dockerfileFor(runtime, version string, modules []Module) (string, int, bool
 			install = "RUN apt-get update && apt-get install -y --no-install-recommends " + strings.Join(apt, " ") + " && rm -rf /var/lib/apt/lists/*\n"
 		}
 		return "FROM golang:" + version + "-bookworm AS build\n" + install +
-			"WORKDIR /src\nCOPY . .\nRUN if [ -f go.mod ]; then go mod download; fi\nRUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/app .\n" +
-			"FROM gcr.io/distroless/static-debian12:nonroot\nCOPY --from=build /out/app /app\nENV PORT=8080\nEXPOSE 8080\nENTRYPOINT [\"/app\"]\n",
+				"WORKDIR /src\nCOPY . .\nRUN if [ -f go.mod ]; then go mod download; fi\nRUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/app .\n" +
+				"FROM gcr.io/distroless/static-debian12:nonroot\nCOPY --from=build /out/app /app\nENV PORT=8080\nEXPOSE 8080\nENTRYPOINT [\"/app\"]\n",
 			8080, true, map[string]string{"PORT": "8080"}, nil
 	case "static":
 		return "FROM nginxinc/nginx-unprivileged:" + version + "-alpine\nCOPY . /usr/share/nginx/html\nEXPOSE 8080\n", 8080, false, nil, nil
