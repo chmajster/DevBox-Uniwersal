@@ -32,7 +32,8 @@ function isMutation(method: string): boolean {
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
-  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const formDataBody = typeof FormData !== 'undefined' && init?.body instanceof FormData
+  if (!headers.has('Content-Type') && !formDataBody) headers.set('Content-Type', 'application/json')
   const method = init?.method ?? 'GET'
   if (isMutation(method) && path !== '/auth/login') {
     const csrfToken = readCookie('devbox_csrf')

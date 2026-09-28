@@ -22,6 +22,7 @@ export function AppLayout() {
           <NavLink to={ROUTES.applications}>Aplikacje</NavLink>
           <NavLink to={ROUTES.logs}>Logs</NavLink>
           <NavLink to={ROUTES.health}>Health</NavLink>
+          {user?.role === 'admin' && <NavLink to={ROUTES.backups}>Backup DevBox</NavLink>}
           <NavLink to="/runtimes">Runtimes</NavLink>
           <NavLink to="/docker">Docker</NavLink>
           <NavLink to="/databases">Bazy danych</NavLink>

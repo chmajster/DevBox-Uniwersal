@@ -75,6 +75,8 @@ Authenticated API discovery:
 
 Project health checks run automatically for configured HTTP/TCP targets and retain history. Central logs support `source=all`, SSE live tail, time-range filters and text export.
 
+Administrators can create, download, import and restore control-plane backups from the Backup DevBox page. Backup archives contain a consistent SQLite snapshot, encrypted secrets as stored in SQLite, managed Nginx state and controlled Docker/Compose manifests. `DEVBOX_MASTER_KEY` is never placed in the archive and must be retained separately.
+
 See `ARCHITECTURE.md`, `AGENTS.md` and `docs/adr/` before adding a module.
 
 

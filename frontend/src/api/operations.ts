@@ -12,7 +12,9 @@ import type {
   PortResource,
   Project,
   ProxyStatus,
-  ServiceProbe
+  ServiceProbe,
+  SystemBackup,
+  SystemRestoreRequest
 } from './types'
 
 type CollectionPayload<T> =
@@ -154,5 +156,38 @@ export function runProjectHealthCheck(projectID: string) {
   return request<ApplicationHealth>(`/projects/${encodeURIComponent(projectID)}/health-check`, {
     method: 'POST',
     body: JSON.stringify({})
+  })
+}
+
+export function listSystemBackups() {
+  return request<SystemBackup[]>('/system-backups')
+}
+
+export function createSystemBackup() {
+  return request<SystemBackup>('/system-backups', {
+    method: 'POST',
+    body: JSON.stringify({})
+  })
+}
+
+export function importSystemBackup(file: File) {
+  const body = new FormData()
+  body.append('file', file)
+  return request<SystemBackup>('/system-backups/import', {
+    method: 'POST',
+    body
+  })
+}
+
+export function restoreSystemBackup(id: string) {
+  return request<SystemRestoreRequest>(`/system-backups/${encodeURIComponent(id)}/restore`, {
+    method: 'POST',
+    body: JSON.stringify({})
+  })
+}
+
+export function deleteSystemBackup(id: string) {
+  return request<{ deleted: boolean; id: string }>(`/system-backups/${encodeURIComponent(id)}`, {
+    method: 'DELETE'
   })
 }

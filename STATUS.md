@@ -37,6 +37,7 @@ DevBox Universal is an integrated local development control plane.
 - MySQL/MariaDB status, database/user/grant lifecycle and per-project provisioning.
 - SecretStore-backed generated credentials.
 - Database backup/restore jobs and phpMyAdmin lifecycle.
+- Admin-only full control-plane backup/import/download/restore workflow with SQLite snapshot, checksum, encrypted-secret state, managed Nginx files and controlled Docker/Compose manifests. Restore is validated and applied before database open on the next service start.
 
 ## Networking
 
@@ -64,5 +65,4 @@ DevBox Universal is an integrated local development control plane.
 - Signed release artifacts and rollback-capable updater.
 - Full browser E2E coverage.
 - Runtime version installation/isolation.
-- Full control-plane backup/restore.
 - Automatic local HTTPS.

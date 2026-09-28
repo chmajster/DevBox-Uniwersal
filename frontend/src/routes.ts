@@ -4,6 +4,7 @@ export const ROUTES = {
   project: '/projects/:projectId/:tab?',
   logs: '/logs',
   health: '/health',
+  backups: '/backups',
   jobs: '/jobs',
   audit: '/audit'
 } as const

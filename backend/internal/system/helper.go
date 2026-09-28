@@ -41,6 +41,7 @@ var allowedEnvKeys = map[string]struct{}{
 	"DEVBOX_FRONTEND_DIR":          {},
 	"DEVBOX_COOKIE_SECURE":         {},
 	"DEVBOX_VERSION":               {},
+	"DEVBOX_CONTROL_PLANE_BACKUP_DIR": {},
 	"DEVBOX_NGINX_SITES_AVAILABLE": {},
 	"DEVBOX_NGINX_SITES_ENABLED":   {},
 	"DEVBOX_PRIVILEGED_HELPER":     {},

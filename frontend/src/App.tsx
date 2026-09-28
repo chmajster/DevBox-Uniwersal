@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppLayout } from './layout/AppLayout'
 import { AuditPage } from './pages/AuditPage'
+import { BackupsPage } from './pages/BackupsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DatabasesPage } from './pages/DatabasesPage'
 import { DockerPage } from './pages/DockerPage'
@@ -32,6 +33,7 @@ export function App() {
         <Route path={ROUTES.project} element={<ProjectDetailsPage />} />
         <Route path={ROUTES.logs} element={<LogsPage />} />
         <Route path={ROUTES.health} element={<HealthPage />} />
+        <Route path={ROUTES.backups} element={<BackupsPage />} />
         <Route path="databases" element={<DatabasesPage />} />
         <Route path="domains" element={<DomainsPage />} />
         <Route path="ports" element={<PortsPage />} />

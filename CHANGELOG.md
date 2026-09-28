@@ -13,6 +13,7 @@
 
 ### Added
 
+- Admin-only control-plane backup subsystem with consistent SQLite snapshots, SHA-256 integrity, import/download, staged restore-on-restart, Nginx state and controlled Docker/Compose configuration capture. The master encryption key is deliberately excluded.
 - Operator-only local-directory tree browser with configurable roots via `DEVBOX_DIRECTORY_BROWSE_ROOTS` and audited browse activity.
 - Scheduled application HTTP/TCP health monitoring with current state, persisted history and configurable retention.
 - Aggregate central log source with live SSE tail, time/search/level/project filters, text export and Docker log ingestion.

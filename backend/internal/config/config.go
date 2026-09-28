@@ -29,7 +29,8 @@ type Config struct {
 	MySQLAppHost       string
 	MySQLBinary        string
 	MySQLDumpBinary    string
-	MySQLBackupDir     string
+	MySQLBackupDir        string
+	ControlPlaneBackupDir string
 
 	PHPMyAdminDockerBinary string
 	PHPMyAdminImage        string
@@ -126,6 +127,7 @@ func Load() (Config, error) {
 		MySQLBinary:                getEnv("DEVBOX_MYSQL_BIN", "mysql"),
 		MySQLDumpBinary:            getEnv("DEVBOX_MYSQLDUMP_BIN", "mysqldump"),
 		MySQLBackupDir:             getEnv("DEVBOX_MYSQL_BACKUP_DIR", "./data/backups/mysql"),
+		ControlPlaneBackupDir:      getEnv("DEVBOX_CONTROL_PLANE_BACKUP_DIR", "./data/backups/system"),
 		PHPMyAdminDockerBinary:     getEnv("DEVBOX_DOCKER_BIN", "docker"),
 		PHPMyAdminImage:            getEnv("DEVBOX_PHPMYADMIN_IMAGE", "phpmyadmin:5.2-apache"),
 		PHPMyAdminContainer:        getEnv("DEVBOX_PHPMYADMIN_CONTAINER", "devbox-phpmyadmin"),
