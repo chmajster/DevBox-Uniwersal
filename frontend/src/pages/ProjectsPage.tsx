@@ -30,7 +30,7 @@ function projectJobLabel(type: string) {
   }
 }
 
-function projectApplicationURL(project: Project) {
+export function projectApplicationURL(project: Project) {
   const explicit = project.open_url?.trim()
   if (explicit && /^https?:\/\//i.test(explicit)) return explicit
   const domain = project.domain?.trim()
