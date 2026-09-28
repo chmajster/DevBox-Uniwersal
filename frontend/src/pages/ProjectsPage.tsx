@@ -30,6 +30,27 @@ function projectJobLabel(type: string) {
   }
 }
 
+export function projectApplicationURL(project: Project) {
+  const explicit = project.open_url?.trim()
+  if (explicit && /^https?:\/\//i.test(explicit)) return explicit
+  const domain = project.domain?.trim()
+  if (!domain) return ''
+  return /^https?:\/\//i.test(domain) ? domain : `http://${domain}`
+}
+
+function ProjectDomainLink({ project }: { project: Project }) {
+  const url = projectApplicationURL(project)
+  if (!project.domain || !url) return <>—</>
+  return <a
+    href={url}
+    target="_blank"
+    rel="noopener noreferrer"
+    title={`Otwórz aplikację ${project.name}`}
+  >
+    {project.domain}
+  </a>
+}
+
 function latestProjectJobs(jobs: Job[]) {
   const result = new Map<string, Job>()
   const ordered = [...jobs].sort((a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0))
@@ -205,11 +226,11 @@ export function ProjectsPage() {
         <h2><Link to={`/apps/${encodeURIComponent(project.id)}`}>{project.name}</Link></h2>
         <p className="project-description">{project.description || project.domain || 'Projekt zarządzany przez DevBox'}</p>
         <div className="project-tags"><span>{project.runtime || 'Runtime nieustawiony'}</span><span>{project.container_policy === 'custom' ? 'Własny Docker' : 'Kontener zarządzany'}</span></div>
-        <dl className="project-meta"><div><dt><Icon name="branch" size={14} />Gałąź</dt><dd>{project.branch || '—'}</dd></div><div><dt><Icon name="network" size={14} />Port</dt><dd>{project.port ?? '—'}</dd></div><div><dt><Icon name="globe" size={14} />Domena</dt><dd title={project.domain}>{project.domain || '—'}</dd></div><div><dt><Icon name="code" size={14} />Commit</dt><dd><code>{project.current_commit?.slice(0, 10) || '—'}</code></dd></div></dl>
+        <dl className="project-meta"><div><dt><Icon name="branch" size={14} />Gałąź</dt><dd>{project.branch || '—'}</dd></div><div><dt><Icon name="network" size={14} />Port</dt><dd>{project.port ?? '—'}</dd></div><div><dt><Icon name="globe" size={14} />Domena</dt><dd><ProjectDomainLink project={project} /></dd></div><div><dt><Icon name="code" size={14} />Commit</dt><dd><code>{project.current_commit?.slice(0, 10) || '—'}</code></dd></div></dl>
         <ProjectLiveStatus project={project} job={jobsByProject.get(project.id)} unavailable={Boolean(jobListing.error)} />
         {actions(project)}
       </article>)}</div> : <div className="table-wrap"><table><caption className="sr-only">Aplikacje i dostępne operacje</caption><thead><tr>{['Nazwa', 'Status', 'Live', 'Runtime', 'Gałąź', 'Port', 'Domena', 'Commit', 'Akcje'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead><tbody>{filtered.map((project) => <tr key={project.id}>
-        <td><Link className="project-name" to={`/apps/${encodeURIComponent(project.id)}`}>{project.name}</Link></td><td><StatusBadge status={project.status} /></td><td>{jobsByProject.get(project.id) ? <Link className="table-live-link" to={`/jobs?job=${encodeURIComponent(jobsByProject.get(project.id)!.id)}`}>{jobState(jobsByProject.get(project.id)!.status).label}</Link> : '—'}</td><td>{project.runtime || '—'}</td><td>{project.branch || '—'}</td><td>{project.port ?? '—'}</td><td>{project.domain || '—'}</td><td><code>{project.current_commit?.slice(0, 10) || '—'}</code></td><td>{actions(project)}</td>
+        <td><Link className="project-name" to={`/apps/${encodeURIComponent(project.id)}`}>{project.name}</Link></td><td><StatusBadge status={project.status} /></td><td>{jobsByProject.get(project.id) ? <Link className="table-live-link" to={`/jobs?job=${encodeURIComponent(jobsByProject.get(project.id)!.id)}`}>{jobState(jobsByProject.get(project.id)!.status).label}</Link> : '—'}</td><td>{project.runtime || '—'}</td><td>{project.branch || '—'}</td><td>{project.port ?? '—'}</td><td><ProjectDomainLink project={project} /></td><td><code>{project.current_commit?.slice(0, 10) || '—'}</code></td><td>{actions(project)}</td>
       </tr>)}</tbody></table></div>}
     </div>}
     {loaded && !loading && !loadError && filtered.length === 0 && <div className="workspace-empty">
