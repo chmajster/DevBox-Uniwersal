@@ -12,6 +12,7 @@ DevBox Universal is an integrated local development control plane.
 
 ## Workspace UI
 
+- Recovered the approved logo from the valid favicon frame, replaced the truncated inline PNG with a bundled binary asset, and moved the unchanged ICO into the asset pipeline; integrity and production-browser regression checks cover both themes and mobile navigation. See `docs/branding.md` for provenance and test scope.
 - Selected dark operator-console layout with compact grouped sidebar, host/version information and API-backed component health.
 - Dashboard CPU/RAM/disk circular gauges, service states, recent application/job tables, filtered log preview and session-history chart with metric/range selection.
 - Serialized, abortable polling: inventory/statuses every 30 seconds, dashboard metrics every 10 seconds, dashboard logs every 5 seconds; hidden-tab suspension and explicit unavailable/error states.
