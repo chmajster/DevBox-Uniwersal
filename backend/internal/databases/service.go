@@ -80,6 +80,11 @@ func NewService(repo *Repository, engine databaseEngine, secretStore secrets.Sec
 	if err := runner.Register(NewRestoreJobHandler(repo, engine, backupDir)); err != nil {
 		return nil, err
 	}
+	if service.managed != nil {
+		if err := runner.Register(NewManagedMySQLJobHandler(service.managed)); err != nil {
+			return nil, err
+		}
+	}
 	return service, nil
 }
 
