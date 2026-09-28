@@ -21,7 +21,8 @@ backend/
   internal/secrets/        encryption + SecretStore
   internal/system/         host/WSL detection, component status and doctor
   internal/webui/          production static frontend serving/fallback
-  internal/runtimes/       Runtime contract
+  internal/runtimes/       Runtime detection and runtime contracts
+  internal/containerspec/  managed application image specifications
   internal/providers/      cross-module provider contracts
   internal/projects/       owned by Git/Projects agent
   internal/docker/         owned by Docker agent
@@ -69,9 +70,26 @@ Potentially slow or external mutations should execute through `jobs.JobRunner`. 
 
 Privileged component installation is not exposed synchronously through the System Components HTTP API. Privileged mutations must use audited jobs and the typed privileged-helper boundary.
 
-## Runtime model
+## Runtime and application execution model
 
-`runtimes.Runtime` is intentionally lifecycle-oriented: Detect, Validate, InstallDependencies, Build, Start, Stop, Restart, Status, Logs and HealthCheck. Runtime implementations receive a `ProjectContext`; they do not own Project persistence.
+Docker is the mandatory execution boundary for managed applications. DevBox no longer deploys PHP, Go, Node.js, Python or static applications as host processes.
+
+The runtime registry is retained for source-based runtime and framework detection. Project deployment does not call host lifecycle methods such as InstallDependencies, Build or Start for supported application runtimes.
+
+Container resolution is deterministic:
+
+1. a project-owned Compose file is used when present;
+2. otherwise a project-owned Dockerfile is used when present;
+3. otherwise, with container policy `auto`, DevBox generates an allowlisted managed image specification for PHP, Node.js, Python, Go or static content;
+4. container policy `custom` requires a project-owned Compose file or Dockerfile.
+
+Per-project runtime version and module selections are stored in SQLite. Module names are validated against runtime-specific catalogs; arbitrary package names or shell fragments are not accepted through this API.
+
+Managed build contexts are staged outside the project tree and exclude `.env*`, VCS metadata, dependency directories and common local caches. Secrets are not written to generated Dockerfiles or image layers.
+
+A content fingerprint covers the runtime, selected version/modules, source revision and sanitized build context. The Job Engine rebuilds only when the fingerprint changes or an operator requests a forced rebuild. Managed containers are replaced atomically: the previous container is retained until the new container starts and passes its health check, then removed; failures restore the previous container.
+
+Host ports continue to come from the central PortAllocator and successful deployments are attached to the existing reverse-proxy routing layer.
 
 ## Provider contracts
 
