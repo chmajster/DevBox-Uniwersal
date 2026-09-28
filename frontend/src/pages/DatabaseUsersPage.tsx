@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { request } from '../api/client'
 import type { DatabaseRecord, DatabaseUser, DatabaseUserCreateResult } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { Modal } from '../components/Modal'
 
 const AVAILABLE_PRIVILEGES = [
   'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'INDEX', 'ALTER',
@@ -29,6 +30,8 @@ export function DatabaseUsersPage() {
   const [editingUser, setEditingUser] = useState<DatabaseUser | null>(null)
   const [editingPrivileges, setEditingPrivileges] = useState<string[]>([])
   const [newPassword, setNewPassword] = useState('')
+  const [editorMessage, setEditorMessage] = useState('')
+  const [editorError, setEditorError] = useState('')
   const [credential, setCredential] = useState<{ database: string; username: string; password: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -66,6 +69,22 @@ export function DatabaseUsersPage() {
   function togglePrivilege(value: string, mode: 'create' | 'edit') {
     const setter = mode === 'create' ? setPrivileges : setEditingPrivileges
     setter((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value])
+  }
+
+  function openEditor(item: DatabaseUser) {
+    setEditingUser(item)
+    setEditingPrivileges(item.privileges)
+    setNewPassword('')
+    setEditorMessage('')
+    setEditorError('')
+  }
+
+  function closeEditor() {
+    if (busy) return
+    setEditingUser(null)
+    setNewPassword('')
+    setEditorMessage('')
+    setEditorError('')
   }
 
   async function createUser(event: FormEvent) {
@@ -106,7 +125,10 @@ export function DatabaseUsersPage() {
   }
 
   async function savePassword(item: DatabaseUser, generate = false) {
-    await run(async () => {
+    setBusy(true)
+    setEditorMessage('')
+    setEditorError('')
+    try {
       const result = await request<{ password: string }>(`/database-users/${item.id}/password`, {
         method: 'POST',
         ...(generate ? {} : { body: JSON.stringify({ password: newPassword }) }),
@@ -117,10 +139,14 @@ export function DatabaseUsersPage() {
         password: result.password,
       })
       setNewPassword('')
-      setMessage(generate
-        ? `Wygenerowano nowe hasło użytkownika ${item.username}.`
-        : `Hasło użytkownika ${item.username} zostało ustawione.`)
-    })
+      setEditorMessage(generate
+        ? `Hasło zmienione pomyślnie. Wygenerowano nowe hasło użytkownika ${item.username}.`
+        : `Hasło zmienione pomyślnie dla użytkownika ${item.username}.`)
+    } catch (cause) {
+      setEditorError(`Hasło nie zostało zmienione. ${cause instanceof Error ? cause.message : 'Operacja nie powiodła się.'}`)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function savePrivileges(event: FormEvent) {
@@ -130,7 +156,10 @@ export function DatabaseUsersPage() {
     const next = new Set(editingPrivileges)
     const toGrant = editingPrivileges.filter((p) => !current.has(p))
     const toRevoke = editingUser.privileges.filter((p) => !next.has(p))
-    await run(async () => {
+    setBusy(true)
+    setEditorMessage('')
+    setEditorError('')
+    try {
       let updated = editingUser
       if (toGrant.length) {
         updated = await request<DatabaseUser>(`/database-users/${editingUser.id}/grants`, {
@@ -144,9 +173,13 @@ export function DatabaseUsersPage() {
       }
       setEditingUser(updated)
       setEditingPrivileges(updated.privileges)
-      setMessage('Uprawnienia zostały zaktualizowane.')
+      setEditorMessage('Uprawnienia zostały zaktualizowane pomyślnie.')
       await load()
-    })
+    } catch (cause) {
+      setEditorError(cause instanceof Error ? cause.message : 'Nie udało się zaktualizować uprawnień.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return <>
@@ -193,7 +226,7 @@ export function DatabaseUsersPage() {
               <td><div className="database-grants">{item.privileges.map((p) => <span className="badge badge-muted" key={p}>{p}</span>)}</div></td>
               <td>{new Date(item.created_at).toLocaleString()}</td>
               <td className="actions">
-                {canMutate && <button type="button" className="secondary" onClick={() => { setEditingUser(item); setEditingPrivileges(item.privileges); setNewPassword('') }}>Edytuj</button>}
+                {canMutate && <button type="button" className="secondary" onClick={() => openEditor(item)}>Edytuj</button>}
                 {canMutate && <button type="button" className="danger" onClick={() => removeUser(item)} disabled={busy}>Usuń</button>}
               </td>
             </tr>)}
@@ -203,19 +236,39 @@ export function DatabaseUsersPage() {
       </div>
     </section>
 
-    {editingUser && <section className="panel stack">
-      <div className="section-heading"><div><h2>Edytuj: {editingUser.username}</h2><p className="muted">{databaseById.get(editingUser.database_id)?.name}</p></div><button type="button" className="secondary" onClick={() => setEditingUser(null)}>Zamknij</button></div>
-      <form className="stack" onSubmit={savePrivileges}>
-        <div className="database-privilege-grid">{AVAILABLE_PRIVILEGES.map((p) => <label className="checkbox" key={p}><input type="checkbox" checked={editingPrivileges.includes(p)} onChange={() => togglePrivilege(p, 'edit')} />{p}</label>)}</div>
-        <div className="form-actions"><button type="submit" disabled={busy || editingPrivileges.length === 0}>Zapisz uprawnienia</button></div>
-      </form>
-      <div className="form-grid">
-        <label className="span-2">Nowe hasło<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Może pozostać puste" /></label>
-        <div className="form-actions">
-          <button type="button" className="secondary" disabled={busy} onClick={() => savePassword(editingUser)}>Ustaw hasło</button>
-          <button type="button" className="secondary" disabled={busy} onClick={() => savePassword(editingUser, true)}>Wygeneruj nowe hasło</button>
+    <Modal open={editingUser !== null} onClose={closeEditor} labelId="database-user-edit-title" className="database-user-edit-modal">
+      {editingUser && <div className="stack">
+        <div className="modal-heading">
+          <div>
+            <h2 id="database-user-edit-title">Edytuj użytkownika: {editingUser.username}</h2>
+            <p className="muted">{databaseById.get(editingUser.database_id)?.name ?? editingUser.database_id}</p>
+          </div>
+          <button type="button" className="secondary" disabled={busy} onClick={closeEditor}>Zamknij</button>
         </div>
-      </div>
-    </section>}
+
+        {editorMessage && <div className="success-banner" role="status">{editorMessage}</div>}
+        {editorError && <div className="error-banner" role="alert">{editorError}</div>}
+
+        <form className="stack" onSubmit={savePrivileges}>
+          <div>
+            <h3>Uprawnienia</h3>
+            <div className="database-privilege-grid">{AVAILABLE_PRIVILEGES.map((p) => <label className="checkbox" key={p}><input type="checkbox" checked={editingPrivileges.includes(p)} onChange={() => togglePrivilege(p, 'edit')} />{p}</label>)}</div>
+          </div>
+          <div className="form-actions"><button type="submit" disabled={busy || editingPrivileges.length === 0}>Zapisz uprawnienia</button></div>
+        </form>
+
+        <div className="form-grid database-password-editor">
+          <div className="span-2">
+            <h3>Zmiana hasła</h3>
+            <p className="muted small">Po operacji poniżej pojawi się jednoznaczny komunikat powodzenia albo błędu.</p>
+          </div>
+          <label className="span-2">Nowe hasło<input type="password" value={newPassword} onChange={(e) => { setNewPassword(e.target.value); setEditorMessage(''); setEditorError('') }} placeholder="Może pozostać puste" /></label>
+          <div className="form-actions span-2">
+            <button type="button" className="secondary" disabled={busy} onClick={() => void savePassword(editingUser)}>Ustaw hasło</button>
+            <button type="button" className="secondary" disabled={busy} onClick={() => void savePassword(editingUser, true)}>Wygeneruj nowe hasło</button>
+          </div>
+        </div>
+      </div>}
+    </Modal>
   </>
 }

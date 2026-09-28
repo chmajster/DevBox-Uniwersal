@@ -82,6 +82,7 @@
 
 ### Fixed
 
+- Database-user editing now opens in a modal dialog instead of expanding below the list; password changes show an immediate green success or red failure message inside the dialog.
 - Database users can now intentionally use an empty MySQL/MariaDB password; omitted password fields still request secure automatic generation, and the UI exposes generation as a separate explicit option.
 - Local-directory Git repositories opened from WSL/Windows mounts are now trusted only for the current Git command with `safe.directory`, avoiding false `Git repository is not available` errors when the DevBox service account differs from the filesystem owner.
 - Git-tab provider errors are now shown inside the Git tab and Fetch/Pull actions are hidden until a valid repository with a remote is available.
