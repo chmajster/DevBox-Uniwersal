@@ -181,13 +181,18 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	if s.secrets == nil {
 		return ProvisionResult{}, ErrSecretsUnavailable
 	}
+	if engine == "" {
+		engine = "mysql"
+	}
+	engine = strings.ToLower(strings.TrimSpace(engine))
+	if s.managed != nil && engine != "mysql" {
+		return ProvisionResult{}, errors.New("managed database engine must be mysql; use Compose or external mode for MariaDB")
+	}
+	if charset == "" {
+		charset = "utf8mb4"
+	}
 	if binding, err := s.GetDatabaseBinding(ctx, projectID); err == nil && binding.Mode != DatabaseModeNone && binding.Mode != DatabaseModeManaged {
 		return ProvisionResult{}, fmt.Errorf("project database binding is already configured in %s mode", binding.Mode)
-	}
-	if s.managed != nil {
-		if err := s.ensureManagedReady(ctx); err != nil {
-			return ProvisionResult{}, err
-		}
 	}
 	if existing, err := s.repo.DatabaseByProject(ctx, projectID); err == nil {
 		return ProvisionResult{}, fmt.Errorf("project already has database %s", existing.Name)
@@ -198,15 +203,10 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	if err != nil {
 		return ProvisionResult{}, err
 	}
-	if engine == "" {
-		engine = "mysql"
-	}
-	engine = strings.ToLower(strings.TrimSpace(engine))
-	if s.managed != nil && engine != "mysql" {
-		return ProvisionResult{}, errors.New("managed database engine must be mysql; use Compose or external mode for MariaDB")
-	}
-	if charset == "" {
-		charset = "utf8mb4"
+	if s.managed != nil {
+		if err := s.ensureManagedReady(ctx); err != nil {
+			return ProvisionResult{}, err
+		}
 	}
 	dbName := projectDatabaseName(project)
 	username := projectDatabaseUsername(project)
