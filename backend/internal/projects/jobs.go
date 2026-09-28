@@ -407,8 +407,8 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	}
 	if err := h.repo.SaveRuntimeContainerState(ctx, p.ID, RuntimeContainerState{
 		ContainerName: spec.ContainerName,
-		ImageTag: spec.Image,
-		Fingerprint: spec.Fingerprint,
+		ImageTag:      spec.Image,
+		Fingerprint:   spec.Fingerprint,
 	}); err != nil {
 		return nil, err
 	}
