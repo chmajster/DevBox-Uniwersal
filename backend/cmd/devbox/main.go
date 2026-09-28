@@ -162,25 +162,68 @@ func serve() error {
 	dockerService := dockermodule.NewService(dockerProvider, auditService, cfg.ProjectsRoot)
 	dockerModule := dockermodule.NewModule(dockerService)
 
-	mysqlProvider := databases.NewMySQLProvider(databases.MySQLConfig{
-		Host:            cfg.MySQLHost,
-		Port:            cfg.MySQLPort,
-		AdminUser:       cfg.MySQLAdminUser,
-		AdminPassword:   cfg.MySQLAdminPassword,
-		ApplicationHost: cfg.MySQLAppHost,
-		MySQLBinary:     cfg.MySQLBinary,
-		DumpBinary:      cfg.MySQLDumpBinary,
-	}, secretStore)
 	databaseRepo := databases.NewRepository(db)
+	mysqlConfig := databases.MySQLConfig{
+		Host:                    cfg.MySQLHost,
+		Port:                    cfg.MySQLPort,
+		AdminUser:               cfg.MySQLAdminUser,
+		AdminPassword:           cfg.MySQLAdminPassword,
+		ApplicationHost:         cfg.MySQLAppHost,
+		ApplicationEndpointHost: cfg.MySQLHost,
+		ApplicationEndpointPort: cfg.MySQLPort,
+		MySQLBinary:             cfg.MySQLBinary,
+		DumpBinary:              cfg.MySQLDumpBinary,
+	}
+	var managedMySQL *databases.ManagedMySQLManager
+	phpMySQLHost := cfg.MySQLHost
+	phpMySQLPort := cfg.MySQLPort
+	phpMySQLNetwork := ""
+	if cfg.ManagedMySQLEnabled {
+		managedMySQL = databases.NewManagedMySQLManager(dockerProvider, secretStore, databases.ManagedMySQLConfig{
+			Image:               cfg.ManagedMySQLImage,
+			Container:           cfg.ManagedMySQLContainer,
+			Network:             cfg.ManagedMySQLNetwork,
+			Volume:              cfg.ManagedMySQLVolume,
+			AdminHost:           "127.0.0.1",
+			AdminPort:           cfg.MySQLPort,
+			InitialRootPassword: cfg.MySQLAdminPassword,
+		})
+		adminScope, adminSecret := managedMySQL.AdminSecretRef()
+		adminEndpoint := managedMySQL.AdminEndpoint()
+		applicationEndpoint := managedMySQL.ApplicationEndpoint()
+		mysqlConfig.Host = adminEndpoint.Host
+		mysqlConfig.Port = adminEndpoint.Port
+		mysqlConfig.AdminUser = "root"
+		mysqlConfig.AdminPassword = ""
+		mysqlConfig.AdminSecretScope = adminScope
+		mysqlConfig.AdminSecretRef = adminSecret
+		mysqlConfig.ApplicationEndpointHost = applicationEndpoint.Host
+		mysqlConfig.ApplicationEndpointPort = applicationEndpoint.Port
+		phpMySQLHost = applicationEndpoint.Host
+		phpMySQLPort = applicationEndpoint.Port
+		phpMySQLNetwork = managedMySQL.Network()
+
+		reconcileCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		if err := managedMySQL.Ensure(reconcileCtx); err != nil {
+			logger.Warn("managed MySQL reconciliation failed; database operations will retry on demand", "error", err)
+		}
+		cancel()
+	}
+	mysqlProvider := databases.NewMySQLProvider(mysqlConfig, secretStore)
 	phpMyAdmin := databases.NewPHPMyAdminManager(databases.PHPMyAdminConfig{
 		DockerBinary: cfg.PHPMyAdminDockerBinary,
 		Image:        cfg.PHPMyAdminImage,
 		Container:    cfg.PHPMyAdminContainer,
 		HostPort:     cfg.PHPMyAdminHostPort,
-		MySQLHost:    cfg.MySQLHost,
-		MySQLPort:    cfg.MySQLPort,
+		MySQLHost:    phpMySQLHost,
+		MySQLPort:    phpMySQLPort,
+		Network:      phpMySQLNetwork,
 	})
-	databaseService, err := databases.NewService(databaseRepo, mysqlProvider, secretStore, jobRunner, auditService, phpMyAdmin, cfg.MySQLBackupDir)
+	databaseOptions := []databases.ServiceOption{databases.WithComposeDatabaseProvider(dockerProvider)}
+	if managedMySQL != nil {
+		databaseOptions = append(databaseOptions, databases.WithManagedMySQL(managedMySQL))
+	}
+	databaseService, err := databases.NewService(databaseRepo, mysqlProvider, secretStore, jobRunner, auditService, phpMyAdmin, cfg.MySQLBackupDir, databaseOptions...)
 	if err != nil {
 		logger.Error("database module initialization failed", "error", err)
 		os.Exit(1)
