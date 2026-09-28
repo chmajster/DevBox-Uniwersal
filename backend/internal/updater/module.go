@@ -107,6 +107,11 @@ func (s *Service) Status(ctx context.Context) Status {
 func (s *Service) Progress(ctx context.Context) Progress {
 	progress, err := readProgressFile(s.progressFile)
 	if err == nil {
+		if progress.Active() && !updateServiceActive(ctx) {
+			progress.State = "failed"
+			progress.Message = "Proces aktualizacji nie jest już aktywny."
+			progress.Error = "Zapisany stan wskazuje trwającą aktualizację, ale devbox-update.service nie jest aktywny. Sprawdź /var/log/devbox-update.log."
+		}
 		return progress
 	}
 	if errors.Is(err, os.ErrNotExist) {
