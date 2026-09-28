@@ -3,6 +3,7 @@ package databases
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -56,7 +57,16 @@ func (m *PHPMyAdminManager) Install(ctx context.Context) (PHPMyAdminStatus, erro
 		return PHPMyAdminStatus{}, err
 	}
 	if status.Installed {
-		return status, nil
+		matches, matchErr := m.matchesConfiguration(ctx)
+		if matchErr != nil {
+			return PHPMyAdminStatus{}, matchErr
+		}
+		if matches {
+			return status, nil
+		}
+		if err := m.run(ctx, "rm", "-f", m.cfg.Container); err != nil {
+			return PHPMyAdminStatus{}, fmt.Errorf("replace outdated phpMyAdmin container: %w", err)
+		}
 	}
 	if err := m.run(ctx, "pull", m.cfg.Image); err != nil {
 		return PHPMyAdminStatus{}, fmt.Errorf("pull phpMyAdmin image: %w", err)
@@ -82,6 +92,52 @@ func (m *PHPMyAdminManager) Install(ctx context.Context) (PHPMyAdminStatus, erro
 		return PHPMyAdminStatus{}, fmt.Errorf("create phpMyAdmin container: %w", err)
 	}
 	return m.Status(ctx)
+}
+
+func (m *PHPMyAdminManager) matchesConfiguration(ctx context.Context) (bool, error) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, m.cfg.DockerBinary, "inspect", m.cfg.Container)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return false, fmt.Errorf("inspect phpMyAdmin configuration: %w", err)
+	}
+	var raw []struct {
+		Config struct {
+			Env []string `json:"Env"`
+		} `json:"Config"`
+		NetworkSettings struct {
+			Networks map[string]json.RawMessage `json:"Networks"`
+		} `json:"NetworkSettings"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil || len(raw) != 1 {
+		if err == nil {
+			err = errors.New("expected one phpMyAdmin container")
+		}
+		return false, fmt.Errorf("decode phpMyAdmin configuration: %w", err)
+	}
+	mysqlHost, _ := dockerMySQLTarget(m.cfg.MySQLHost)
+	expectedHost := "PMA_HOST=" + mysqlHost
+	expectedPort := "PMA_PORT=" + strconv.Itoa(m.cfg.MySQLPort)
+	hasHost, hasPort := false, false
+	for _, entry := range raw[0].Config.Env {
+		switch entry {
+		case expectedHost:
+			hasHost = true
+		case expectedPort:
+			hasPort = true
+		}
+	}
+	if !hasHost || !hasPort {
+		return false, nil
+	}
+	if m.cfg.Network != "" {
+		if _, ok := raw[0].NetworkSettings.Networks[m.cfg.Network]; !ok {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (m *PHPMyAdminManager) Start(ctx context.Context) (PHPMyAdminStatus, error) {
