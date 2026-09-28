@@ -33,7 +33,7 @@ func (s *SQLiteStore) Get(ctx context.Context, scope, name string) ([]byte, erro
 	var nonce, ciphertext []byte
 	err := s.db.QueryRowContext(ctx, `SELECT nonce,ciphertext FROM secrets WHERE scope=? AND name=?`, scope, name).Scan(&nonce, &ciphertext)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errors.New("secret not found")
+		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load secret: %w", err)
