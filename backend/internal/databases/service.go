@@ -177,7 +177,7 @@ func (s *Service) DeleteDatabase(ctx context.Context, id string, actor *string, 
 	return nil
 }
 
-func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, charset string, actor *string, remote *string) (ProvisionResult, error) {
+func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, charset string, actor *string, remote *string, applicationService ...string) (ProvisionResult, error) {
 	if s.secrets == nil {
 		return ProvisionResult{}, ErrSecretsUnavailable
 	}
@@ -285,7 +285,11 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	if err := s.repo.UpdateDatabaseStatus(ctx, database.ID, "ready"); err != nil {
 		return ProvisionResult{}, err
 	}
-	if _, err := s.UpdateDatabaseBinding(ctx, projectID, DatabaseBindingInput{Mode: DatabaseModeManaged, Engine: engine, Port: 3306}, actor, remote); err != nil {
+	bindingInput := DatabaseBindingInput{Mode: DatabaseModeManaged, Engine: engine, Port: 3306}
+	if len(applicationService) > 0 {
+		bindingInput.ApplicationService = strings.TrimSpace(applicationService[0])
+	}
+	if _, err := s.UpdateDatabaseBinding(ctx, projectID, bindingInput, actor, remote); err != nil {
 		return ProvisionResult{}, err
 	}
 	rollbackDatabase = false
