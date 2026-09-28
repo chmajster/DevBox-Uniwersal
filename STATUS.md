@@ -30,6 +30,7 @@ DevBox Universal is an integrated local development control plane.
 - Project CRUD/archive, Git fetch/pull/checkout/history and credential masking.
 - Operator-only local-directory browser constrained to configured roots, with canonical symlink handling, traversal limits and audit events.
 - Deployment state machine uses Docker as the mandatory application execution boundary; project Compose/Dockerfile definitions take precedence, otherwise DevBox builds a managed runtime image.
+- Application details show the live deployment stage immediately after Deploy, refresh it every second through completion and keep the last success/failure visible; concurrent Deploy clicks are blocked while one is active.
 - Project-level application health configuration.
 
 ## Runtimes
