@@ -149,6 +149,27 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 	return s.decorateBinding(ctx, item)
 }
 
+func (s *Service) RotateProjectDatabasePassword(ctx context.Context, projectID string, actor, remote *string) error {
+	binding, err := s.repo.DatabaseBindingByProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if binding.Mode != DatabaseModeManaged || binding.DatabaseID == nil {
+		return errors.New("password rotation is only supported for managed project databases")
+	}
+	users, err := s.repo.UsersByDatabase(ctx, *binding.DatabaseID)
+	if err != nil {
+		return err
+	}
+	if len(users) == 0 {
+		return errors.New("database credentials are unavailable")
+	}
+	if _, err := s.ChangeUserPassword(ctx, users[0].ID, "", actor, remote); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Service) DeleteDatabaseBinding(ctx context.Context, projectID string, actor, remote *string) error {
 	item, err := s.repo.DatabaseBindingByProject(ctx, projectID)
 	if errors.Is(err, ErrBindingNotFound) {
