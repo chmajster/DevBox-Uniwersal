@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -263,6 +264,140 @@ func (p *CLIProvider) ComposePS(ctx context.Context, directory, projectName stri
 		items = append(items, ComposeProcess{Name: item.Name, Service: item.Service, State: item.State, Health: item.Health, Image: item.Image})
 	}
 	return items, nil
+}
+
+type composePortCandidate struct {
+	service       string
+	containerPort int
+	hostPort      int
+	score         int
+}
+
+func (p *CLIProvider) ComposeTargetPort(ctx context.Context, directory, projectName string) (int, error) {
+	args, err := composeArgs(directory, projectName)
+	if err != nil {
+		return 0, err
+	}
+	args = append(args, "ps", "-q")
+	out, _, err := p.runCompose(ctx, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	ids := strings.Fields(string(out))
+	if len(ids) == 0 {
+		return 0, fmt.Errorf("docker compose has no containers to inspect for published ports")
+	}
+
+	byHostPort := map[int]composePortCandidate{}
+	for _, id := range ids {
+		if err := validateContainerRef(id); err != nil {
+			return 0, err
+		}
+		inspect, _, err := p.runner.Run(ctx, "container", "inspect", id)
+		if err != nil {
+			return 0, err
+		}
+		var raw []struct {
+			Config struct {
+				Labels map[string]string `json:"Labels"`
+			} `json:"Config"`
+			NetworkSettings struct {
+				Ports map[string][]struct {
+					HostIP   string `json:"HostIp"`
+					HostPort string `json:"HostPort"`
+				} `json:"Ports"`
+			} `json:"NetworkSettings"`
+		}
+		if err := json.Unmarshal(inspect, &raw); err != nil || len(raw) != 1 {
+			if err == nil {
+				err = fmt.Errorf("expected one container")
+			}
+			return 0, fmt.Errorf("decode docker compose port inspect: %w", err)
+		}
+
+		service := raw[0].Config.Labels["com.docker.compose.service"]
+		for containerKey, bindings := range raw[0].NetworkSettings.Ports {
+			containerPortText := strings.SplitN(containerKey, "/", 2)[0]
+			containerPort, convErr := strconv.Atoi(containerPortText)
+			if convErr != nil || containerPort < 1 || containerPort > 65535 {
+				continue
+			}
+			for _, binding := range bindings {
+				hostPort, convErr := strconv.Atoi(strings.TrimSpace(binding.HostPort))
+				if convErr != nil || hostPort < 1 || hostPort > 65535 {
+					continue
+				}
+				candidate := composePortCandidate{
+					service:       service,
+					containerPort: containerPort,
+					hostPort:      hostPort,
+					score:         composePortScore(service, containerPort),
+				}
+				if current, exists := byHostPort[hostPort]; !exists || candidate.score > current.score {
+					byHostPort[hostPort] = candidate
+				}
+			}
+		}
+	}
+
+	if len(byHostPort) == 0 {
+		return 0, fmt.Errorf("no published host port found in running Compose containers; publish the HTTP service port in compose.yaml")
+	}
+	candidates := make([]composePortCandidate, 0, len(byHostPort))
+	for _, candidate := range byHostPort {
+		candidates = append(candidates, candidate)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].score == candidates[j].score {
+			return candidates[i].hostPort < candidates[j].hostPort
+		}
+		return candidates[i].score > candidates[j].score
+	})
+	if len(candidates) == 1 || candidates[0].score > candidates[1].score {
+		return candidates[0].hostPort, nil
+	}
+
+	ports := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		ports = append(ports, strconv.Itoa(candidate.hostPort))
+	}
+	return 0, fmt.Errorf("multiple published host ports are equally likely for reverse proxy: %s; configure a project port or healthcheck URL", strings.Join(ports, ", "))
+}
+
+func composePortScore(service string, containerPort int) int {
+	score := 0
+	switch strings.ToLower(strings.TrimSpace(service)) {
+	case "web":
+		score += 100
+	case "app":
+		score += 90
+	case "api":
+		score += 80
+	case "frontend":
+		score += 70
+	case "www":
+		score += 60
+	case "server":
+		score += 50
+	}
+	switch containerPort {
+	case 80:
+		score += 50
+	case 8080:
+		score += 45
+	case 8000:
+		score += 40
+	case 3000:
+		score += 35
+	case 5000:
+		score += 30
+	case 443:
+		score += 20
+	case 8443:
+		score += 15
+	}
+	return score
 }
 
 func composeInvocationUnsupported(err error) bool {

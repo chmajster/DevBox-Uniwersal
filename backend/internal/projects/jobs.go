@@ -118,6 +118,7 @@ type ComposeDeployer interface {
 	ComposeUp(ctx context.Context, directory, projectName, service string) error
 	ComposeDown(ctx context.Context, directory, projectName string) error
 	ComposeHealthy(ctx context.Context, directory, projectName string) error
+	ComposeTargetPort(ctx context.Context, directory, projectName string) (int, error)
 }
 
 type ManagedContainerDeployer interface {
@@ -301,14 +302,22 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 
 		targetPort := 0
-		if p.Port != nil {
+		if p.Port != nil && *p.Port > 0 {
 			targetPort = *p.Port
 		} else if parsed, ok := healthcheckPort(p.Healthcheck); ok {
 			targetPort = parsed
 		}
 		if h.integrations.Routes != nil {
 			if targetPort == 0 {
-				return nil, errors.New("compose deployment is healthy but no host target port is configured for reverse proxy")
+				detectedPort, detectErr := h.integrations.Compose.ComposeTargetPort(ctx, composeDir, composeName)
+				if detectErr != nil {
+					return nil, fmt.Errorf("detect compose reverse proxy target port: %w", detectErr)
+				}
+				targetPort = detectedPort
+				_ = h.logger.Log(ctx, job.ID, "info", "deployment.compose.target_port.detected", map[string]any{
+					"project_id": p.ID,
+					"port":       targetPort,
+				})
 			}
 			if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), targetPort); err != nil {
 				return nil, fmt.Errorf("reverse proxy: %w", err)

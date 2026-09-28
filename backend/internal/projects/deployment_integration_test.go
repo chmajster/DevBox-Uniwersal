@@ -149,6 +149,38 @@ func TestDeploymentIntegrationDockerComposeHealthThenRoute(t *testing.T) {
 	}
 }
 
+func TestDeploymentIntegrationDockerComposeDetectsPublishedPortForRoute(t *testing.T) {
+	repo, project, deploymentID := integrationProject(t, Project{
+		ContainerPolicy: ContainerPolicyAuto,
+	})
+	if err := os.WriteFile(filepath.Join(project.LocalPath, "compose.yaml"), []byte("services:\n  web:\n    image: nginx:alpine\n    ports:\n      - \"8080:80\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	compose := &integrationCompose{targetPort: 8080}
+	routes := &integrationRoutes{}
+	handler := NewDeploymentHandler(repo, NewGitClient(nil), runtimes.NewRegistry(), &testJobLogger{}, DeploymentIntegrations{
+		Routes:  routes,
+		Compose: compose,
+	})
+
+	_, err := handler.Run(context.Background(), domain.Job{
+		ID: "integration-compose-detected-port",
+		Payload: map[string]any{
+			"project_id":    project.ID,
+			"deployment_id": deploymentID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !compose.targetPortChecked {
+		t.Fatal("expected Compose target port detection")
+	}
+	if routes.calls != 1 || routes.port != 8080 {
+		t.Fatalf("proxy did not receive detected Compose target port: %+v", routes)
+	}
+}
+
 func integrationProject(t *testing.T, overrides Project) (*Repository, Project, string) {
 	t.Helper()
 	db, err := database.Open(filepath.Join(t.TempDir(), "devbox.db"))
@@ -325,12 +357,15 @@ func (m *integrationManaged) ReplaceManaged(_ context.Context, spec containerspe
 }
 
 type integrationCompose struct {
-	validated      bool
-	pulled         bool
-	built          bool
-	started        bool
-	stopped        bool
-	healthyChecked bool
+	validated         bool
+	pulled            bool
+	built             bool
+	started           bool
+	stopped           bool
+	healthyChecked    bool
+	targetPortChecked bool
+	targetPort        int
+	targetPortErr     error
 }
 
 func (c *integrationCompose) Available(context.Context) error { return nil }
@@ -363,4 +398,9 @@ func (c *integrationCompose) ComposeDown(context.Context, string, string) error 
 func (c *integrationCompose) ComposeHealthy(context.Context, string, string) error {
 	c.healthyChecked = true
 	return nil
+}
+
+func (c *integrationCompose) ComposeTargetPort(context.Context, string, string) (int, error) {
+	c.targetPortChecked = true
+	return c.targetPort, c.targetPortErr
 }
