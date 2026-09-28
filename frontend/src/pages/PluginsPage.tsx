@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { request } from '../api/client'
-import type { PHPFPMStatus, PHPMyAdminStatus } from '../api/types'
+import type { PHPExtension, PHPFPMStatus, PHPMyAdminStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 
@@ -11,19 +11,24 @@ export function PluginsPage() {
   const canMutate = user?.role !== 'viewer'
   const canInstallSystemPackages = user?.role === 'admin'
   const [phpFPM, setPHPFPM] = useState<PHPFPMStatus | null>(null)
+  const [phpExtensions, setPHPExtensions] = useState<PHPExtension[]>([])
+  const [selectedExtensions, setSelectedExtensions] = useState<string[]>([])
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'php-fpm-install' | null>(null)
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'php-fpm-install' | 'php-extensions-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
-    const [phpFPMStatus, phpMyAdminStatus] = await Promise.all([
+    const [phpFPMStatus, extensionStatus, phpMyAdminStatus] = await Promise.all([
       request<PHPFPMStatus>('/plugins/php-fpm/status'),
+      request<PHPExtension[]>('/plugins/php/extensions'),
       request<PHPMyAdminStatus>('/phpmyadmin/status'),
     ])
     setPHPFPM(phpFPMStatus)
+    setPHPExtensions(extensionStatus)
+    setSelectedExtensions((current) => current.filter((id) => extensionStatus.some((extension) => extension.id === id && !extension.installed)))
     setPHPMyAdmin(phpMyAdminStatus)
   }, [])
 
@@ -41,6 +46,32 @@ export function PluginsPage() {
       setMessage('PHP-FPM został zainstalowany i jest gotowy do użycia.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Instalacja PHP-FPM nie powiodła się')
+      await load().catch(() => undefined)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  function toggleExtension(id: string) {
+    setSelectedExtensions((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
+  }
+
+  async function installPHPExtensions(ids = selectedExtensions) {
+    const pending = ids.filter((id) => phpExtensions.some((extension) => extension.id === id && !extension.installed))
+    if (pending.length === 0) return
+    setBusyAction('php-extensions-install')
+    setError('')
+    setMessage('')
+    try {
+      const status = await request<PHPExtension[]>('/plugins/php/extensions/install', {
+        method: 'POST',
+        body: JSON.stringify({ extensions: pending }),
+      })
+      setPHPExtensions(status)
+      setSelectedExtensions([])
+      setMessage(`Zainstalowano rozszerzenia PHP: ${pending.join(', ')}. Uruchom ponownie działające aplikacje PHP-FPM, aby załadowały nowe moduły.`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Instalacja rozszerzeń PHP nie powiodła się')
       await load().catch(() => undefined)
     } finally {
       setBusyAction(null)
@@ -160,6 +191,81 @@ export function PluginsPage() {
           )}
         </div>
       </div>
+    </section>
+
+    <section className="panel">
+      <div className="page-heading">
+        <div>
+          <div className="actions">
+            <Icon name="puzzle" size={24} />
+            <div>
+              <h2>Moduły PHP</h2>
+              <p className="muted">Instaluj rozszerzenia PHP wymagane przez frameworki, CMS-y, bazy danych i integracje.</p>
+            </div>
+          </div>
+          <p className="muted small">Status jest odczytywany z <code>php -m</code>. Instalacja korzysta wyłącznie z kontrolowanej listy pakietów systemowych.</p>
+        </div>
+        {canInstallSystemPackages && (
+          <div className="actions">
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || phpExtensions.every((extension) => extension.installed)}
+              onClick={() => setSelectedExtensions(phpExtensions.filter((extension) => !extension.installed).map((extension) => extension.id))}
+            >
+              Zaznacz brakujące
+            </button>
+            <button
+              type="button"
+              disabled={busy || selectedExtensions.length === 0}
+              onClick={() => installPHPExtensions()}
+            >
+              {busyAction === 'php-extensions-install' ? 'Instalowanie…' : `Zainstaluj wybrane (${selectedExtensions.length})`}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gap: '12px' }}>
+        {Array.from(new Set(phpExtensions.map((extension) => extension.category))).map((category) => (
+          <div key={category}>
+            <h3>{category}</h3>
+            <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+              {phpExtensions.filter((extension) => extension.category === category).map((extension) => (
+                <div className="panel" key={extension.id}>
+                  <div className="actions" style={{ justifyContent: 'space-between' }}>
+                    <label className="actions" style={{ cursor: extension.installed || !canInstallSystemPackages ? 'default' : 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={extension.installed || selectedExtensions.includes(extension.id)}
+                        disabled={extension.installed || !canInstallSystemPackages || busy}
+                        onChange={() => toggleExtension(extension.id)}
+                      />
+                      <strong>{extension.name}</strong>
+                    </label>
+                    <span className="status-chip" data-ok={extension.installed ? 'true' : 'false'}>
+                      {extension.installed ? 'Zainstalowany' : 'Dostępny'}
+                    </span>
+                  </div>
+                  <p className="muted small">{extension.description}</p>
+                  <p className="muted small">Pakiet: <code>{extension.package}</code></p>
+                  {canInstallSystemPackages && !extension.installed && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() => installPHPExtensions([extension.id])}
+                    >
+                      Zainstaluj
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      {!canInstallSystemPackages && <p className="muted small">Instalowanie modułów PHP wymaga roli administratora.</p>}
     </section>
 
     <section className="panel phpmyadmin-panel">

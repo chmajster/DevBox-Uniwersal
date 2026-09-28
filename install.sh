@@ -445,6 +445,24 @@ devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper validate-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper reload-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper start-update
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-fpm
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-curl
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-mbstring
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-xml
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-zip
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-gd
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-intl
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-mysql
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-pgsql
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-sqlite3
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-bcmath
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-soap
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-ldap
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-gmp
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-imagick
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-redis
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-memcached
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-opcache
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-xdebug
 EOF_SUDOERS
   chmod 0440 "$sudoers_tmp"
   if ! visudo -cf "$sudoers_tmp" >>"$LOG_FILE" 2>&1; then
