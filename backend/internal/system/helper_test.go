@@ -27,6 +27,50 @@ func TestValidateNginx(t *testing.T) {
 	}
 }
 
+type helperRecordingRunner struct {
+	paths map[string]string
+	calls [][]string
+}
+
+func (r *helperRecordingRunner) LookPath(file string) (string, error) {
+	if path, ok := r.paths[file]; ok {
+		return path, nil
+	}
+	return "", errors.New("not found")
+}
+
+func (r *helperRecordingRunner) CombinedOutput(_ context.Context, name string, args ...string) ([]byte, error) {
+	call := append([]string{name}, args...)
+	r.calls = append(r.calls, call)
+	return nil, nil
+}
+
+func TestValidateNginxEscapesDevBoxSystemdSandbox(t *testing.T) {
+	runner := &helperRecordingRunner{paths: map[string]string{
+		"nginx":       "/usr/sbin/nginx",
+		"systemd-run": "/usr/bin/systemd-run",
+	}}
+	h := NewPrivilegedHelperWithRunner(runner)
+	if err := h.ValidateNginx(context.Background()); err != nil {
+		t.Fatalf("ValidateNginx() error = %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("calls = %#v, want one systemd-run invocation", runner.calls)
+	}
+	got := runner.calls[0]
+	want := []string{
+		"/usr/bin/systemd-run", "--quiet", "--wait", "--pipe", "--collect", "/usr/sbin/nginx", "-t",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("systemd-run args = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("systemd-run args = %#v, want %#v", got, want)
+		}
+	}
+}
+
 func TestValidateDevBoxEnv(t *testing.T) {
 	good := "DEVBOX_HTTP_ADDR=127.0.0.1:8787\nDEVBOX_DATABASE_PATH=/var/lib/devbox/devbox.db\n"
 	if err := ValidateDevBoxEnv(good); err != nil {
