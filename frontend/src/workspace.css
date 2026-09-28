@@ -244,7 +244,8 @@ tbody tr:hover { background: var(--panel-alt); }
 .workspace-login { display: grid; grid-template-columns: minmax(340px, 44%) minmax(0, 1fr); padding: 0; place-items: stretch; background: var(--panel); }
 .login-story { background: #132c2c; color: #f4fbf9; padding: 46px 52px 35px; display: flex; flex-direction: column; min-height: 100dvh; }
 .login-story .workspace-brand { color: #f4fbf9; padding: 0; }
-.login-story .brand-mark { background: #63d7b6; color: #122d26; }
+.login-story .brand-mark { background: transparent; color: #122d26; overflow: hidden; }
+.login-story .brand-logo { width: 100%; height: 100%; object-fit: contain; display: block; }
 .login-story .brand-copy > span { color: #abc6bf; }
 .login-story-body { max-width: 420px; margin: auto 0; padding: 65px 0; }
 .login-kicker { font-size: 9px; letter-spacing: 1.8px; font-weight: 600; color: #9cc7b8; }

@@ -15,7 +15,8 @@ body { font-size: 13px; }
 .control-shell { grid-template-columns: 232px minmax(0, 1fr); background: var(--bg); }
 .control-shell .workspace-sidebar { background: var(--panel); padding: 22px 12px 15px; border-color: var(--border); }
 .control-shell .workspace-brand { padding: 0 10px; gap: 10px; }
-.control-shell .brand-mark { width: 34px; height: 34px; border-radius: 9px; background: #087c66; color: #e7fff6; }
+.control-shell .brand-mark { width: 38px; height: 38px; border-radius: 10px; background: transparent; color: #e7fff6; overflow: hidden; }
+.control-shell .brand-logo { width: 100%; height: 100%; object-fit: contain; display: block; }
 .control-shell .brand-copy { font-size: 21px; letter-spacing: -.5px; }
 .control-shell .brand-copy > span { font-size: 8px; margin-top: 5px; letter-spacing: 3px; }
 .control-shell .workspace-sidebar .workspace-nav { margin-top: 34px; gap: 25px; }
