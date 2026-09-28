@@ -5,6 +5,7 @@ import { AuditPage } from './pages/AuditPage'
 import { BackupsPage } from './pages/BackupsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DatabasesPage } from './pages/DatabasesPage'
+import { CredentialsPage } from './pages/CredentialsPage'
 import { DockerPage } from './pages/DockerPage'
 import { DomainsPage } from './pages/DomainsPage'
 import { JobsPage } from './pages/JobsPage'
@@ -27,6 +28,7 @@ export function App() {
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path={ROUTES.applications} element={<ProjectsPage />} />
+        <Route path={ROUTES.credentials} element={<CredentialsPage />} />
         <Route path="/applications" element={<Navigate to={ROUTES.applications} replace />} />
         <Route path="apps/new" element={<ProjectWizardPage />} />
         <Route path="apps/:id" element={<ProjectDetailPage />} />
