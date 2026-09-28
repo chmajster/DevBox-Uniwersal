@@ -133,3 +133,47 @@ func TestRenderManagedComposeOverrideDeclaresExternalDevBoxNetwork(t *testing.T)
 		t.Fatalf("unexpected managed database Compose override:\n%s", text)
 	}
 }
+
+type envAwareStubRunner struct {
+	stubRunner
+	environment map[string]string
+}
+
+func (r *envAwareStubRunner) RunEnv(ctx context.Context, environment map[string]string, args ...string) ([]byte, []byte, error) {
+	r.environment = make(map[string]string, len(environment))
+	for key, value := range environment {
+		r.environment[key] = value
+	}
+	return r.Run(ctx, args...)
+}
+
+func TestDatabaseConnectionFromDockerNetworkKeepsPasswordOutOfArguments(t *testing.T) {
+	secret := "container-network-secret"
+	runner := &envAwareStubRunner{stubRunner: stubRunner{responses: []runnerResponse{
+		{stdout: `[{"Name":"devbox-apps"}]`},
+		{stdout: `[{"Id":"mysql-image"}]`},
+		{stdout: "1\n"},
+	}}}
+	provider := newCLIProviderWithRunner(runner)
+	err := provider.TestDatabaseConnection(context.Background(), "devbox-apps", providers.DatabaseConnection{
+		Mode: providers.DatabaseModeManaged, Host: "devbox-mysql", Port: 3306,
+		Database: "plan", Username: "plan_user",
+	}, []byte(secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.environment["MYSQL_PWD"] != secret {
+		t.Fatal("database password was not passed through the Docker client process environment")
+	}
+	for _, call := range runner.calls {
+		if strings.Contains(strings.Join(call, " "), secret) {
+			t.Fatalf("database password leaked into Docker arguments: %#v", call)
+		}
+	}
+	last := strings.Join(runner.calls[len(runner.calls)-1], " ")
+	if !strings.Contains(last, "--network devbox-apps") ||
+		!strings.Contains(last, "--host devbox-mysql") ||
+		!strings.Contains(last, "--execute SELECT 1") {
+		t.Fatalf("unexpected application-network connectivity command: %s", last)
+	}
+}
