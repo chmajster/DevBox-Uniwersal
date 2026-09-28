@@ -13,6 +13,7 @@ const (
 	DeploymentQueued         = "QUEUED"
 	DeploymentPreparing      = "PREPARING"
 	DeploymentUpdatingSource = "UPDATING_SOURCE"
+	DeploymentDatabase       = "DATABASE"
 	DeploymentDependencies   = "DEPENDENCIES"
 	DeploymentBuilding       = "BUILDING"
 	DeploymentStarting       = "STARTING"
