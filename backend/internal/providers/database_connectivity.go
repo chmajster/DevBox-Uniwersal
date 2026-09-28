@@ -44,6 +44,7 @@ type DockerInfrastructureProvider interface {
 	DockerProvider
 	EnsureNetwork(ctx context.Context, name string) error
 	EnsureVolume(ctx context.Context, name string) error
+	EnsureImage(ctx context.Context, image string) error
 	EnsureContainer(ctx context.Context, spec ContainerSpec) (ContainerInfo, error)
 }
 
