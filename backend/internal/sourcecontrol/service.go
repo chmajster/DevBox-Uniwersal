@@ -510,10 +510,35 @@ func (s *Service) ResolveProjectSource(ctx context.Context, integrationID, repos
 	if branch == "" {
 		branch = "main"
 	}
+	if err := validateProviderBranch(ctx, provider, repository.Path, branch); err != nil {
+		return providers.ProjectSourceResolution{}, err
+	}
 	return providers.ProjectSourceResolution{
 		IntegrationID: integrationID, Provider: item.Provider, CredentialID: item.CredentialID,
 		Repository: repository, Branch: branch,
 	}, nil
+}
+
+func validateProviderBranch(ctx context.Context, provider providers.SourceControlIntegrationProvider, repository, branch string) error {
+	page := 1
+	for {
+		items, pagination, err := provider.ListBranches(ctx, repository, branch, page, 100)
+		if err != nil {
+			return err
+		}
+		for _, item := range items {
+			if item.Name == branch {
+				return nil
+			}
+		}
+		if pagination.NextPage == 0 {
+			return fmt.Errorf("%w: branch %q does not exist in %s", ErrInvalidIntegration, branch, repository)
+		}
+		page = pagination.NextPage
+		if page > 10000 {
+			return errors.New("branch pagination exceeded safety limit")
+		}
+	}
 }
 
 func (s *Service) LinkProjectSource(ctx context.Context, projectID string, resolution providers.ProjectSourceResolution) error {
