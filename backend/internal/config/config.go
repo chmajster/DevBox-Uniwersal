@@ -21,6 +21,8 @@ type Config struct {
 	BootstrapAdminPassword string
 	MasterKeyBase64        string
 	AppVersion             string
+	RuntimeRoot            string
+	SourceControlCAFile    string
 
 	MySQLHost             string
 	MySQLPort             int
@@ -119,6 +121,8 @@ func Load() (Config, error) {
 		BootstrapAdminPassword:     os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_PASSWORD"),
 		MasterKeyBase64:            strings.TrimSpace(os.Getenv("DEVBOX_MASTER_KEY")),
 		AppVersion:                 getEnv("DEVBOX_VERSION", "dev"),
+		RuntimeRoot:                getEnv("DEVBOX_RUNTIME_ROOT", "./data/runtimes"),
+		SourceControlCAFile:        strings.TrimSpace(os.Getenv("DEVBOX_SOURCE_CONTROL_CA_FILE")),
 		MySQLHost:                  getEnv("DEVBOX_MYSQL_HOST", "127.0.0.1"),
 		MySQLPort:                  mysqlPort,
 		MySQLAdminUser:             getEnv("DEVBOX_MYSQL_ADMIN_USER", "devbox_admin"),
@@ -147,8 +151,8 @@ func Load() (Config, error) {
 		MySQLLogPath:               strings.TrimSpace(os.Getenv("DEVBOX_MYSQL_LOG_PATH")),
 	}
 
-	if cfg.HTTPAddr == "" || cfg.DatabasePath == "" || cfg.MigrationsDir == "" || cfg.ProjectsRoot == "" {
-		return Config{}, fmt.Errorf("HTTP address, database path, migrations directory and projects root are required")
+	if cfg.HTTPAddr == "" || cfg.DatabasePath == "" || cfg.MigrationsDir == "" || cfg.ProjectsRoot == "" || cfg.RuntimeRoot == "" {
+		return Config{}, fmt.Errorf("HTTP address, database path, migrations directory, projects root and runtime root are required")
 	}
 	if (cfg.BootstrapAdminUsername == "") != (cfg.BootstrapAdminPassword == "") {
 		return Config{}, fmt.Errorf("bootstrap admin username and password must be configured together")
