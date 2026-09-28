@@ -409,8 +409,9 @@ install_service() {
     return 0
   fi
   systemctl daemon-reload
-  systemctl enable --now devbox.service >>"$LOG_FILE" 2>&1
-  emit " OK " "Usługa devbox.service jest aktywna."
+  systemctl enable devbox.service >>"$LOG_FILE" 2>&1
+  systemctl restart devbox.service >>"$LOG_FILE" 2>&1
+  emit " OK " "Usługa devbox.service została uruchomiona ponownie z aktualnym backendem."
 }
 
 wait_for_health() {
