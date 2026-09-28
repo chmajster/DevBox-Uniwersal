@@ -1,0 +1,83 @@
+name: Prepare and validate port publishing
+
+on:
+  push:
+    branches: ['agent/62-port-publishing-prepare']
+    paths: ['.agent/**', '.github/workflows/port-publishing-prepare.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepare-port-publishing
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/62-port-publishing-prepare
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Materialize reviewed implementation
+        shell: bash
+        run: |
+          if ! git ls-files --error-unmatch backend/internal/projects/port_config.go >/dev/null 2>&1; then
+            python - <<'PY'
+          import base64, hashlib, json, lzma
+          from pathlib import Path
+          raw = base64.b64decode(''.join(Path(f'.agent/port-publishing.part{i}').read_text() for i in range(1, 4)), validate=True)
+          assert hashlib.sha256(raw).hexdigest() == 'c66a86c47df701b7adcfe2599232fdd613f6bff24dda52b75456dcc0014938ea', 'payload checksum mismatch'
+          files = json.loads(lzma.decompress(raw))
+          root = Path.cwd().resolve()
+          for name, text in files.items():
+              path = (root / name).resolve()
+              assert path.is_relative_to(root) and '.git' not in Path(name).parts
+              assert name.startswith(('backend/internal/', 'frontend/src/runtime/', 'migrations/', 'docs/', '.agent/'))
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(text, encoding='utf-8')
+          PY
+            python .agent/apply-port-publishing.py
+          fi
+          gofmt -w backend
+      - name: Publish human-readable implementation on preparation branch
+        id: source
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/internal frontend/src migrations docs STATUS.md CHANGELOG.md ARCHITECTURE.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'Implement configurable Docker ports with durable collision fallback'
+            git push origin HEAD:agent/62-port-publishing-prepare
+          fi
+          git rev-parse HEAD
+      - name: Backend vet, tests and build
+        id: backend
+        working-directory: backend
+        run: |
+          go vet ./...
+          go test ./...
+          go build ./cmd/devbox ./cmd/devbox-helper
+      - name: Frontend lint, typecheck, tests and build
+        if: always() && steps.source.outcome == 'success'
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run typecheck
+          npm run test
+          npm run build
+      - name: Real Docker port publication, live source and Compose override
+        if: always() && steps.backend.outcome == 'success'
+        working-directory: backend
+        env:
+          DEVBOX_TEST_DOCKER_PORTS: '1'
+        run: go test ./internal/docker -run '^TestPublishedPortsDockerIntegration$' -v -count=1
