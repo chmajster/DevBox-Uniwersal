@@ -261,6 +261,14 @@ export interface PHPMyAdminStatus {
   url: string
 }
 
+export interface PHPFPMStatus {
+  installed: boolean
+  path?: string
+  version?: string
+  installable: boolean
+  message?: string
+}
+
 export interface ProvisionResult {
   database: DatabaseRecord
   credential: {

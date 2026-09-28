@@ -28,6 +28,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/monitoring"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/operations"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/plugins"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/projects"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/proxy"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
@@ -238,6 +239,7 @@ func serve() error {
 	}
 	projectModule := projects.NewModule(projectService, auditService)
 	updaterModule := updater.NewModule(updater.NewService(cfg.AppVersion, cfg.NginxHelperBinary, cfg.SudoBinary), auditService)
+	pluginModule := plugins.NewModule(plugins.NewService(cfg.NginxHelperBinary, cfg.SudoBinary), auditService)
 
 	scriptAppRepo := scriptapps.NewRepository(db)
 	scriptAppService := scriptapps.NewService(scriptAppRepo, jobRunner)
@@ -276,6 +278,7 @@ func serve() error {
 	modules := []api.Module{
 		credentialModule,
 		updaterModule,
+		pluginModule,
 		runtimeModule,
 		projectModule,
 		scriptAppModule,

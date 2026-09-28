@@ -18,6 +18,7 @@ var allowedPackages = map[string]string{
 	"nginx":    "nginx",
 	"mysql":    "default-mysql-server",
 	"php":      "php-cli",
+	"php-fpm":  "php-fpm",
 	"composer": "composer",
 	"python":   "python3",
 	"pip":      "python3-pip",

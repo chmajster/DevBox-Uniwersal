@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { request } from '../api/client'
-import type { PHPMyAdminStatus } from '../api/types'
+import type { PHPFPMStatus, PHPMyAdminStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 
@@ -9,21 +9,43 @@ type PHPMyAdminAction = 'install' | 'start' | 'stop' | 'restart'
 export function PluginsPage() {
   const { user } = useAuth()
   const canMutate = user?.role !== 'viewer'
+  const canInstallSystemPackages = user?.role === 'admin'
+  const [phpFPM, setPHPFPM] = useState<PHPFPMStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | null>(null)
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'php-fpm-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
-    const status = await request<PHPMyAdminStatus>('/phpmyadmin/status')
-    setPHPMyAdmin(status)
+    const [phpFPMStatus, phpMyAdminStatus] = await Promise.all([
+      request<PHPFPMStatus>('/plugins/php-fpm/status'),
+      request<PHPMyAdminStatus>('/phpmyadmin/status'),
+    ])
+    setPHPFPM(phpFPMStatus)
+    setPHPMyAdmin(phpMyAdminStatus)
   }, [])
 
   useEffect(() => {
     load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Nie udało się pobrać statusu pluginów'))
   }, [load])
+
+  async function installPHPFPM() {
+    setBusyAction('php-fpm-install')
+    setError('')
+    setMessage('')
+    try {
+      const status = await request<PHPFPMStatus>('/plugins/php-fpm/install', { method: 'POST' })
+      setPHPFPM(status)
+      setMessage('PHP-FPM został zainstalowany i jest gotowy do użycia.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Instalacja PHP-FPM nie powiodła się')
+      await load().catch(() => undefined)
+    } finally {
+      setBusyAction(null)
+    }
+  }
 
   async function phpAction(action: PHPMyAdminAction) {
     let installTimer: number | undefined
@@ -96,6 +118,49 @@ export function PluginsPage() {
 
     {error && <div className="error-banner">{error}</div>}
     {message && <div className="success-banner">{message}</div>}
+
+    <section className="panel phpmyadmin-panel">
+      <div>
+        <div className="actions">
+          <Icon name="cpu" size={24} />
+          <div>
+            <h2>PHP-FPM</h2>
+            <p className="muted">Runtime FastCGI wymagany do uruchamiania aplikacji PHP zarządzanych przez DevBox Universal.</p>
+          </div>
+        </div>
+        <p className="muted small">
+          {phpFPM?.installed
+            ? 'PHP-FPM został wykryty w systemie.'
+            : 'PHP-FPM nie jest zainstalowany. Aplikacje PHP wymagające PHP-FPM nie uruchomią się do czasu instalacji tego komponentu.'}
+        </p>
+      </div>
+
+      <div className="phpmyadmin-status">
+        <div className="actions">
+          <span className="status-chip" data-ok={phpFPM?.installed ? 'true' : 'false'}>
+            {phpFPM?.installed ? 'Zainstalowany' : 'Wymagana instalacja'}
+          </span>
+          {phpFPM?.version && <span className="status-chip" data-ok="true">{phpFPM.version}</span>}
+        </div>
+
+        {phpFPM?.path && <p className="muted small">Ścieżka: <code>{phpFPM.path}</code></p>}
+        {phpFPM?.message && <p className="muted small">{phpFPM.message}</p>}
+
+        <div className="actions">
+          {!phpFPM?.installed && canInstallSystemPackages && phpFPM?.installable && (
+            <button type="button" onClick={installPHPFPM} disabled={busy}>
+              {busyAction === 'php-fpm-install' ? 'Instalowanie…' : 'Zainstaluj PHP-FPM'}
+            </button>
+          )}
+          {!phpFPM?.installed && !canInstallSystemPackages && (
+            <span className="muted small">Instalacja pakietu systemowego wymaga roli administratora.</span>
+          )}
+          {!phpFPM?.installed && canInstallSystemPackages && phpFPM && !phpFPM.installable && (
+            <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
+          )}
+        </div>
+      </div>
+    </section>
 
     <section className="panel phpmyadmin-panel">
       <div>
