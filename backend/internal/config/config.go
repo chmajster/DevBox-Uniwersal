@@ -14,6 +14,7 @@ type Config struct {
 	MigrationsDir          string
 	FrontendDir            string
 	ProjectsRoot           string
+	DirectoryBrowseRoots   []string
 	SessionTTL             time.Duration
 	CookieSecure           bool
 	BootstrapAdminUsername string
@@ -110,6 +111,7 @@ func Load() (Config, error) {
 		MigrationsDir:          getEnv("DEVBOX_MIGRATIONS_DIR", "./migrations"),
 		FrontendDir:            strings.TrimSpace(os.Getenv("DEVBOX_FRONTEND_DIR")),
 		ProjectsRoot:           getEnv("DEVBOX_PROJECTS_ROOT", "./projects"),
+		DirectoryBrowseRoots:   parsePathList(os.Getenv("DEVBOX_DIRECTORY_BROWSE_ROOTS")),
 		SessionTTL:             ttl,
 		CookieSecure:           cookieSecure,
 		BootstrapAdminUsername: strings.TrimSpace(os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_USERNAME")),
@@ -172,4 +174,15 @@ func getEnvInt(key string, fallback int) (int, error) {
 		return 0, fmt.Errorf("parse %s: %w", key, err)
 	}
 	return parsed, nil
+}
+
+func parsePathList(value string) []string {
+	parts := strings.Split(value, string(os.PathListSeparator))
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
