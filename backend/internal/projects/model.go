@@ -63,6 +63,8 @@ type CreateInput struct {
 	CredentialKind   string `json:"credential_kind"`
 	CredentialValue  string `json:"credential_value"`
 	CredentialID     string `json:"credential_id"`
+	IntegrationID    string `json:"integration_id"`
+	RepositoryPath   string `json:"repository_path"`
 }
 
 type UpdateInput struct {
