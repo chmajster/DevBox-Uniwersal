@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -134,17 +135,17 @@ func serve() error {
 	}
 	backupModule := backups.NewModule(backupService, auditService)
 
-	var secretStore secrets.SecretStore
-	if cfg.MasterKeyBase64 != "" {
-		cipher, err := secrets.NewAESGCMFromBase64(cfg.MasterKeyBase64)
-		if err != nil {
-			logger.Error("secret store initialization failed", "error", err)
-			os.Exit(1)
-		}
-		secretStore = secrets.NewSQLiteStore(db, cipher)
-	} else {
-		logger.Warn("DEVBOX_MASTER_KEY is not configured; project database credentials cannot be provisioned")
+	masterKey, err := secrets.ResolveMasterKey(context.Background(), db, cfg.MasterKeyBase64, filepath.Join(filepath.Dir(cfg.DatabasePath), "master.key"))
+	if err != nil {
+		logger.Error("secret store initialization failed", "error", err)
+		os.Exit(1)
 	}
+	cipher, err := secrets.NewAESGCMFromBase64(masterKey)
+	if err != nil {
+		logger.Error("secret store initialization failed", "error", err)
+		os.Exit(1)
+	}
+	var secretStore secrets.SecretStore = secrets.NewSQLiteStore(db, cipher)
 	credentialRepo := credentials.NewRepository(db)
 	credentialService := credentials.NewService(credentialRepo, secretStore)
 	credentialModule := credentials.NewModule(credentialService, auditService)
