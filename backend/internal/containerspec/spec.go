@@ -37,12 +37,12 @@ type DeploymentSpec struct {
 	ContainerName  string
 	HostPort       int
 	ContainerPort  int
-	Environment      map[string]string
-	BindMounts       map[string]string
-	AnonymousVolumes []string
-	Labels           map[string]string
-	Fingerprint      string
-	ReadOnly         bool
+	Environment	map[string]string
+	BindMounts	map[string]string
+	AnonymousVolumes	[]string
+	Labels		map[string]string
+	Fingerprint	string
+	ReadOnly	bool
 }
 
 type moduleDef struct {
