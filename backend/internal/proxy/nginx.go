@@ -91,6 +91,10 @@ func (n *NginxProvider) ValidateConfig(ctx context.Context) error {
 }
 
 func (n *NginxProvider) Render(route providers.ProxyRoute) (string, error) {
+	return n.renderWithListen(route, "    listen 80;\n    listen [::]:80;")
+}
+
+func (n *NginxProvider) renderWithListen(route providers.ProxyRoute, listenDirectives string) (string, error) {
 	hostname, err := NormalizeHostname(route.Domain)
 	if err != nil {
 		return "", err
@@ -102,10 +106,12 @@ func (n *NginxProvider) Render(route providers.ProxyRoute) (string, error) {
 	if route.TLS {
 		return "", fmt.Errorf("%w: TLS proxy sites require certificate integration and are not enabled by this module", ErrInvalidInput)
 	}
+	if strings.TrimSpace(listenDirectives) == "" {
+		return "", fmt.Errorf("%w: nginx listen directive is required", ErrInvalidInput)
+	}
 	return fmt.Sprintf(`# Managed by DevBox Universal. Do not edit manually.
 server {
-    listen 80;
-    listen [::]:80;
+%s
     server_name %s;
 
     location / {
@@ -122,19 +128,26 @@ server {
         proxy_read_timeout 60s;
     }
 }
-`, hostname, upstream), nil
+`, listenDirectives, hostname, upstream), nil
 }
 
 func (n *NginxProvider) TestRoute(ctx context.Context, route providers.ProxyRoute) error {
-	rendered, err := n.Render(route)
-	if err != nil {
-		return err
-	}
 	tmp, err := os.MkdirTemp("", "devbox-nginx-candidate-*")
 	if err != nil {
 		return fmt.Errorf("create nginx candidate directory: %w", err)
 	}
 	defer os.RemoveAll(tmp)
+
+	// Candidate validation runs as the unprivileged DevBox service account.
+	// Binding the production listener on port 80 during nginx -t can fail with
+	// EACCES even though the installed configuration is later validated through
+	// the privileged helper. Use a private Unix socket for the isolated syntax
+	// test so validation never requires CAP_NET_BIND_SERVICE or a free TCP port.
+	socketPath := filepath.ToSlash(filepath.Join(tmp, "candidate.sock"))
+	rendered, err := n.renderWithListen(route, "    listen unix:"+socketPath+";")
+	if err != nil {
+		return err
+	}
 
 	pidPath := filepath.ToSlash(filepath.Join(tmp, "nginx.pid"))
 	config := "worker_processes 1;\n" +
