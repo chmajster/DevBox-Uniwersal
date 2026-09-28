@@ -11,6 +11,8 @@ import (
 	"io"
 )
 
+var ErrNotFound = errors.New("secret not found")
+
 type SecretStore interface {
 	Put(ctx context.Context, scope, name string, plaintext []byte) error
 	Get(ctx context.Context, scope, name string) ([]byte, error)
