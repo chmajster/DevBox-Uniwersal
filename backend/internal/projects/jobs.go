@@ -423,15 +423,21 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			h.logPortPlan(ctx, job.ID, "published", portPlan)
 		}
 		composeCommitted = true
+		var routeWarning string
 		if h.integrations.Routes != nil {
 			if targetPort == 0 {
-				return nil, errors.New("compose deployment is healthy but no host target port is configured for reverse proxy")
-			}
-			if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), targetPort); err != nil {
-				return nil, fmt.Errorf("reverse proxy: %w", err)
+				routeWarning = "reverse proxy not configured: healthy application has no host target port"
+			} else if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), targetPort); err != nil {
+				routeWarning = "reverse proxy: " + err.Error()
 			}
 		}
-		return h.finishSuccess(ctx, deploymentID, p.ID, commitBefore, commitAfter, started, setStage)
+		if routeWarning != "" {
+			_ = h.logger.Log(ctx, job.ID, "warn", "deployment.reverse_proxy.warning", map[string]any{
+				"project_id": p.ID,
+				"warning":    routeWarning,
+			})
+		}
+		return h.finishSuccess(ctx, deploymentID, p.ID, commitBefore, commitAfter, started, setStage, routeWarning)
 	}
 
 	if h.integrations.Managed == nil {
@@ -539,13 +545,18 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	}); err != nil {
 		return nil, err
 	}
+	var routeWarning string
 	if h.integrations.Routes != nil {
 		if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), port); err != nil {
-			return nil, fmt.Errorf("reverse proxy: %w", err)
+			routeWarning = "reverse proxy: " + err.Error()
+			_ = h.logger.Log(ctx, job.ID, "warn", "deployment.reverse_proxy.warning", map[string]any{
+				"project_id": p.ID,
+				"warning":    routeWarning,
+			})
 		}
 	}
 
-	return h.finishSuccess(ctx, deploymentID, p.ID, commitBefore, commitAfter, started, setStage)
+	return h.finishSuccess(ctx, deploymentID, p.ID, commitBefore, commitAfter, started, setStage, routeWarning)
 }
 
 func projectHasDockerfile(workDir string) bool {
@@ -563,7 +574,7 @@ func projectHasCompose(workDir string) bool {
 	return false
 }
 
-func (h *DeploymentHandler) finishSuccess(ctx context.Context, deploymentID, projectID, commitBefore, commitAfter string, started time.Time, setStage func(string) error) (map[string]any, error) {
+func (h *DeploymentHandler) finishSuccess(ctx context.Context, deploymentID, projectID, commitBefore, commitAfter string, started time.Time, setStage func(string) error, warnings ...string) (map[string]any, error) {
 	if err := setStage(DeploymentSuccess); err != nil {
 		return nil, err
 	}
@@ -572,12 +583,22 @@ func (h *DeploymentHandler) finishSuccess(ctx context.Context, deploymentID, pro
 		return nil, err
 	}
 	_ = h.repo.UpdateStatus(ctx, projectID, "running")
-	return map[string]any{
+	result := map[string]any{
 		"deployment_id": deploymentID,
 		"commit_before": commitBefore,
 		"commit_after":  commitAfter,
 		"duration_ms":   finished.Sub(started).Milliseconds(),
-	}, nil
+	}
+	nonEmptyWarnings := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		if strings.TrimSpace(warning) != "" {
+			nonEmptyWarnings = append(nonEmptyWarnings, warning)
+		}
+	}
+	if len(nonEmptyWarnings) > 0 {
+		result["warnings"] = nonEmptyWarnings
+	}
+	return result, nil
 }
 
 func (h *DeploymentHandler) detectRuntime(ctx context.Context, project Project, workDir string) (string, error) {
