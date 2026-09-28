@@ -569,6 +569,19 @@ a.secondary-button:hover { background: var(--panel-alt); text-decoration: none; 
 .runtime-module-row > span { display: grid; gap: 4px; min-width: 0; }
 .runtime-module-row code { width: fit-content; }
 .runtime-module-row small { color: var(--muted); line-height: 1.4; }
+.runtime-summary article {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.runtime-summary article span {
+  display: block;
+  margin-bottom: 2px;
+}
+.runtime-summary article strong {
+  display: block;
+  line-height: 1.45;
+}
 .runtime-summary article code { overflow-wrap: anywhere; }
 @media (max-width: 720px) {
   .runtime-modules .section-heading { align-items: stretch; }
