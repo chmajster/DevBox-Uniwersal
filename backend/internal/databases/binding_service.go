@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 )
 
@@ -329,21 +331,26 @@ func (s *Service) ComposeServices(ctx context.Context, projectID string) ([]stri
 	return s.compose.InspectComposeServices(ctx, workDir, project.Slug)
 }
 
-func (s *Service) ManagedMySQLAction(ctx context.Context, action string, actor, remote *string) (MySQLStatus, error) {
+func (s *Service) QueueManagedMySQLAction(ctx context.Context, action string, actor, remote *string) (domain.Job, error) {
 	if s.managed == nil {
-		return MySQLStatus{}, errors.New("managed MySQL lifecycle is not configured")
+		return domain.Job{}, errors.New("managed MySQL lifecycle is not configured")
 	}
-	if err := s.managed.Action(ctx, action); err != nil {
-		return MySQLStatus{}, err
+	action = strings.ToLower(strings.TrimSpace(action))
+	switch action {
+	case "install", "start", "stop", "restart":
+	default:
+		return domain.Job{}, fmt.Errorf("unsupported managed MySQL action %q", action)
 	}
-	if action != "stop" {
-		if err := s.ensureManagedReady(ctx); err != nil {
-			return MySQLStatus{}, err
-		}
+	job, err := s.jobs.Enqueue(ctx, jobs.Request{
+		Type:        JobTypeManagedMySQLAction,
+		RequestedBy: actor,
+		Payload:     map[string]any{"action": action},
+	})
+	if err != nil {
+		return domain.Job{}, err
 	}
-	status := s.engine.Status(ctx)
-	s.recordAudit(ctx, actor, "mysql."+action, "mysql", nil, map[string]any{"running": status.Running}, remote)
-	return status, nil
+	s.recordAudit(ctx, actor, "mysql."+action+".enqueue", "mysql", nil, map[string]any{"job_id": job.ID}, remote)
+	return job, nil
 }
 
 func (s *Service) ensureManagedReady(ctx context.Context) error {
