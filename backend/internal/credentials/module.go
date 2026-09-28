@@ -95,7 +95,7 @@ func (r *Repository) Touch(ctx context.Context, id string, when time.Time) error
 
 func (r *Repository) CountUsage(ctx context.Context, id string) (int, error) {
     var count int
-    err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM project_sources WHERE credential_secret_id=?`, id).Scan(&count)
+    err := r.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM project_sources WHERE credential_secret_id=?) + (SELECT COUNT(*) FROM source_control_integrations WHERE credential_id=?)`, id, id).Scan(&count)
     return count, err
 }
 
