@@ -660,9 +660,53 @@ func detectLocalExecutables(ctx context.Context, runtimeType string, pathNames, 
 			continue
 		}
 		seen[resolved] = struct{}{}
-		items = append(items, DetectedRuntime{RuntimeType: runtimeType, Version: version, ExecutablePath: resolved, Source: "system", Tools: map[string]string{runtimeType: resolved}})
+		items = append(items, DetectedRuntime{RuntimeType: runtimeType, Version: version, ExecutablePath: resolved, Source: "system", Tools: discoverRuntimeTools(runtimeType, resolved, version)})
 	}
 	return items, nil
+}
+
+
+func discoverRuntimeTools(runtimeType, executable, version string) map[string]string {
+	tools := map[string]string{runtimeType: executable}
+	directory := filepath.Dir(executable)
+	candidates := map[string][]string{}
+	switch runtimeType {
+	case "node":
+		candidates["npm"] = []string{filepath.Join(directory, "npm")}
+		candidates["npx"] = []string{filepath.Join(directory, "npx")}
+		candidates["corepack"] = []string{filepath.Join(directory, "corepack")}
+	case "go":
+		candidates["gofmt"] = []string{filepath.Join(directory, "gofmt")}
+	case "python":
+		candidates["python"] = []string{executable}
+		candidates["python3"] = []string{executable}
+		candidates["pip"] = []string{filepath.Join(directory, "pip3"), filepath.Join(directory, "pip")}
+		candidates["pip3"] = []string{filepath.Join(directory, "pip3")}
+	case "php":
+		parts := strings.Split(version, ".")
+		series := ""
+		if len(parts) >= 2 {
+			series = parts[0] + "." + parts[1]
+		}
+		candidates["php-fpm"] = []string{filepath.Join(directory, "php-fpm"), "/usr/sbin/php-fpm" + series, "/usr/sbin/php-fpm"}
+	}
+	for key, paths := range candidates {
+		for _, path := range paths {
+			if strings.TrimSpace(path) == "" {
+				continue
+			}
+			info, err := os.Stat(path)
+			if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+				resolved, resolveErr := filepath.EvalSymlinks(path)
+				if resolveErr == nil {
+					path = resolved
+				}
+				tools[key] = path
+				break
+			}
+		}
+	}
+	return tools
 }
 
 func commandVersion(ctx context.Context, executable string, args ...string) (string, error) {
