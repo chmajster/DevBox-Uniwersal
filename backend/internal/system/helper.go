@@ -13,14 +13,15 @@ import (
 
 var ErrOperationNotAllowed = errors.New("privileged operation not allowed")
 
-var allowedPackages = map[string]string{"git": "git", "docker": "docker.io", "nginx": "nginx", "mysql": "default-mysql-server", "php": "php-cli", "php-fpm": "php-fpm", "php-ext-curl": "php-curl", "php-ext-mbstring": "php-mbstring", "php-ext-xml": "php-xml", "php-ext-zip": "php-zip", "php-ext-gd": "php-gd", "php-ext-intl": "php-intl", "php-ext-mysql": "php-mysql", "php-ext-pgsql": "php-pgsql", "php-ext-sqlite3": "php-sqlite3", "php-ext-bcmath": "php-bcmath", "php-ext-soap": "php-soap", "php-ext-ldap": "php-ldap", "php-ext-gmp": "php-gmp", "php-ext-imagick": "php-imagick", "php-ext-redis": "php-redis", "php-ext-memcached": "php-memcached", "php-ext-opcache": "php-opcache", "php-ext-xdebug": "php-xdebug", "composer": "composer", "python": "python3", "pip": "python3-pip", "go": "golang-go", "node": "nodejs", "npm": "npm"}
+var allowedPackages = map[string]string{"git": "git", "docker": "docker.io", "nginx": "nginx", "mysql": "default-mysql-server", "postgresql": "postgresql", "php": "php-cli", "php-fpm": "php-fpm", "php-ext-curl": "php-curl", "php-ext-mbstring": "php-mbstring", "php-ext-xml": "php-xml", "php-ext-zip": "php-zip", "php-ext-gd": "php-gd", "php-ext-intl": "php-intl", "php-ext-mysql": "php-mysql", "php-ext-pgsql": "php-pgsql", "php-ext-sqlite3": "php-sqlite3", "php-ext-bcmath": "php-bcmath", "php-ext-soap": "php-soap", "php-ext-ldap": "php-ldap", "php-ext-gmp": "php-gmp", "php-ext-imagick": "php-imagick", "php-ext-redis": "php-redis", "php-ext-memcached": "php-memcached", "php-ext-opcache": "php-opcache", "php-ext-xdebug": "php-xdebug", "composer": "composer", "python": "python3", "pip": "python3-pip", "go": "golang-go", "node": "nodejs", "npm": "npm"}
 
 var allowedServices = map[string]string{
 	"devbox":  "devbox.service",
 	"docker":  "docker.service",
 	"nginx":   "nginx.service",
 	"mysql":   "mysql.service",
-	"mariadb": "mariadb.service",
+	"mariadb":    "mariadb.service",
+	"postgresql": "postgresql.service",
 }
 
 var allowedEnvKeys = map[string]struct{}{
