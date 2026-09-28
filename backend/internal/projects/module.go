@@ -41,6 +41,10 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/projects/{id}/git/checkout", secure(domain.RoleOperator, m.gitCheckout))
 	mux.Handle("POST /api/v1/projects/{id}/deploy", secure(domain.RoleOperator, m.deploy))
 	mux.Handle("GET /api/v1/projects/{id}/deployments", secure(domain.RoleViewer, m.deployments))
+	mux.Handle("GET /api/v1/projects/{id}/runtime/config", secure(domain.RoleViewer, m.runtimeConfig))
+	mux.Handle("PUT /api/v1/projects/{id}/runtime/config", secure(domain.RoleOperator, m.updateRuntimeConfig))
+	mux.Handle("POST /api/v1/projects/{id}/runtime/rebuild", secure(domain.RoleOperator, m.rebuildRuntime))
+	mux.Handle("GET /api/v1/runtimes/{runtime}/modules", secure(domain.RoleViewer, m.runtimeModules))
 }
 
 func (m *Module) list(w http.ResponseWriter, r *http.Request) {
@@ -236,6 +240,61 @@ func (m *Module) deploy(w http.ResponseWriter, r *http.Request) {
 	}
 	writeData(w, http.StatusAccepted, job)
 }
+func (m *Module) runtimeConfig(w http.ResponseWriter, r *http.Request) {
+	config, err := m.service.RuntimeContainerConfig(r.Context(), r.PathValue("id"))
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, config)
+}
+
+func (m *Module) updateRuntimeConfig(w http.ResponseWriter, r *http.Request) {
+	var input RuntimeContainerConfig
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	id := r.PathValue("id")
+	config, err := m.service.UpdateRuntimeContainerConfig(r.Context(), id, input)
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	actor := actorID(r)
+	if err := m.audit.Record(r.Context(), actor, "project.runtime_config.update", "project", &id, map[string]any{
+		"runtime": config.Runtime, "runtime_version": config.RuntimeVersion, "container_policy": config.ContainerPolicy, "modules": len(config.Modules),
+	}, nil); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "audit_failed", "runtime configuration updated but audit persistence failed")
+		return
+	}
+	writeData(w, http.StatusOK, config)
+}
+
+func (m *Module) rebuildRuntime(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	actor := actorID(r)
+	job, err := m.service.RebuildRuntime(r.Context(), id, actor)
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	if err := m.audit.Record(r.Context(), actor, "project.runtime.rebuild", "project", &id, map[string]any{"job_id": job.ID}, nil); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "audit_failed", "runtime rebuild queued but audit persistence failed")
+		return
+	}
+	writeData(w, http.StatusAccepted, job)
+}
+
+func (m *Module) runtimeModules(w http.ResponseWriter, r *http.Request) {
+	items, err := m.service.RuntimeModules(r.PathValue("runtime"))
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, items)
+}
+
 func (m *Module) deployments(w http.ResponseWriter, r *http.Request) {
 	items, err := m.service.Deployments(r.Context(), r.PathValue("id"))
 	if err != nil {
