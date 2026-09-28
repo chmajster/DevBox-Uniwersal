@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { DEVBOX_LOGO } from '../assets/devboxBrand'
 import { Icon } from '../components/Icon'
 import { useTheme } from '../theme/ThemeProvider'
 
@@ -26,7 +27,7 @@ export function LoginPage() {
 
   return <main className="login-page workspace-login">
     <section className="login-story" aria-label="DevBox Universal">
-      <div className="workspace-brand"><span className="brand-mark"><Icon name="box" size={28} /></span><span className="brand-copy">DevBox<span>UNIVERSAL</span></span></div>
+      <div className="workspace-brand"><span className="brand-mark"><img className="brand-logo" src={DEVBOX_LOGO} alt="" /></span><span className="brand-copy">DevBox<span>UNIVERSAL</span></span></div>
       <div className="login-story-body"><span className="login-kicker">TWOJA PRZESTRZEŃ DO WDRAŻANIA</span><h1>Mniej przełączania.<br />Więcej kontroli.</h1><p>Aplikacje, kontenery i usługi.<br />Jedno miejsce do zarządzania Twoim środowiskiem.</p>
         <div className="login-capabilities">{([{ icon: 'code', title: 'Aplikacje', detail: 'Git, katalogi lokalne i wdrożenia' }, { icon: 'box', title: 'Infrastruktura', detail: 'Runtime, Docker, bazy i domeny' }, { icon: 'activity', title: 'Operacje', detail: 'Zadania, monitoring i logi' }] as const).map((item) => <div key={item.title}><span><Icon name={item.icon} size={22} /></span><div><strong>{item.title}</strong><small>{item.detail}</small></div><Icon name="arrow" size={17} /></div>)}</div>
       </div><div className="login-story-footer"><Icon name="lock" size={15} />DevBox Universal · panel zarządzania</div>
