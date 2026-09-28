@@ -2,8 +2,6 @@ export type Role = 'admin' | 'operator' | 'viewer'
 
 export type OperationalStatus = 'RUNNING' | 'STOPPED' | 'FAILED' | 'BUILDING' | 'DEPLOYING' | 'UNHEALTHY'
 export type ProjectSourceType = 'git' | 'local' | 'empty'
-export type DeploymentMode = 'docker'
-
 export interface CentralCredential {
   id: string
   name: string
@@ -379,7 +377,6 @@ export interface Project {
   runtime: string
   runtime_version: string
   container_policy: 'auto' | 'custom'
-  deployment_mode: DeploymentMode
   working_directory: string
   build_command: string
   start_command: string
