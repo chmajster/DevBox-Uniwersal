@@ -30,6 +30,9 @@ export function DatabasesPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [phpMyAdminInstalling, setPHPMyAdminInstalling] = useState(false)
+  const [phpMyAdminInstallProgress, setPHPMyAdminInstallProgress] = useState<number | null>(null)
+  const [phpMyAdminInstallPhase, setPHPMyAdminInstallPhase] = useState('')
 
   const load = useCallback(async () => {
     const [databaseItems, mysqlStatus, phpStatus] = await Promise.all([
@@ -132,10 +135,48 @@ export function DatabasesPage() {
   }
 
   async function phpAction(action: 'install' | 'start' | 'stop' | 'restart') {
+    let installTimer: number | undefined
+    let installSucceeded = false
+
+    if (action === 'install') {
+      setPHPMyAdminInstalling(true)
+      setPHPMyAdminInstallProgress(5)
+      setPHPMyAdminInstallPhase('Przygotowywanie instalacji…')
+
+      installTimer = window.setInterval(() => {
+        setPHPMyAdminInstallProgress((current) => {
+          const next = Math.min((current ?? 5) + 7, 92)
+          if (next < 35) setPHPMyAdminInstallPhase('Przygotowywanie kontenera phpMyAdmin…')
+          else if (next < 75) setPHPMyAdminInstallPhase('Pobieranie obrazu i uruchamianie kontenera…')
+          else setPHPMyAdminInstallPhase('Weryfikacja stanu usługi…')
+          return next
+        })
+      }, 700)
+    }
+
     await run(async () => {
       const status = await request<PHPMyAdminStatus>(`/phpmyadmin/${action}`, { method: 'POST' })
       setPHPMyAdmin(status)
+      if (action === 'install') installSucceeded = true
     })
+
+    if (installTimer !== undefined) window.clearInterval(installTimer)
+
+    if (action === 'install') {
+      if (installSucceeded) {
+        setPHPMyAdminInstallProgress(100)
+        setPHPMyAdminInstallPhase('phpMyAdmin został zainstalowany.')
+        window.setTimeout(() => {
+          setPHPMyAdminInstalling(false)
+          setPHPMyAdminInstallProgress(null)
+          setPHPMyAdminInstallPhase('')
+        }, 1200)
+      } else {
+        setPHPMyAdminInstalling(false)
+        setPHPMyAdminInstallProgress(null)
+        setPHPMyAdminInstallPhase('')
+      }
+    }
   }
 
   return <>
@@ -238,9 +279,28 @@ export function DatabasesPage() {
         <p className="muted">Niezależny kontener Docker. Lifecycle aplikacji nie steruje phpMyAdmin.</p>
       </div>
       <div className="phpmyadmin-status">
-        <span className="status-chip" data-ok={phpMyAdmin?.running ? 'true' : 'false'}>{phpMyAdmin?.state ?? 'unknown'}</span>
+        {phpMyAdminInstalling && phpMyAdminInstallProgress !== null && <div className="phpmyadmin-install-progress" role="status" aria-live="polite">
+          <div className="phpmyadmin-install-progress-header">
+            <div>
+              <strong>{phpMyAdminInstallProgress < 100 ? 'Instalowanie phpMyAdmin' : 'Instalacja zakończona'}</strong>
+              <span>{phpMyAdminInstallPhase}</span>
+            </div>
+            <strong className="phpmyadmin-install-percent">{phpMyAdminInstallProgress}%</strong>
+          </div>
+          <div
+            className="phpmyadmin-progress-track"
+            role="progressbar"
+            aria-label="Postęp instalacji phpMyAdmin"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={phpMyAdminInstallProgress}
+          >
+            <div className="phpmyadmin-progress-value" style={{ width: `${phpMyAdminInstallProgress}%` }} />
+          </div>
+        </div>}
+        <span className="status-chip" data-ok={phpMyAdmin?.running ? 'true' : 'false'}>{phpMyAdminInstalling ? 'installing' : (phpMyAdmin?.state ?? 'unknown')}</span>
         <div className="actions">
-          {canMutate && !phpMyAdmin?.installed && <button type="button" onClick={() => phpAction('install')} disabled={busy}>Install</button>}
+          {canMutate && !phpMyAdmin?.installed && <button type="button" onClick={() => phpAction('install')} disabled={busy || phpMyAdminInstalling}>{phpMyAdminInstalling ? 'Instalowanie…' : 'Install'}</button>}
           {canMutate && phpMyAdmin?.installed && !phpMyAdmin.running && <button type="button" onClick={() => phpAction('start')} disabled={busy}>Start</button>}
           {canMutate && phpMyAdmin?.running && <button type="button" className="secondary" onClick={() => phpAction('restart')} disabled={busy}>Restart</button>}
           {canMutate && phpMyAdmin?.running && <button type="button" className="secondary" onClick={() => phpAction('stop')} disabled={busy}>Stop</button>}

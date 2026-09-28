@@ -256,3 +256,50 @@ input[type="checkbox"] { width: auto; margin: 0; }
   .summary-grid, .wizard .form-grid { grid-template-columns: 1fr; }
   .span-2 { grid-column: auto; }
 }
+
+
+/* phpMyAdmin installation progress */
+.phpmyadmin-install-progress {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 9px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-alt);
+}
+.phpmyadmin-install-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+.phpmyadmin-install-progress-header > div {
+  display: grid;
+  gap: 3px;
+}
+.phpmyadmin-install-progress-header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.phpmyadmin-install-percent {
+  min-width: 42px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.phpmyadmin-progress-track {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border-soft);
+}
+.phpmyadmin-progress-value {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width .35s ease;
+}
+@media (max-width: 900px) {
+  .phpmyadmin-install-progress { width: 100%; }
+}
