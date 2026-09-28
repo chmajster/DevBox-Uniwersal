@@ -195,7 +195,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		composeStarted         bool
 		composeDir             string
 		composeName            string
-		databaseRuntime        providers.ProjectDatabaseRuntime
+		databaseRuntime        = providers.ProjectDatabaseRuntime{Connection: providers.DatabaseConnection{Mode: providers.DatabaseModeNone}}
 		databaseCleanup        func() error
 	)
 	defer func() {
