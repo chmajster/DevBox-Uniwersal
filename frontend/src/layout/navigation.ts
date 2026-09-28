@@ -7,6 +7,7 @@ const items: NavigationItem[] = [
   { to: ROUTES.applications, label: 'Aplikacje', icon: 'apps', group: 'Główne' },
   { to: ROUTES.scriptApps, label: 'Instalatory URL', icon: 'code', group: 'Główne' },
   { to: ROUTES.credentials, label: 'Poświadczenia', icon: 'lock', group: 'Główne', roles: ['admin', 'operator'] },
+  { to: ROUTES.users, label: 'Użytkownicy', icon: 'lock', group: 'Główne', roles: ['admin'] },
   { to: '/docker', label: 'Kontenery', icon: 'box', group: 'Główne' },
   { to: '/databases', label: 'Bazy danych', icon: 'database', group: 'Główne' },
   { to: ROUTES.databaseUsers, label: 'Użytkownicy baz', icon: 'lock', group: 'Główne' },
