@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { request } from '../api/client'
 import { listProjects } from '../api/operations'
 import type { Job, Project } from '../api/types'
@@ -63,6 +63,7 @@ function ProjectLiveStatus({ project, job, unavailable }: { project: Project; jo
 
 export function ProjectsPage() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [projects, setProjects] = useState<Project[]>([])
   const [query, setQuery] = useState('')
@@ -132,8 +133,12 @@ export function ProjectsPage() {
     setNotice('')
     try {
       await request<Job | Project>(`/projects/${encodeURIComponent(project.id)}/${action}`, { method: 'POST' })
-      if (action === 'deploy') jobListing.refresh()
-      setNotice(action === 'deploy' ? `Wdrożenie „${project.name}” dodano do kolejki zadań.` : `Zarchiwizowano aplikację „${project.name}”.`)
+      if (action === 'deploy') {
+        jobListing.refresh()
+        navigate(`/apps/${encodeURIComponent(project.id)}?tab=deployments`)
+        return
+      }
+      setNotice(`Zarchiwizowano aplikację „${project.name}”.`)
       setArchiveTarget(null)
       setReload((value) => value + 1)
     } catch (cause) {
