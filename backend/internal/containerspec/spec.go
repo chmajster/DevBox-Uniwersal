@@ -303,7 +303,7 @@ func dockerfileFor(runtime, version string, modules []Module) (string, int, bool
 		}
 		runLine := ""
 		if len(run) > 0 {
-				runLine = "RUN " + strings.Join(run, " && ") + "\n"
+			runLine = "RUN " + strings.Join(run, " && ") + "\n"
 		}
 		return "FROM composer:2 AS composer\nFROM php:" + version + "-cli-bookworm\n" +
 				"COPY --from=composer /usr/bin/composer /usr/local/bin/composer\n" +
