@@ -43,7 +43,11 @@ type Config struct {
 	NginxHelperBinary   string
 	SudoBinary          string
 	HostsFile           string
-	HealthTimeout       time.Duration
+	HealthTimeout              time.Duration
+	HealthMonitorInterval      time.Duration
+	HealthHistoryRetentionDays int
+	NginxLogPath               string
+	MySQLLogPath               string
 }
 
 func Load() (Config, error) {
@@ -85,6 +89,20 @@ func Load() (Config, error) {
 	if healthTimeout <= 0 || healthTimeout > 60*time.Second {
 		return Config{}, fmt.Errorf("DEVBOX_HEALTH_TIMEOUT must be greater than zero and at most 60s")
 	}
+	healthInterval, err := time.ParseDuration(getEnv("DEVBOX_HEALTH_INTERVAL", "30s"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse DEVBOX_HEALTH_INTERVAL: %w", err)
+	}
+	if healthInterval < 5*time.Second {
+		return Config{}, fmt.Errorf("DEVBOX_HEALTH_INTERVAL must be at least 5s")
+	}
+	healthRetention, err := getEnvInt("DEVBOX_HEALTH_HISTORY_RETENTION_DAYS", 30)
+	if err != nil {
+		return Config{}, err
+	}
+	if healthRetention < 1 || healthRetention > 3650 {
+		return Config{}, fmt.Errorf("DEVBOX_HEALTH_HISTORY_RETENTION_DAYS must be between 1 and 3650")
+	}
 
 	cfg := Config{
 		HTTPAddr:               getEnv("DEVBOX_HTTP_ADDR", "127.0.0.1:8787"),
@@ -118,7 +136,11 @@ func Load() (Config, error) {
 		NginxHelperBinary:      strings.TrimSpace(os.Getenv("DEVBOX_PRIVILEGED_HELPER")),
 		SudoBinary:             getEnv("DEVBOX_SUDO_BINARY", "sudo"),
 		HostsFile:              strings.TrimSpace(os.Getenv("DEVBOX_HOSTS_FILE")),
-		HealthTimeout:          healthTimeout,
+		HealthTimeout:              healthTimeout,
+		HealthMonitorInterval:      healthInterval,
+		HealthHistoryRetentionDays: healthRetention,
+		NginxLogPath:               strings.TrimSpace(os.Getenv("DEVBOX_NGINX_LOG_PATH")),
+		MySQLLogPath:               strings.TrimSpace(os.Getenv("DEVBOX_MYSQL_LOG_PATH")),
 	}
 
 	if cfg.HTTPAddr == "" || cfg.DatabasePath == "" || cfg.MigrationsDir == "" || cfg.ProjectsRoot == "" {
