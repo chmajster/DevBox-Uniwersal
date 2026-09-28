@@ -534,7 +534,6 @@ func runtimeContext(p Project, workDir string, ports ...int) runtimes.ProjectCon
 		"start_command":   p.StartCommand,
 		"healthcheck":     p.Healthcheck,
 		"auto_start":      p.AutoStart,
-		"deployment_mode": p.DeploymentMode,
 	}
 	if len(ports) > 0 && ports[0] > 0 {
 		config["port"] = ports[0]
