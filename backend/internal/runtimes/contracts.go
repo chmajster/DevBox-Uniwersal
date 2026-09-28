@@ -6,6 +6,15 @@ import (
 	"time"
 )
 
+type ResolvedEnvironment struct {
+	Environment          map[string]string
+	SensitiveEnvironment map[string]string
+}
+
+type EnvironmentResolver interface {
+	ResolveEnvironment(ctx context.Context, projectID string) (ResolvedEnvironment, error)
+}
+
 type ProjectContext struct {
 	ProjectID   string
 	ProjectName string
