@@ -131,7 +131,18 @@ func (s *Service) UpdatePortConfiguration(ctx context.Context, projectID string,
 	}
 	defer tx.Rollback()
 	var active int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM deployments WHERE project_id=? AND finished_at IS NULL AND status NOT IN ('SUCCESS','FAILED','CANCELED','CANCELLED')`, projectID).Scan(&active); err != nil {
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM deployments d
+		LEFT JOIN jobs j ON j.id = d.job_id
+		WHERE d.project_id = ?
+		  AND d.finished_at IS NULL
+		  AND d.status NOT IN ('SUCCESS','FAILED','CANCELED','CANCELLED')
+		  AND (
+		    d.job_id IS NULL
+		    OR j.status IN ('queued','running')
+		  )
+	`, projectID).Scan(&active); err != nil {
 		return PortConfiguration{}, err
 	}
 	if active != 0 {
