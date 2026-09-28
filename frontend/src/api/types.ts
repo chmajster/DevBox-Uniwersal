@@ -304,6 +304,7 @@ export interface Project {
   auto_start: boolean
   credential_kind?: 'token' | 'ssh_key'
   credential_id?: string
+  source_control_provider?: 'github' | 'gitlab'
   current_commit?: string
   port?: number
   domain?: string
@@ -458,4 +459,181 @@ export interface SystemRestoreRequest {
   backup: SystemBackup
   restart_required: boolean
   message: string
+}
+
+
+export type ManagedRuntimeType = 'php' | 'node' | 'python' | 'go'
+export type RuntimeInstallationStatus = 'installed' | 'installing' | 'broken' | 'unavailable' | 'removing' | 'failed'
+
+export interface RuntimeProjectUsage {
+  id: string
+  name: string
+}
+
+export interface RuntimeInstallation {
+  id: string
+  runtime_type: ManagedRuntimeType
+  version: string
+  executable_path: string
+  installation_root: string
+  architecture: string
+  platform: string
+  installation_method: string
+  managed_by_devbox: boolean
+  source: string
+  status: RuntimeInstallationStatus
+  tools?: Record<string, string>
+  error?: string
+  installed_at?: string
+  last_validated_at?: string
+  created_at: string
+  updated_at: string
+  used_by_projects?: RuntimeProjectUsage[]
+}
+
+export interface AvailableRuntimeVersion {
+  runtime_type: ManagedRuntimeType
+  version: string
+  platform: string
+  architecture: string
+  installation_method: string
+  installable: boolean
+  source: string
+}
+
+export interface RuntimeDefault {
+  runtime_type: ManagedRuntimeType
+  runtime_installation_id: string
+  requested_version: string
+  resolved_version: string
+  updated_at: string
+}
+
+export interface RuntimeTypeView {
+  runtime_type: ManagedRuntimeType
+  installations: RuntimeInstallation[]
+  available?: AvailableRuntimeVersion[]
+  default?: RuntimeDefault
+}
+
+export interface RuntimeVersionAssignment {
+  project_id: string
+  runtime_type: ManagedRuntimeType
+  runtime_installation_id: string
+  requested_version: string
+  resolved_version: string
+  executable_path: string
+  status: RuntimeInstallationStatus
+  managed_by_devbox: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectRuntimeVersionView {
+  runtime_type: ManagedRuntimeType
+  assignment?: RuntimeVersionAssignment
+  requirement?: string
+  requirement_satisfied?: boolean
+  compatible_installed: RuntimeInstallation[]
+}
+
+export type SourceControlProviderName = 'github' | 'gitlab'
+export type IntegrationStatus = 'connected' | 'degraded' | 'authentication_failed' | 'unavailable' | 'disabled'
+
+export interface SourceControlIntegration {
+  id: string
+  name: string
+  provider: SourceControlProviderName
+  web_url: string
+  api_url: string
+  credential_id: string
+  enabled: boolean
+  status: IntegrationStatus
+  account_username?: string
+  account_id?: string
+  scopes?: string[]
+  repository_count: number
+  namespace_count: number
+  last_tested_at?: string
+  last_synced_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SourceControlNamespace {
+  id: string
+  name: string
+  path: string
+  kind: string
+  web_url?: string
+}
+
+export interface SourceControlRepository {
+  id: string
+  owner: string
+  path: string
+  name: string
+  clone_url: string
+  ssh_url?: string
+  web_url: string
+  default_branch: string
+  visibility?: string
+  namespace?: string
+}
+
+export interface SourceControlBranch {
+  name: string
+  commit_sha?: string
+  default?: boolean
+  protected?: boolean
+}
+
+export interface SourceControlPullRequest {
+  number: number
+  title: string
+  state: string
+  author: string
+  source_branch: string
+  target_branch: string
+  updated_at: string
+  web_url: string
+}
+
+export interface SourceControlCIStatus {
+  available: boolean
+  provider: SourceControlProviderName
+  status?: string
+  name?: string
+  run_number?: number
+  commit_sha?: string
+  duration_ms?: number
+  web_url?: string
+  message?: string
+}
+
+export interface ProjectSourceControl {
+  project_id: string
+  integration_id: string
+  provider: SourceControlProviderName
+  repository_external_id: string
+  repository_owner: string
+  repository_path: string
+  repository_name: string
+  clone_url: string
+  web_url: string
+  default_branch: string
+  current_commit?: string
+  branch?: string
+}
+
+export interface SourceControlPage {
+  page: number
+  per_page: number
+  next_page?: number
+  total_count?: number
+}
+
+export interface SourceControlPageResult<T> {
+  items: T[]
+  page: SourceControlPage
 }
