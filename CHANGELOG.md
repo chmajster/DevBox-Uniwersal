@@ -12,6 +12,7 @@
 - Added deterministic image fingerprints and explicit rebuild support so unchanged images can be reused.
 - Added sanitized managed build contexts that exclude .env files, VCS metadata, dependency trees and common local caches.
 - Added atomic managed-container replacement with health verification and rollback to the previous container on failure.
+- Deploy now switches directly to a live deployment view showing the current stage and progress until success/failure; failures preserve the exact stage where execution stopped.
 - Project runtime validation no longer requires PHP-FPM, Go, Node.js or Python executables on the host.
 - Removed the unnecessary Docker Compose `--project-directory` flag; Compose now uses the absolute `--file` path and works with Docker installations that reject that flag.
 - Added a dedicated Runtime containers CI workflow covering managed-container backend and frontend quality gates.
