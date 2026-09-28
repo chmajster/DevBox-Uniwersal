@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"errors"
@@ -322,7 +323,37 @@ func serve() error {
 	return nil
 }
 
+func loadInstalledEnvironment() {
+	path := strings.TrimSpace(os.Getenv("DEVBOX_ENV_FILE"))
+	if path == "" {
+		path = "/etc/devbox/devbox.env"
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		if !strings.HasPrefix(key, "DEVBOX_") || os.Getenv(key) != "" {
+			continue
+		}
+		_ = os.Setenv(key, strings.TrimSpace(value))
+	}
+}
+
 func status() int {
+	loadInstalledEnvironment()
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[FAIL] configuration:", err)
@@ -354,6 +385,7 @@ func status() int {
 }
 
 func doctor() int {
+	loadInstalledEnvironment()
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[FAIL] configuration:", err)
