@@ -36,6 +36,7 @@ type Project struct {
 	Healthcheck      string     `json:"healthcheck"`
 	AutoStart        bool       `json:"auto_start"`
 	CredentialKind   string     `json:"credential_kind,omitempty"`
+	CredentialID     string     `json:"credential_id,omitempty"`
 	CurrentCommit    string     `json:"current_commit,omitempty"`
 	Port             *int       `json:"port,omitempty"`
 	Domain           *string    `json:"domain,omitempty"`
@@ -61,6 +62,7 @@ type CreateInput struct {
 	AutoStart        bool   `json:"auto_start"`
 	CredentialKind   string `json:"credential_kind"`
 	CredentialValue  string `json:"credential_value"`
+	CredentialID     string `json:"credential_id"`
 }
 
 type UpdateInput struct {
@@ -77,6 +79,7 @@ type UpdateInput struct {
 	AutoStart        *bool   `json:"auto_start"`
 	CredentialKind   *string `json:"credential_kind"`
 	CredentialValue  *string `json:"credential_value"`
+	CredentialID     *string `json:"credential_id"`
 	ClearCredential  bool    `json:"clear_credential"`
 }
 
