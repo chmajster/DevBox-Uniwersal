@@ -52,6 +52,7 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("PUT /api/v1/projects/{id}/database-binding", operator(http.HandlerFunc(m.updateDatabaseBinding)))
 	mux.Handle("DELETE /api/v1/projects/{id}/database-binding", operator(http.HandlerFunc(m.deleteDatabaseBinding)))
 	mux.Handle("POST /api/v1/projects/{id}/database-binding/test", operator(http.HandlerFunc(m.testDatabaseBinding)))
+	mux.Handle("POST /api/v1/projects/{id}/database-binding/password", operator(http.HandlerFunc(m.rotateDatabasePassword)))
 	mux.Handle("GET /api/v1/projects/{id}/database-binding/compose-services", viewer(http.HandlerFunc(m.composeServices)))
 	mux.Handle("POST /api/v1/projects/{id}/database/provision", operator(http.HandlerFunc(m.provisionProject)))
 	mux.Handle("POST /api/v1/databases/{id}/backup", operator(http.HandlerFunc(m.backupDatabase)))
@@ -235,6 +236,15 @@ func (m *Module) testDatabaseBinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeData(w, http.StatusOK, map[string]string{"status": "connected"})
+}
+
+func (m *Module) rotateDatabasePassword(w http.ResponseWriter, r *http.Request) {
+	actor, remote := requestIdentity(r)
+	if err := m.service.RotateProjectDatabasePassword(r.Context(), r.PathValue("id"), actor, remote); err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]string{"status": "rotated"})
 }
 
 func (m *Module) composeServices(w http.ResponseWriter, r *http.Request) {
