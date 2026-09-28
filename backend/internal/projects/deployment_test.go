@@ -2,6 +2,7 @@ package projects
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,5 +162,54 @@ func TestDatabaseLogFieldsExcludeRuntimeSecret(t *testing.T) {
 	}
 	if _, exists := fields["secret"]; exists {
 		t.Fatalf("secret field must not exist: %#v", fields)
+	}
+}
+
+func TestComposeEnvironmentPrecedenceDatabaseBindingWins(t *testing.T) {
+	projectEnvironment := runtimes.ResolvedEnvironment{
+		Plain: map[string]string{
+			"APP_ENV": "project",
+			"DB_HOST": "user-db",
+		},
+		Sensitive: map[string]string{
+			"API_TOKEN": "project-secret",
+			"DB_PASSWORD": "user-password",
+		},
+	}
+	databaseRuntime := providers.ProjectDatabaseRuntime{
+		Connection: providers.DatabaseConnection{
+			Mode: providers.DatabaseModeManaged,
+			Host: "devbox-mysql",
+			Port: 3306,
+			Database: "plan",
+			Username: "plan_user",
+		},
+		Secret: []byte("binding-password"),
+	}
+	env := mergedComposeEnvironment(projectEnvironment, databaseRuntime)
+	if env["APP_ENV"] != "project" || env["API_TOKEN"] != "project-secret" {
+		t.Fatalf("project environment was not merged into Compose: %#v", env)
+	}
+	if env["DB_HOST"] != "devbox-mysql" || env["DB_PASSWORD"] != "binding-password" {
+		t.Fatalf("database binding must override project DB values: %#v", env)
+	}
+}
+
+func TestDatabaseDeploymentLogFieldsNeverContainSecret(t *testing.T) {
+	secret := "never-log-this-password"
+	runtime := providers.ProjectDatabaseRuntime{
+		Connection: providers.DatabaseConnection{
+			Mode: providers.DatabaseModeExternal,
+			Host: "mysql.internal",
+			Port: 3306,
+			Database: "plan",
+			Username: "plan_user",
+			SecretRef: "opaque-secret-ref",
+		},
+		Secret: []byte(secret),
+	}
+	payload := fmt.Sprint(databaseLogFields(runtime))
+	if strings.Contains(payload, secret) || strings.Contains(payload, "opaque-secret-ref") {
+		t.Fatalf("database log fields leaked credentials: %s", payload)
 	}
 }
