@@ -56,7 +56,7 @@ type Project struct {
 	Runtime          string     `json:"runtime"`
 	RuntimeVersion   string     `json:"runtime_version"`
 	ContainerPolicy  string     `json:"container_policy"`
-	DeploymentMode   string     `json:"deployment_mode"`
+	DeploymentMode   string     `json:"-"`
 	WorkingDirectory string     `json:"working_directory"`
 	BuildCommand     string     `json:"build_command"`
 	StartCommand     string     `json:"start_command"`
