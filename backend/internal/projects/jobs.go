@@ -49,7 +49,7 @@ func (h *GitJobHandler) Run(ctx context.Context, job domain.Job) (map[string]any
 	if err != nil {
 		return nil, err
 	}
-	cred := CredentialRef(p.CredentialKind, p.ID, "default")
+	cred := ProjectCredentialRef(p)
 	log := func(message string) {
 		_ = h.logger.Log(ctx, job.ID, "info", message, map[string]any{"project_id": p.ID})
 	}
@@ -225,7 +225,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			return nil, errors.New("provider unavailable: Git repository is not cloned")
 		}
 		if !reconcile {
-			if err := h.git.PullWithCredential(ctx, p.LocalPath, CredentialRef(p.CredentialKind, p.ID, "default")); err != nil {
+			if err := h.git.PullWithCredential(ctx, p.LocalPath, ProjectCredentialRef(p)); err != nil {
 				return nil, err
 			}
 		}
