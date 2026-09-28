@@ -5,6 +5,7 @@ export interface NavigationItem { to: string; label: string; icon: IconName; gro
 const items: NavigationItem[] = [
   { to: ROUTES.dashboard, label: 'Przegląd', icon: 'dashboard', group: 'Główne' },
   { to: ROUTES.applications, label: 'Aplikacje', icon: 'apps', group: 'Główne' },
+  { to: ROUTES.credentials, label: 'Poświadczenia', icon: 'lock', group: 'Główne', roles: ['admin', 'operator'] },
   { to: '/docker', label: 'Kontenery', icon: 'box', group: 'Główne' },
   { to: '/databases', label: 'Bazy danych', icon: 'database', group: 'Główne' },
   { to: '/domains', label: 'Domeny i proxy', icon: 'globe', group: 'Główne' },
