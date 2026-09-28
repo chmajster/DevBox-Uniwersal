@@ -28,6 +28,8 @@ var documentedRoutes = []documentedRoute{
 	{"POST", "/api/v1/credentials", "Create central credential", "operator"},
 	{"PATCH", "/api/v1/credentials/{id}", "Update central credential", "operator"},
 	{"DELETE", "/api/v1/credentials/{id}", "Delete central credential", "operator"},
+	{"GET", "/api/v1/update/status", "Check DevBox Git update status", "admin"},
+	{"POST", "/api/v1/update/apply", "Start DevBox Git update", "admin"},
 	{"GET", "/api/v1/projects", "List projects", "viewer"},
 	{"POST", "/api/v1/projects", "Create project", "operator"},
 	{"POST", "/api/v1/projects/import", "Import local project", "operator"},
