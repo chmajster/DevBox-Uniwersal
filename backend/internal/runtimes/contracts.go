@@ -7,11 +7,13 @@ import (
 )
 
 type ProjectContext struct {
-	ProjectID   string
-	ProjectName string
-	WorkDir     string
-	Environment map[string]string
-	Config      map[string]any
+	ProjectID       string
+	ProjectName     string
+	WorkDir         string
+	Environment     map[string]string
+	Config          map[string]any
+	Executables     map[string]string
+	RuntimeVersions map[string]string
 }
 
 type Detection struct {
