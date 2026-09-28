@@ -1,24 +1,125 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { request } from '../api/client'
+import { listProjects } from '../api/operations'
 import type { Job, Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { Icon } from '../components/Icon'
+import { Modal } from '../components/Modal'
+import { StatusBadge } from '../components/StatusBadge'
+import { readPreference, savePreference } from '../layout/navigation'
+import { filterProjects, projectStatuses } from './projectFilters'
 
 export function ProjectsPage() {
   const { user } = useAuth()
+  const [params, setParams] = useSearchParams()
   const [projects, setProjects] = useState<Project[]>([])
-  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+  const [view, setView] = useState(() => readPreference('devbox-project-view', 'grid') === 'list' ? 'list' : 'grid')
+  const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
+  const [reload, setReload] = useState(0)
+  const [loadError, setLoadError] = useState('')
+  const [operationError, setOperationError] = useState('')
+  const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState('')
-  const load = () => request<Project[]>('/projects').then((items) => setProjects(items ?? [])).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load applications'))
-  useEffect(() => { void load() }, [])
-  async function deploy(project: Project) { setBusy(project.id); setError(''); try { await request<Job>(`/projects/${project.id}/deploy`, { method: 'POST' }); await load() } catch (cause) { setError(cause instanceof Error ? cause.message : 'Deployment failed to queue') } finally { setBusy('') } }
-  async function archive(project: Project) { setBusy(project.id); setError(''); try { await request<Project>(`/projects/${project.id}/archive`, { method: 'POST' }); await load() } catch (cause) { setError(cause instanceof Error ? cause.message : 'Archive failed') } finally { setBusy('') } }
+  const [archiveTarget, setArchiveTarget] = useState<Project | null>(null)
+  const mutationLock = useRef(false)
+  const statusParam = params.get('status') ?? ''
+  const status = projectStatuses.some((value) => value === statusParam) ? statusParam : ''
+  const canManage = user?.role === 'admin' || user?.role === 'operator'
+  const filtered = useMemo(() => filterProjects(projects, query, status), [projects, query, status])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setLoadError('')
+    listProjects().then((items) => {
+      if (!cancelled) { setProjects(items); setLoaded(true) }
+    }).catch((cause: unknown) => {
+      if (!cancelled) setLoadError(cause instanceof Error ? cause.message : 'Nie udało się pobrać aplikacji.')
+    }).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [reload])
+
+  function changeStatus(value: string) {
+    const next = new URLSearchParams(params)
+    if (value) next.set('status', value)
+    else next.delete('status')
+    setParams(next, { replace: true })
+  }
+
+  async function mutate(project: Project, action: 'deploy' | 'archive') {
+    if (mutationLock.current) return
+    mutationLock.current = true
+    setBusy(`${project.id}:${action}`)
+    setOperationError('')
+    setNotice('')
+    try {
+      await request<Job | Project>(`/projects/${encodeURIComponent(project.id)}/${action}`, { method: 'POST' })
+      setNotice(action === 'deploy' ? `Wdrożenie „${project.name}” dodano do kolejki zadań.` : `Zarchiwizowano aplikację „${project.name}”.`)
+      setArchiveTarget(null)
+      setReload((value) => value + 1)
+    } catch (cause) {
+      setOperationError(cause instanceof Error ? cause.message : 'Operacja nie powiodła się. Spróbuj ponownie.')
+    } finally { mutationLock.current = false; setBusy('') }
+  }
+
+  function actions(project: Project) {
+    return <div className="project-actions">
+      <Link className="project-details-link" to={`/apps/${encodeURIComponent(project.id)}`}>Szczegóły <Icon name="arrow" size={15} /></Link>
+      {canManage && <>
+        <button className="secondary-button button-compact" disabled={!!busy} onClick={() => void mutate(project, 'deploy')} aria-label={`Wdróż ${project.name}`}>
+          <Icon name="play" size={14} />{busy === `${project.id}:deploy` ? 'Zlecanie…' : 'Wdróż'}
+        </button>
+        <button className="icon-button archive-action" disabled={!!busy} title={`Archiwizuj ${project.name}`} aria-label={`Archiwizuj ${project.name}`}
+          onClick={() => { setOperationError(''); setArchiveTarget(project) }}><Icon name="archive" size={17} /></button>
+      </>}
+    </div>
+  }
+
   return <>
-    <div className="page-heading"><div><h1>Aplikacje</h1><p className="muted">Projekty lokalne, Git i deploymenty.</p></div>{user?.role !== 'viewer' && <Link className="button-link" to="/apps/new">Dodaj aplikację</Link>}</div>
-    {error && <div className="error-banner">{error}</div>}
-    <div className="table-wrap"><table><thead><tr><th>Name</th><th>Status</th><th>Runtime</th><th>Branch</th><th>Port</th><th>Domain</th><th>Commit</th><th>Actions</th></tr></thead><tbody>
-      {projects.map((project) => <tr key={project.id}><td><Link to={`/apps/${project.id}`}>{project.name}</Link></td><td><span className="status-pill">{project.status}</span></td><td>{project.runtime || '—'}</td><td>{project.branch || '—'}</td><td>{project.port ?? '—'}</td><td>{project.domain ?? '—'}</td><td><code>{project.current_commit?.slice(0, 10) || '—'}</code></td><td><div className="actions"><Link to={`/apps/${project.id}`}>Szczegóły</Link>{user?.role !== 'viewer' && <><button type="button" className="button-compact" disabled={busy === project.id} onClick={() => void deploy(project)}>Deploy</button><button type="button" className="button-compact secondary" disabled={busy === project.id} onClick={() => void archive(project)}>Archiwizuj</button></>}</div></td></tr>)}
-      {projects.length === 0 && <tr><td colSpan={8} className="muted">Brak aplikacji.</td></tr>}
-    </tbody></table></div>
+    <div className="page-heading workspace-heading">
+      <div><span className="eyebrow">WORKSPACE</span><h1>Aplikacje</h1><p className="muted">Od kodu do działającej aplikacji. Wszystko w jednym miejscu.</p></div>
+      <div className="heading-actions"><button className="secondary-button" disabled={loading} onClick={() => setReload((value) => value + 1)}><Icon name="refresh" size={17} />Odśwież</button>
+        {canManage && <Link className="button-link" to="/apps/new"><Icon name="plus" size={18} />Dodaj aplikację</Link>}
+      </div>
+    </div>
+    <div className="project-toolbar">
+      <label className="search-field"><Icon name="search" size={18} /><input aria-label="Szukaj aplikacji" placeholder="Szukaj po nazwie, runtime, domenie…" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+      <label className="status-filter"><span className="sr-only">Filtr statusu</span><select value={status} onChange={(event) => changeStatus(event.target.value)}><option value="">Wszystkie statusy</option>{projectStatuses.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+      <div className="view-switch" role="group" aria-label="Widok aplikacji">
+        <button className="icon-button" aria-label="Widok kafelków" aria-pressed={view === 'grid'} onClick={() => { setView('grid'); savePreference('devbox-project-view', 'grid') }}><Icon name="apps" size={18} /></button>
+        <button className="icon-button" aria-label="Widok tabeli" aria-pressed={view === 'list'} onClick={() => { setView('list'); savePreference('devbox-project-view', 'list') }}><Icon name="list" size={18} /></button>
+      </div>
+    </div>
+    <div className="collection-summary"><span role="status">{loading ? 'Pobieranie aplikacji…' : loaded ? `${filtered.length} z ${projects.length} aplikacji` : 'Dane niedostępne'}</span>{(query || status) && <button className="text-button" onClick={() => { setQuery(''); changeStatus('') }}>Wyczyść filtry</button>}</div>
+    {loadError && <div className="error-banner" role="alert">{loadError} <button className="secondary-button button-compact" disabled={loading} onClick={() => setReload((value) => value + 1)}>Spróbuj ponownie</button></div>}
+    {operationError && !archiveTarget && <div className="error-banner" role="alert">{operationError}</div>}
+    {notice && <div className="success-banner" role="status">{notice} <Link to="/jobs">Przejdź do zadań</Link></div>}
+    {loading && !loaded && <div className="project-grid" aria-hidden="true">{[1, 2, 3].map((key) => <div className="skeleton project-skeleton" key={key} />)}</div>}
+    {loaded && filtered.length > 0 && <div aria-busy={loading}>
+      {view === 'grid' ? <div className="project-grid">{filtered.map((project) => <article className="project-card" key={project.id}>
+        <div className="project-card-top"><span className="project-symbol"><Icon name="code" size={23} /></span><StatusBadge status={project.status} /></div>
+        <h2><Link to={`/apps/${encodeURIComponent(project.id)}`}>{project.name}</Link></h2>
+        <p className="project-description">{project.description || project.domain || 'Projekt zarządzany przez DevBox'}</p>
+        <div className="project-tags"><span>{project.runtime || 'Runtime nieustawiony'}</span><span>{project.deployment_mode || project.source_type}</span></div>
+        <dl className="project-meta"><div><dt><Icon name="branch" size={14} />Gałąź</dt><dd>{project.branch || '—'}</dd></div><div><dt><Icon name="network" size={14} />Port</dt><dd>{project.port ?? '—'}</dd></div><div><dt><Icon name="globe" size={14} />Domena</dt><dd title={project.domain}>{project.domain || '—'}</dd></div><div><dt><Icon name="code" size={14} />Commit</dt><dd><code>{project.current_commit?.slice(0, 10) || '—'}</code></dd></div></dl>
+        {actions(project)}
+      </article>)}</div> : <div className="table-wrap"><table><caption className="sr-only">Aplikacje i dostępne operacje</caption><thead><tr>{['Nazwa', 'Status', 'Runtime', 'Gałąź', 'Port', 'Domena', 'Commit', 'Akcje'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead><tbody>{filtered.map((project) => <tr key={project.id}>
+        <td><Link className="project-name" to={`/apps/${encodeURIComponent(project.id)}`}>{project.name}</Link></td><td><StatusBadge status={project.status} /></td><td>{project.runtime || '—'}</td><td>{project.branch || '—'}</td><td>{project.port ?? '—'}</td><td>{project.domain || '—'}</td><td><code>{project.current_commit?.slice(0, 10) || '—'}</code></td><td>{actions(project)}</td>
+      </tr>)}</tbody></table></div>}
+    </div>}
+    {loaded && !loading && !loadError && filtered.length === 0 && <div className="workspace-empty">
+      <span className="empty-icon"><Icon name={projects.length ? 'search' : 'apps'} size={28} /></span><h2>{projects.length ? 'Brak pasujących aplikacji' : 'Miejsce na Twoją pierwszą aplikację'}</h2>
+      <p>{projects.length ? 'Zmień wyszukiwanie lub usuń filtry.' : 'Podłącz repozytorium Git albo wybierz lokalny katalog projektu.'}</p>
+      {projects.length > 0 ? <button className="secondary-button" onClick={() => { setQuery(''); changeStatus('') }}>Wyczyść filtry</button> : canManage && <Link className="button-link" to="/apps/new"><Icon name="plus" size={17} />Dodaj aplikację</Link>}
+    </div>}
+    <Modal open={archiveTarget !== null} onClose={() => { if (!busy) setArchiveTarget(null) }} labelId="archive-title" className="confirm-dialog">
+      <span className="empty-icon warning-icon"><Icon name="archive" size={26} /></span><h2 id="archive-title">Archiwizować aplikację?</h2>
+      <p>Potwierdź archiwizację aplikacji <strong>{archiveTarget?.name}</strong> w DevBox.</p>
+      {operationError && <div role="alert" className="error-banner">{operationError}</div>}
+      <div className="modal-actions"><button className="secondary-button" disabled={!!busy} onClick={() => setArchiveTarget(null)}>Anuluj</button><button className="danger" disabled={!!busy} onClick={() => { if (archiveTarget) void mutate(archiveTarget, 'archive') }}>{busy ? 'Archiwizowanie…' : 'Archiwizuj aplikację'}</button></div>
+    </Modal>
   </>
 }
