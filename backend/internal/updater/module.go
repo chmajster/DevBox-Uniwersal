@@ -107,15 +107,6 @@ func (s *Service) Status(ctx context.Context) Status {
 func (s *Service) Progress(ctx context.Context) Progress {
 	progress, err := readProgressFile(s.progressFile)
 	if err == nil {
-		if !progress.Active() && updateServiceActive(ctx) {
-			progress.State = "starting"
-			progress.Stage = "starting"
-			progress.Percent = 1
-			progress.Message = "Usługa aktualizacji została uruchomiona i przygotowuje wykonanie."
-			progress.FinishedAt = ""
-			progress.Error = ""
-			progress.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-		}
 		return progress
 	}
 	if errors.Is(err, os.ErrNotExist) {
