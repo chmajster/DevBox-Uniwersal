@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Selected control-room UI
+
+- Implemented the selected compact dark DevOps dashboard: circular CPU/RAM/disk gauges, service status, application/job tables, terminal-style log preview and utilization chart.
+- Connected all panels to existing APIs with abortable serialized polling, hidden-tab suspension, timeout handling and explicit unavailable states instead of fictional metrics.
+- Added bounded session telemetry history with metric/range selection, timestamp ordering and gap handling; CPU temperature remains unavailable because the API does not provide it.
+- Added API-backed component health and host/version sidebar summary, searchable authorized views/applications and a dark-by-default persistent design preference.
+- Added active-job and selected-job deep links and log-source navigation from dashboard to full log view; preserved project mutations, CSRF and existing SSE views.
+- Extended unit/browser coverage for charts, filters, role visibility, API failures, null collections and 900/390/320-pixel layouts. See `docs/control-room-ui.md` for integration and test scope.
+- Applied formatting-only cleanup to three existing Go files (backup repository, configuration, privileged helper) to unblock the inherited backend formatting gate; no backend logic or migration changes.
+
 ### Workspace UI redesign
 
 - Replaced the basic shell with grouped, icon-based navigation, persistent compact sidebar, mobile drawer and role-aware Ctrl/Cmd+K navigation search.
@@ -75,7 +85,6 @@
 
 - MySQL/MariaDB provider, database/user/grant lifecycle and per-project provisioning.
 - Secure generated application credentials stored through SecretStore.
-- Backup/restore jobs and phpMyAdmin container lifecycle.
 - Database API, RBAC/audit integration and database management frontend.
 
 ### Agent 6 — Networking / Nginx

@@ -40,3 +40,13 @@ jobs:
           path: frontend/ui-artifacts/
           if-no-files-found: warn
           retention-days: 7
+      - name: Upload exact tested bundle for reproducible inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-ui-build
+          path: |
+            frontend/dist/
+            frontend/e2e/
+          if-no-files-found: warn
+          retention-days: 7

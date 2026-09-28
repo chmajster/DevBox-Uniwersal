@@ -22,13 +22,13 @@ type Config struct {
 	MasterKeyBase64        string
 	AppVersion             string
 
-	MySQLHost          string
-	MySQLPort          int
-	MySQLAdminUser     string
-	MySQLAdminPassword string
-	MySQLAppHost       string
-	MySQLBinary        string
-	MySQLDumpBinary    string
+	MySQLHost             string
+	MySQLPort             int
+	MySQLAdminUser        string
+	MySQLAdminPassword    string
+	MySQLAppHost          string
+	MySQLBinary           string
+	MySQLDumpBinary       string
 	MySQLBackupDir        string
 	ControlPlaneBackupDir string
 

@@ -12,13 +12,17 @@ DevBox Universal is an integrated local development control plane.
 
 ## Workspace UI
 
-- Responsive, grouped navigation with persistent compact sidebar, mobile drawer and role-aware Ctrl/Cmd+K navigation search.
-- Redesigned dashboard with API-backed resource summaries, host meters, service states, application links and explicit missing-data/error states.
+- Selected dark operator-console layout with compact grouped sidebar, host/version information and API-backed component health.
+- Dashboard CPU/RAM/disk circular gauges, service states, recent application/job tables, filtered log preview and session-history chart with metric/range selection.
+- Serialized, abortable polling: inventory/statuses every 30 seconds, dashboard metrics every 10 seconds, dashboard logs every 5 seconds; hidden-tab suspension and explicit unavailable/error states.
+- Session charts retain up to two hours / 721 real samples; no synthetic history, network counters or temperature readings. See `docs/control-room-ui.md` for exact semantics.
+- Persistent compact sidebar, mobile drawer and role-aware Ctrl/Cmd+K navigation/application search.
 - Searchable applications in persistent card/table views, status filtering, deployment queue feedback and archive confirmation.
-- Redesigned login, consistent light/dark semantic tokens and shared module forms, tables, statuses and logs.
+- Dashboard links select active jobs, job details and full log-source filters; existing SSE views remain available.
+- Redesigned login, persistent dark/light theme and shared module forms, tables, statuses and logs.
 - Native accessible dialogs, keyboard navigation, visible focus, reduced-motion support and graceful handling of disabled browser storage.
 - Frontend unit tests and a Chromium smoke workflow with synthetic API fixtures and screenshot artifacts. This is not full provider/infrastructure E2E coverage.
-- Existing routes, API contracts, RBAC, CSRF and backend behavior are unchanged; no migrations or new frontend runtime dependencies.
+- Existing API contracts, RBAC, CSRF and backend behavior are unchanged; no migrations or new frontend runtime dependencies.
 
 ## Projects / Git / deployments
 
