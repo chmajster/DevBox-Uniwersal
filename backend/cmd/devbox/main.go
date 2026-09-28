@@ -215,6 +215,7 @@ func serve() error {
 			Ports:   portManager,
 			Routes:  networkService,
 			Compose: dockerProvider,
+			Managed: dockerProvider,
 		}),
 	} {
 		if err := jobRunner.Register(jobHandler); err != nil {
