@@ -2,7 +2,7 @@
 
 Current remaining work:
 
-- Add login rate limiting, active-session administration and global session revocation.
+- Add login rate limiting, active-session listing/inspection and global all-users session revocation. Per-user session revocation is implemented.
 - Add master-key versioning and online secret rotation.
 - Publish signed/versioned release artifacts with checksums and rollback-capable updates.
 - Add end-to-end browser tests for install → login → project onboarding → runtime → proxy → health → delete.
