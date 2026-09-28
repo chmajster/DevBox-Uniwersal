@@ -13,6 +13,7 @@ func TestOpenAPISpecContainsCoreAndModuleRoutes(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/api/v1/projects",
+		"/api/v1/projects/{id}/ports/config",
 		"/api/v1/docker/containers",
 		"/api/v1/health-checks",
 		"/api/v1/logs/export",
@@ -20,5 +21,22 @@ func TestOpenAPISpecContainsCoreAndModuleRoutes(t *testing.T) {
 		if _, exists := paths[path]; !exists {
 			t.Fatalf("missing documented path %s", path)
 		}
+	}
+}
+
+func TestOpenAPIPortConfigurationMethodsAndRoles(t *testing.T) {
+	spec := buildOpenAPISpec("test")
+	paths := spec["paths"].(map[string]any)
+	item, ok := paths["/api/v1/projects/{id}/ports/config"].(map[string]any)
+	if !ok {
+		t.Fatal("project port configuration path missing")
+	}
+	get, ok := item["get"].(map[string]any)
+	if !ok || get["x-devbox-min-role"] != "viewer" {
+		t.Fatalf("GET port configuration role = %#v", get["x-devbox-min-role"])
+	}
+	put, ok := item["put"].(map[string]any)
+	if !ok || put["x-devbox-min-role"] != "operator" {
+		t.Fatalf("PUT port configuration role = %#v", put["x-devbox-min-role"])
 	}
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ProjectPortsSection } from './ProjectPortsSection'
 import { request } from '../api/client'
 import type { Job, ProjectRuntimeInfo, RuntimeContainerConfig, RuntimeModuleOption } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
@@ -106,7 +107,7 @@ export function ProjectRuntimeSection({ projectId }: Props) {
 
   const readOnly = user?.role === 'viewer'
 
-  return <section className="runtime-section panel">
+  return <><section className="runtime-section panel">
     <div className="section-heading">
       <div>
         <h2>Runtime i kontener</h2>
@@ -188,5 +189,5 @@ export function ProjectRuntimeSection({ projectId }: Props) {
         {filteredCatalog.length === 0 && <p className="muted">Brak modułów PHP pasujących do wyszukiwania.</p>}
       </div>
     </div>}
-  </section>
+  </section><ProjectPortsSection key={projectId} projectId={projectId} /></>
 }
