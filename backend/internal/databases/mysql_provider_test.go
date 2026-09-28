@@ -152,7 +152,7 @@ func TestResolveRequestedDatabasePasswordRejectsShortNonEmpty(t *testing.T) {
 }
 
 func TestCreateUserSupportsEmptyPasswordSecret(t *testing.T) {
-	store := &fakeSecretStore{values: map[string][]byte{"database-user/ref": {}}}
+	store := &fakeSecretStore{values: map[string][]byte{"database-user/ref": []byte{}}}
 	executor := &fakeMySQLExecutor{}
 	provider := &MySQLProvider{
 		cfg:     MySQLConfig{ApplicationHost: "%"},
