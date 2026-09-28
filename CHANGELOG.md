@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Hardened the local-directory browser against symlink escapes and recursive symlink cycles; directory traversal is restricted to configured roots and capped at 500 entries per listing.
 - Consolidated the duplicate Applications/Aplikacje navigation onto the canonical `/apps` workflow and kept `/applications` as a compatibility redirect.
 - Normalized null collection payloads so empty project lists no longer crash with an `items is null` frontend error.
 - Replaced hard-coded dark module panel backgrounds with theme variables, fixing unreadable forms in light mode.
@@ -11,6 +12,7 @@
 
 ### Added
 
+- Operator-only local-directory tree browser with configurable browse roots via `DEVBOX_DIRECTORY_BROWSE_ROOTS` and audited browse activity.
 - Initial DevBox Universal repository architecture.
 - Go backend bootstrap, environment configuration and graceful HTTP shutdown.
 - SQLite bootstrap and ordered SQL migration engine.

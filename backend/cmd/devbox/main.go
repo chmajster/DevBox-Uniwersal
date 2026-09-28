@@ -156,7 +156,7 @@ func serve() error {
 
 	gitClient := projects.NewGitClient(secretStore)
 	projectRepo := projects.NewRepository(db)
-	projectService := projects.NewService(projectRepo, gitClient, jobRunner, secretStore, cfg.ProjectsRoot)
+	projectService := projects.NewService(projectRepo, gitClient, jobRunner, secretStore, cfg.ProjectsRoot, cfg.DirectoryBrowseRoots...)
 	for _, jobHandler := range []jobs.Handler{
 		projects.NewGitJobHandler(projects.JobClone, projectRepo, gitClient, jobRunner),
 		projects.NewGitJobHandler(projects.JobFetch, projectRepo, gitClient, jobRunner),

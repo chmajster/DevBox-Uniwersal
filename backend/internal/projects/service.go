@@ -23,11 +23,19 @@ type Service struct {
 	git          *GitClient
 	jobRunner    jobs.JobRunner
 	secretStore  secrets.SecretStore
-	projectsRoot string
+	projectsRoot          string
+	directoryBrowseRoots []string
 }
 
-func NewService(repo *Repository, git *GitClient, jobRunner jobs.JobRunner, secretStore secrets.SecretStore, projectsRoot string) *Service {
-	return &Service{repo: repo, git: git, jobRunner: jobRunner, secretStore: secretStore, projectsRoot: projectsRoot}
+func NewService(repo *Repository, git *GitClient, jobRunner jobs.JobRunner, secretStore secrets.SecretStore, projectsRoot string, directoryBrowseRoots ...string) *Service {
+	return &Service{
+		repo:                 repo,
+		git:                  git,
+		jobRunner:            jobRunner,
+		secretStore:          secretStore,
+		projectsRoot:         projectsRoot,
+		directoryBrowseRoots: normalizeDirectoryBrowseRoots(projectsRoot, directoryBrowseRoots),
+	}
 }
 
 func (s *Service) List(ctx context.Context, includeArchived bool) ([]Project, error) {

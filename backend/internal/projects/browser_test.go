@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,7 +19,7 @@ func TestBrowseDirectoriesReturnsDirectoriesOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	listing, err := browseDirectories(root)
+	listing, err := browseDirectories(root, []string{root})
 	if err != nil {
 		t.Fatalf("browseDirectories() error = %v", err)
 	}
@@ -38,13 +39,33 @@ func TestBrowseDirectoriesReturnsDirectoriesOnly(t *testing.T) {
 	}
 }
 
+func TestBrowseDirectoriesListsOnlyConfiguredRootsWhenPathIsEmpty(t *testing.T) {
+	root := t.TempDir()
+	listing, err := browseDirectories("", []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listing.Path != "" || len(listing.Directories) != 1 || listing.Directories[0].Path != root {
+		t.Fatalf("unexpected roots listing: %#v", listing)
+	}
+}
+
 func TestBrowseDirectoriesRejectsRelativePaths(t *testing.T) {
-	if _, err := browseDirectories("../relative"); err == nil {
+	root := t.TempDir()
+	if _, err := browseDirectories("../relative", []string{root}); err == nil {
 		t.Fatal("expected relative path rejection")
 	}
 }
 
-func TestBrowseDirectoriesFollowsDirectorySymlink(t *testing.T) {
+func TestBrowseDirectoriesRejectsPathsOutsideConfiguredRoots(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if _, err := browseDirectories(outside, []string{root}); !errors.Is(err, ErrDirectoryAccess) {
+		t.Fatalf("expected ErrDirectoryAccess, got %v", err)
+	}
+}
+
+func TestBrowseDirectoriesCanonicalizesDirectorySymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation can require additional privileges on Windows")
 	}
@@ -58,7 +79,7 @@ func TestBrowseDirectoriesFollowsDirectorySymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	listing, err := browseDirectories(root)
+	listing, err := browseDirectories(root, []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,10 +87,32 @@ func TestBrowseDirectoriesFollowsDirectorySymlink(t *testing.T) {
 	for _, entry := range listing.Directories {
 		if entry.Name == "link" {
 			found = true
-			break
+			if entry.Path != target {
+				t.Fatalf("symlink path = %q, want canonical target %q", entry.Path, target)
+			}
 		}
 	}
 	if !found {
 		t.Fatal("directory symlink was not exposed by the browser")
+	}
+}
+
+func TestBrowseDirectoriesDoesNotExposeSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation can require additional privileges on Windows")
+	}
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	listing, err := browseDirectories(root, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range listing.Directories {
+		if entry.Name == "escape" {
+			t.Fatal("symlink escaping configured root must not be exposed")
+		}
 	}
 }

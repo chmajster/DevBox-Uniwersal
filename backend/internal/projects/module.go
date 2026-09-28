@@ -52,9 +52,19 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) browseDirectories(w http.ResponseWriter, r *http.Request) {
-	listing, err := m.service.BrowseDirectories(r.URL.Query().Get("path"))
+	requestedPath := r.URL.Query().Get("path")
+	listing, err := m.service.BrowseDirectories(requestedPath)
 	if err != nil {
 		m.fail(w, err)
+		return
+	}
+	actor := actorID(r)
+	targetID := listing.Path
+	if targetID == "" {
+		targetID = "browse-roots"
+	}
+	if err := m.audit.Record(r.Context(), actor, "project.directory_browse", "directory", &targetID, map[string]any{"requested_path": requestedPath}, nil); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "audit_failed", "directory listing succeeded but audit persistence failed")
 		return
 	}
 	writeData(w, http.StatusOK, listing)
