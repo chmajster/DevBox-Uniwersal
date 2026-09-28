@@ -23,8 +23,8 @@
   --console-bg: #121c25; --shadow: 0 6px 24px #0000000e; --focus: #75e4c4;
 }
 body { font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
-button, .button-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; border-radius: 8px; padding: 9px 14px; font-weight: 600; font-size: 13px; line-height: 1.4; border-color: var(--accent); background: var(--accent); color: var(--on-accent); transition: background .15s, border-color .15s, box-shadow .15s; }
-button:hover:not(:disabled), .button-link:hover { filter: brightness(.97); }
+button, .button-link, a.secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; border-radius: 8px; padding: 9px 14px; font-weight: 600; font-size: 13px; line-height: 1.4; border-color: var(--accent); background: var(--accent); color: var(--on-accent); transition: background .15s, border-color .15s, box-shadow .15s; }
+button:hover:not(:disabled), .button-link:hover, a.secondary-button:hover { filter: brightness(.97); }
 button:disabled { cursor: not-allowed; opacity: .55; }
 .secondary-button, button.secondary, .button-link.secondary, .button-link.secondary-button { color: var(--text); background: var(--panel); border-color: var(--border); }
 .secondary-button:hover:not(:disabled), button.secondary:hover:not(:disabled) { background: var(--panel-alt); border-color: var(--muted); }
