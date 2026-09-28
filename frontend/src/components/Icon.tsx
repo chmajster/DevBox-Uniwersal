@@ -12,6 +12,7 @@ const paths = {
   jobs: ['M8 5V3h8v2M5 5h14v16H5zM8 10l1 1 2-2m2 1h3m-8 6 1 1 2-2m2 1h3'],
   shield: ['m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z', 'm8 12 3 3 5-6'],
   backup: ['M3 11a9 9 0 1 1 2 7M3 5v6h6M12 7v5l3 2'],
+  puzzle: ['M8 3h3a2 2 0 1 1 4 0h3v5h3v4h-3v5h-5v3H9v-3H4v-5h3V8h1V3Z'],
   search: ['M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Zm-2 5 6 6'],
   chevron: ['m9 5 7 7-7 7'],
   arrow: ['M5 12h14m-6-6 6 6-6 6'],
