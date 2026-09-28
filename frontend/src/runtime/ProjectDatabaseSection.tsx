@@ -178,10 +178,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
 
   async function openPHPMyAdmin() {
     await perform('phpmyadmin', async () => {
-      let status = await request<PHPMyAdminStatus>('/phpmyadmin/status')
-      if (!status.installed) {
-        status = await request<PHPMyAdminStatus>('/phpmyadmin/install', { method: 'POST', body: '{}' })
-      }
+      let status = await request<PHPMyAdminStatus>('/phpmyadmin/install', { method: 'POST', body: '{}' })
       if (!status.running) {
         status = await request<PHPMyAdminStatus>('/phpmyadmin/start', { method: 'POST', body: '{}' })
       }
