@@ -186,9 +186,28 @@ component_status() {
   return 1
 }
 
+docker_compose_status() {
+  local version=""
+  if command -v docker >/dev/null 2>&1; then
+    version="$(docker compose version 2>/dev/null | head -n1 || true)"
+    if [[ -n "$version" ]]; then
+      emit " OK " "$(printf '%-9s' "Compose") $version"
+      return 0
+    fi
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    version="$(docker-compose version 2>/dev/null | head -n1 || true)"
+    emit " OK " "$(printf '%-9s' "Compose") ${version:-$(command -v docker-compose)}"
+    return 0
+  fi
+  emit WARN "$(printf '%-9s' "Compose") brak; projekty z compose.yaml/docker-compose.yml nie mogą zostać wdrożone"
+  return 1
+}
+
 show_components() {
   component_status Git git || true
   component_status Docker docker || true
+  docker_compose_status || true
   component_status Nginx nginx || true
   component_status MySQL mysql mariadb || true
   component_status PHP php || true
@@ -323,10 +342,31 @@ select_mysql_package() {
   fi
 }
 
+select_docker_compose_package() {
+  local pkg
+  for pkg in docker-compose-v2 docker-compose-plugin docker-compose; do
+    if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' ||
+       apt-cache show "$pkg" >/dev/null 2>&1; then
+      printf '%s' "$pkg"
+      return 0
+    fi
+  done
+  return 1
+}
+
 install_packages() {
-  local mysql_pkg
+  local mysql_pkg compose_pkg apt_refreshed=0
   mysql_pkg="$(select_mysql_package)"
-  local packages=(ca-certificates curl sudo build-essential git docker.io nginx "$mysql_pkg" php-cli composer python3 python3-pip golang-go nodejs npm)
+  compose_pkg="$(select_docker_compose_package || true)"
+  if [[ -z "$compose_pkg" ]]; then
+    emit INFO "Odświeżam listę pakietów, aby znaleźć Docker Compose."
+    DEBIAN_FRONTEND=noninteractive apt-get update -y >>"$LOG_FILE" 2>&1
+    apt_refreshed=1
+    compose_pkg="$(select_docker_compose_package || true)"
+  fi
+  [[ -n "$compose_pkg" ]] || fail "Nie znaleziono pakietu Docker Compose (docker-compose-v2, docker-compose-plugin ani docker-compose) w repozytoriach APT."
+
+  local packages=(ca-certificates curl sudo build-essential git docker.io "$compose_pkg" nginx "$mysql_pkg" php-cli composer python3 python3-pip golang-go nodejs npm)
   local missing=()
   local pkg
   for pkg in "${packages[@]}"; do
@@ -334,14 +374,21 @@ install_packages() {
       missing+=("$pkg")
     fi
   done
-  if ((${#missing[@]} == 0)); then
+  if ((${#missing[@]} > 0)); then
+    emit INFO "Instaluję brakujące pakiety z kontrolowanej listy: ${missing[*]}"
+    if (( apt_refreshed == 0 )); then
+      DEBIAN_FRONTEND=noninteractive apt-get update -y >>"$LOG_FILE" 2>&1
+    fi
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}" >>"$LOG_FILE" 2>&1
+    emit " OK " "Pakiety systemowe zainstalowane."
+  else
     emit " OK " "Pakiety systemowe są już zainstalowane."
-    return 0
   fi
-  emit INFO "Instaluję brakujące pakiety z kontrolowanej listy: ${missing[*]}"
-  DEBIAN_FRONTEND=noninteractive apt-get update -y >>"$LOG_FILE" 2>&1
-  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}" >>"$LOG_FILE" 2>&1
-  emit " OK " "Pakiety systemowe zainstalowane."
+
+  if ! docker compose version >/dev/null 2>&1 && ! docker-compose version >/dev/null 2>&1; then
+    fail "Docker Compose nadal jest niedostępny po instalacji pakietu $compose_pkg. Sprawdź $LOG_FILE."
+  fi
+  emit " OK " "Docker Compose jest dostępny ($compose_pkg)."
 }
 
 cleanup_source_tree() {
@@ -453,6 +500,7 @@ install_nginx_integration() {
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper validate-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper reload-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper start-update
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package docker-compose
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-fpm
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-curl
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-mbstring
