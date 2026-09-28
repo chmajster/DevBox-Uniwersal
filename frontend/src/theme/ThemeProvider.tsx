@@ -1,36 +1,25 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { readPreference, savePreference } from '../layout/navigation'
 
 type Theme = 'light' | 'dark'
-
-interface ThemeState {
-  theme: Theme
-  toggle(): void
-}
-
+interface ThemeState { theme: Theme; toggle(): void }
 const ThemeContext = createContext<ThemeState | null>(null)
 
 function initialTheme(): Theme {
-  if (typeof window === 'undefined') return 'dark'
-  const stored = window.localStorage.getItem('devbox-theme')
+  const stored = readPreference('devbox-theme', '')
   if (stored === 'light' || stored === 'dark') return stored
-  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  if (typeof window === 'undefined') return 'light'
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(initialTheme)
-
   useEffect(() => {
     document.documentElement.dataset.theme = theme
-    window.localStorage.setItem('devbox-theme', theme)
+    document.documentElement.style.colorScheme = theme
+    savePreference('devbox-theme', theme)
   }, [theme])
-
-  const value = useMemo<ThemeState>(() => ({
-    theme,
-    toggle() {
-      setTheme((current) => current === 'dark' ? 'light' : 'dark')
-    }
-  }), [theme])
-
+  const value = useMemo<ThemeState>(() => ({ theme, toggle() { setTheme((current) => current === 'dark' ? 'light' : 'dark') } }), [theme])
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 

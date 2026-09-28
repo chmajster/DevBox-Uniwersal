@@ -10,6 +10,16 @@ DevBox Universal is an integrated local development control plane.
 - React/TypeScript/Vite web UI served by the Go process in production.
 - OpenAPI 3.1 discovery at `/api/v1/openapi.json` and authenticated API index at `/api/v1/docs`.
 
+## Workspace UI
+
+- Responsive, grouped navigation with persistent compact sidebar, mobile drawer and role-aware Ctrl/Cmd+K navigation search.
+- Redesigned dashboard with API-backed resource summaries, host meters, service states, application links and explicit missing-data/error states.
+- Searchable applications in persistent card/table views, status filtering, deployment queue feedback and archive confirmation.
+- Redesigned login, consistent light/dark semantic tokens and shared module forms, tables, statuses and logs.
+- Native accessible dialogs, keyboard navigation, visible focus, reduced-motion support and graceful handling of disabled browser storage.
+- Frontend unit tests and a Chromium smoke workflow with synthetic API fixtures and screenshot artifacts. This is not full provider/infrastructure E2E coverage.
+- Existing routes, API contracts, RBAC, CSRF and backend behavior are unchanged; no migrations or new frontend runtime dependencies.
+
 ## Projects / Git / deployments
 
 - Git, local-directory and empty-project onboarding.

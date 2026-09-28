@@ -4,6 +4,7 @@ import { App } from './App'
 import { AuthProvider } from './auth/AuthContext'
 import { ThemeProvider } from './theme/ThemeProvider'
 import './styles.css'
+import './workspace.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

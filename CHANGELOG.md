@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Workspace UI redesign
+
+- Replaced the basic shell with grouped, icon-based navigation, persistent compact sidebar, mobile drawer and role-aware Ctrl/Cmd+K navigation search.
+- Redesigned the dashboard into application/resource summaries, CPU/RAM/disk meters, service states and application shortcuts; unavailable API data is no longer presented as zero.
+- Added searchable card/table application views with persistent view preference, status filtering, archive confirmation and deployment queue feedback while preserving existing API actions and CSRF handling.
+- Redesigned the login page and unified light/dark tokens across shared module forms, tables, statuses and log viewers; no new frontend runtime dependencies or external assets.
+- Added native modal focus handling, visible keyboard focus, reduced-motion support and graceful operation when browser preference storage is blocked.
+- Added navigation/filter unit coverage and a Chromium smoke workflow producing screenshots and a report. Browser fixtures are synthetic; real Docker, database, proxy and deployment integration testing remains a separate requirement.
+- No backend API contract or database migration changes.
+
 ### Fixed
 
 - Hardened the local-directory browser against symlink escapes and recursive symlink cycles; traversal is restricted to configured roots and capped at 500 entries.
