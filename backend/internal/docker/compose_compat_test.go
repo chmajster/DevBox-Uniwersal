@@ -25,7 +25,7 @@ func TestComposeArgsAvoidsProjectDirectoryFlag(t *testing.T) {
 		t.Fatalf("composeArgs() contains unsupported --project-directory flag: %#v", args)
 	}
 
-	want := []string{"compose", "--project-name", "example-app", "--file", composeFile}
+	want := []string{"compose", "-p", "example-app", "-f", composeFile}
 	if !slices.Equal(args, want) {
 		t.Fatalf("composeArgs() = %#v, want %#v", args, want)
 	}
@@ -56,9 +56,34 @@ func TestComposeValidateFallsBackToLegacyDockerCompose(t *testing.T) {
 	if got := strings.Join(legacyRunner.calls[0], "|"); got != "version" {
 		t.Fatalf("unexpected legacy compose probe: %s", got)
 	}
-	want := "--project-name|sample|--file|" + config + "|config|--quiet"
+	want := "-p|sample|-f|" + config + "|config|--quiet"
 	if got := strings.Join(legacyRunner.calls[1], "|"); got != want {
 		t.Fatalf("unexpected legacy compose validation: got %s want %s", got, want)
+	}
+}
+
+func TestComposeValidateRetriesLegacyWhenPluginRejectsComposeFlags(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "compose.yaml")
+	if err := os.WriteFile(config, []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dockerRunner := &stubRunner{responses: []runnerResponse{
+		{stdout: "Docker Compose version v2.29.0\n"},
+		{err: errors.New("docker command failed: unknown flag: -p Usage: docker [OPTIONS] COMMAND [ARG...]")},
+	}}
+	legacyRunner := &stubRunner{responses: []runnerResponse{
+		{stdout: "docker-compose version 1.29.2\n"},
+		{},
+	}}
+	provider := newCLIProviderWithComposeRunners(dockerRunner, legacyRunner)
+
+	if err := provider.ComposeValidate(context.Background(), dir, "sample"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(legacyRunner.calls[1], "|"); got != "-p|sample|-f|"+config+"|config|--quiet" {
+		t.Fatalf("unexpected legacy fallback invocation: %s", got)
 	}
 }
 
