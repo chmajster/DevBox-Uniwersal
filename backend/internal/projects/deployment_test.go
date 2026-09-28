@@ -172,15 +172,15 @@ func TestComposeEnvironmentPrecedenceDatabaseBindingWins(t *testing.T) {
 			"DB_HOST": "user-db",
 		},
 		Sensitive: map[string]string{
-			"API_TOKEN": "project-secret",
+			"API_TOKEN":   "project-secret",
 			"DB_PASSWORD": "user-password",
 		},
 	}
 	databaseRuntime := providers.ProjectDatabaseRuntime{
 		Connection: providers.DatabaseConnection{
-			Mode: providers.DatabaseModeManaged,
-			Host: "devbox-mysql",
-			Port: 3306,
+			Mode:     providers.DatabaseModeManaged,
+			Host:     "devbox-mysql",
+			Port:     3306,
 			Database: "plan",
 			Username: "plan_user",
 		},
@@ -199,11 +199,11 @@ func TestDatabaseDeploymentLogFieldsNeverContainSecret(t *testing.T) {
 	secret := "never-log-this-password"
 	runtime := providers.ProjectDatabaseRuntime{
 		Connection: providers.DatabaseConnection{
-			Mode: providers.DatabaseModeExternal,
-			Host: "mysql.internal",
-			Port: 3306,
-			Database: "plan",
-			Username: "plan_user",
+			Mode:      providers.DatabaseModeExternal,
+			Host:      "mysql.internal",
+			Port:      3306,
+			Database:  "plan",
+			Username:  "plan_user",
 			SecretRef: "opaque-secret-ref",
 		},
 		Secret: []byte(secret),

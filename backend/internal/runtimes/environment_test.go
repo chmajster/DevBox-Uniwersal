@@ -9,7 +9,7 @@ import (
 type environmentTestStore map[string][]byte
 
 func (s environmentTestStore) Put(context.Context, string, string, []byte) error { return nil }
-func (s environmentTestStore) Delete(context.Context, string, string) error { return nil }
+func (s environmentTestStore) Delete(context.Context, string, string) error      { return nil }
 func (s environmentTestStore) Get(_ context.Context, scope, name string) ([]byte, error) {
 	value, ok := s[scope+"/"+name]
 	if !ok {

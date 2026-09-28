@@ -130,10 +130,10 @@ type ManagedContainerDeployer interface {
 }
 
 type DeploymentIntegrations struct {
-	Ports    providers.PortAllocator
-	Routes   ProjectRouteManager
-	Compose  ComposeDeployer
-	Managed  ManagedContainerDeployer
+	Ports       providers.PortAllocator
+	Routes      ProjectRouteManager
+	Compose     ComposeDeployer
+	Managed     ManagedContainerDeployer
 	Database    providers.ProjectDatabaseResolver
 	Environment runtimes.EnvironmentResolver
 }
@@ -848,9 +848,9 @@ func mergeDatabaseEnvironment(spec *containerspec.DeploymentSpec, database map[s
 func databaseLogFields(runtime providers.ProjectDatabaseRuntime) map[string]any {
 	connection := runtime.Connection
 	return map[string]any{
-		"mode": connection.Mode,
-		"host": connection.Host,
-		"port": connection.Port,
+		"mode":     connection.Mode,
+		"host":     connection.Host,
+		"port":     connection.Port,
 		"database": connection.Database,
 		"username": connection.Username,
 	}
