@@ -97,6 +97,9 @@ func (m *ManagedMySQLManager) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("ensure managed MySQL container: %w", err)
 	}
+	if err := m.docker.ConnectNetwork(ctx, m.cfg.Container, m.cfg.Network); err != nil {
+		return fmt.Errorf("reconcile managed MySQL network: %w", err)
+	}
 	if !strings.EqualFold(item.State, "running") {
 		if err := m.docker.Start(ctx, m.cfg.Container); err != nil {
 			return fmt.Errorf("start managed MySQL: %w", err)
