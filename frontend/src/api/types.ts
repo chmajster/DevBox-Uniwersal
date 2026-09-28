@@ -471,3 +471,35 @@ export interface SystemRestoreRequest {
   restart_required: boolean
   message: string
 }
+
+
+export interface ScriptApp {
+  id: string
+  name: string
+  description: string
+  install_source: string
+  update_source?: string
+  uninstall_source?: string
+  interpreter: 'bash' | 'sh' | 'pwsh' | 'powershell'
+  checksum_sha256?: string
+  run_as_root: boolean
+  allow_insecure: boolean
+  manager: 'script' | 'systemd' | 'docker'
+  manager_target?: string
+  status: string
+  last_error?: string
+  created_by?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ScriptAppCreateResult {
+  app: ScriptApp
+  job?: Job
+}
+
+export interface ScriptAppLogs {
+  manager: string
+  target?: string
+  logs: string
+}
