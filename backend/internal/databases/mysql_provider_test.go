@@ -121,7 +121,6 @@ func TestCreateUserErrorDoesNotLeakPassword(t *testing.T) {
 	}
 }
 
-
 func TestSanitizeMySQLErrorRedactsPasswordAndPreservesDiagnostic(t *testing.T) {
 	raw := "ERROR 1045 (28000): Access denied for user 'devbox_admin'@'localhost' password=super-secret"
 	got := sanitizeMySQLError(raw)

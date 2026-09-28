@@ -23,6 +23,7 @@ func NewModule(service *Service, auditService *audit.Service) *Module {
 func (m *Module) Name() string { return "projects" }
 
 func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddleware) {
+	m.registerPortRoutes(mux, middleware)
 	secure := func(role domain.Role, handler http.HandlerFunc) http.Handler {
 		return middleware.Authenticate(middleware.RequireRole(role, handler))
 	}
