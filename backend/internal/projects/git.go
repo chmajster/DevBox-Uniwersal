@@ -143,10 +143,17 @@ func (g *GitClient) Branches(ctx context.Context, workDir string) ([]string, err
 }
 
 func (g *GitClient) History(ctx context.Context, workDir string, limit int) ([]GitCommit, error) {
+	return g.HistoryPage(ctx, workDir, limit, 0)
+}
+
+func (g *GitClient) HistoryPage(ctx context.Context, workDir string, limit, offset int) ([]GitCommit, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 30
 	}
-	out, err := g.run(ctx, workDir, nil, "log", "-n", strconv.Itoa(limit), "--pretty=format:%H%x1f%an%x1f%aI%x1f%s")
+	if offset < 0 {
+		offset = 0
+	}
+	out, err := g.run(ctx, workDir, nil, "log", "-n", strconv.Itoa(limit), "--skip", strconv.Itoa(offset), "--pretty=format:%H%x1f%an%x1f%aI%x1f%s")
 	if err != nil {
 		return nil, err
 	}
@@ -163,6 +170,21 @@ func (g *GitClient) History(ctx context.Context, workDir string, limit int) ([]G
 		commits = append(commits, GitCommit{Hash: parts[0], Author: parts[1], Date: when, Subject: parts[3]})
 	}
 	return commits, nil
+}
+
+func (g *GitClient) Tags(ctx context.Context, workDir string) ([]string, error) {
+	out, err := g.run(ctx, workDir, nil, "tag", "--list", "--sort=-creatordate")
+	if err != nil {
+		return nil, err
+	}
+	items := []string{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			items = append(items, line)
+		}
+	}
+	return items, nil
 }
 
 func parseAheadBehind(raw string) (ahead, behind int) {
