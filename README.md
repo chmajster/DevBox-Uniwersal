@@ -69,4 +69,15 @@ Docker:
 
 Success envelope: `{ "data": ..., "meta": ... }`. Error envelope: `{ "error": { "code": "...", "message": "...", "details": ... } }`.
 
+Authenticated API discovery:
+- `GET /api/v1/openapi.json` — OpenAPI 3.1 contract.
+- `GET /api/v1/docs` — human-readable endpoint index.
+
+Project health checks run automatically for configured HTTP/TCP targets and retain history. Central logs support `source=all`, SSE live tail, time-range filters and text export.
+
 See `ARCHITECTURE.md`, `AGENTS.md` and `docs/adr/` before adding a module.
+
+
+## License
+
+DevBox Universal is distributed under the MIT License. See `LICENSE`.
