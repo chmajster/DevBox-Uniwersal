@@ -18,6 +18,7 @@ const items: NavigationItem[] = [
   { to: '/databases', label: 'Bazy danych', icon: 'database', group: 'Infrastruktura' },
   { to: '/domains', label: 'Domeny i proxy', icon: 'globe', group: 'Infrastruktura' },
   { to: '/ports', label: 'Porty', icon: 'network', group: 'Infrastruktura' },
+  { to: ROUTES.plugins, label: 'Pluginy', icon: 'puzzle', group: 'Infrastruktura' },
   { to: ROUTES.jobs, label: 'Zadania', icon: 'jobs', group: 'Operacje' },
   { to: ROUTES.logs, label: 'Logi', icon: 'logs', group: 'Operacje' },
   { to: ROUTES.health, label: 'Monitoring aplikacji', icon: 'activity', group: 'Operacje' },
