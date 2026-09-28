@@ -107,7 +107,7 @@ func (s *Service) Status(ctx context.Context) Status {
 func (s *Service) Progress(ctx context.Context) Progress {
 	progress, err := readProgressFile(s.progressFile)
 	if err == nil {
-		if updateServiceActive(ctx) && !progress.Active() {
+		if !progress.Active() && updateServiceActive(ctx) {
 			progress.State = "starting"
 			progress.Stage = "starting"
 			progress.Percent = 1
