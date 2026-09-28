@@ -13,6 +13,7 @@
 - Added sanitized managed build contexts that exclude .env files, VCS metadata, dependency trees and common local caches.
 - Added atomic managed-container replacement with health verification and rollback to the previous container on failure.
 - Project runtime validation no longer requires PHP-FPM, Go, Node.js or Python executables on the host.
+- Removed the unnecessary Docker Compose `--project-directory` flag; Compose now uses the absolute `--file` path and works with Docker installations that reject that flag.
 - Added a dedicated Runtime containers CI workflow covering managed-container backend and frontend quality gates.
 
 
