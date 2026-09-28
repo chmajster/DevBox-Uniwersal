@@ -126,7 +126,7 @@ func (r *Repository) DeleteDatabase(ctx context.Context, id string) error {
 
 func (r *Repository) ProjectByID(ctx context.Context, id string) (ProjectRef, error) {
 	var project ProjectRef
-	err := r.db.QueryRowContext(ctx, `SELECT id,name,slug FROM projects WHERE id=?`, id).Scan(&project.ID, &project.Name, &project.Slug)
+	err := r.db.QueryRowContext(ctx, `SELECT id,name,slug,COALESCE(local_path,''),COALESCE(working_directory,'') FROM projects WHERE id=?`, id).Scan(&project.ID, &project.Name, &project.Slug, &project.LocalPath, &project.WorkingDirectory)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ProjectRef{}, ErrNotFound
 	}
