@@ -12,14 +12,20 @@ import (
 )
 
 type fakeNginxRunner struct {
-	failCandidate bool
-	failGlobal    bool
-	calls         [][]string
+	failCandidate   bool
+	failGlobal      bool
+	calls           [][]string
+	candidateConfig string
 }
 
 func (f *fakeNginxRunner) Run(_ context.Context, _ string, args ...string) (string, error) {
 	copyArgs := append([]string(nil), args...)
 	f.calls = append(f.calls, copyArgs)
+	if len(args) >= 3 && args[0] == "-t" && args[1] == "-c" {
+		if data, err := os.ReadFile(args[2]); err == nil {
+			f.candidateConfig = string(data)
+		}
+	}
 	if f.failCandidate && len(args) >= 2 && args[0] == "-t" && args[1] == "-c" {
 		return "candidate invalid", errors.New("exit status 1")
 	}
@@ -49,6 +55,40 @@ func TestNginxConfigGeneration(t *testing.T) {
 		if !strings.Contains(config, expected) {
 			t.Fatalf("generated config missing %q:\n%s", expected, config)
 		}
+	}
+}
+
+func TestNginxCandidateValidationUsesUnprivilegedUnixSocket(t *testing.T) {
+	runner := &fakeNginxRunner{}
+	provider := NewNginxProvider(NginxOptions{Binary: "nginx"})
+	provider.runner = runner
+
+	err := provider.TestRoute(context.Background(), providers.ProxyRoute{
+		Domain:   "cloudportal.devbox.local",
+		Upstream: "http://127.0.0.1:8010",
+	})
+	if err != nil {
+		t.Fatalf("TestRoute() error = %v", err)
+	}
+	if !strings.Contains(runner.candidateConfig, "listen unix:") {
+		t.Fatalf("candidate config does not use a Unix socket:\n%s", runner.candidateConfig)
+	}
+	if strings.Contains(runner.candidateConfig, "listen 80;") || strings.Contains(runner.candidateConfig, "listen [::]:80;") {
+		t.Fatalf("candidate config attempts privileged TCP bind:\n%s", runner.candidateConfig)
+	}
+	if !strings.Contains(runner.candidateConfig, "proxy_pass http://127.0.0.1:8010;") {
+		t.Fatalf("candidate config lost route upstream:\n%s", runner.candidateConfig)
+	}
+
+	production, err := provider.Render(providers.ProxyRoute{
+		Domain:   "cloudportal.devbox.local",
+		Upstream: "http://127.0.0.1:8010",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(production, "listen 80;") || !strings.Contains(production, "listen [::]:80;") {
+		t.Fatalf("production config no longer publishes HTTP on port 80:\n%s", production)
 	}
 }
 
