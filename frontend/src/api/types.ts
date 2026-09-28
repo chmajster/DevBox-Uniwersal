@@ -430,3 +430,21 @@ export interface HealthHistoryEntry {
   error?: string
   checked_at: string
 }
+
+export interface SystemBackup {
+  id: string
+  file_name: string
+  status: string
+  size_bytes: number
+  sha256?: string
+  requested_by?: string
+  error?: string
+  created_at: string
+  completed_at?: string
+}
+
+export interface SystemRestoreRequest {
+  backup: SystemBackup
+  restart_required: boolean
+  message: string
+}
