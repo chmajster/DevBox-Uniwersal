@@ -7,9 +7,11 @@ import type {
   SystemComponentStatus,
   SystemInfo,
   SystemPlatformInfo,
+  UpdateProgress,
   UpdateStatus
 } from '../api/types'
 import { Icon } from '../components/Icon'
+import { UPDATE_STAGES, clampUpdatePercent, updateIsActive, updateStageState, updateStateLabel } from '../updates/progress'
 
 const componentLabels: Record<string, string> = {
   git: 'Git',
@@ -51,6 +53,7 @@ function statusAttribute(value?: boolean) {
 
 export function UpdatesPage() {
   const [status,setStatus]=useState<UpdateStatus|null>(null)
+  const [progress,setProgress]=useState<UpdateProgress|null>(null)
   const [systemInfo,setSystemInfo]=useState<SystemInfo|null>(null)
   const [platform,setPlatform]=useState<SystemPlatformInfo|null>(null)
   const [components,setComponents]=useState<SystemComponentStatus[]>([])
@@ -100,7 +103,27 @@ export function UpdatesPage() {
     }
   },[])
 
-  useEffect(()=>{load().catch(c=>setError(c instanceof Error?c.message:'Nie udało się sprawdzić aktualizacji'))},[load])
+  const loadProgress=useCallback(async()=>{
+    const data=await request<UpdateProgress>('/update/progress')
+    setProgress(data)
+    return data
+  },[])
+
+  useEffect(()=>{
+    load().catch(c=>setError(c instanceof Error?c.message:'Nie udało się sprawdzić aktualizacji'))
+    loadProgress().catch(()=>undefined)
+  },[load,loadProgress])
+
+  useEffect(()=>{
+    const timer=window.setInterval(()=>{loadProgress().catch(()=>undefined)},1500)
+    return ()=>window.clearInterval(timer)
+  },[loadProgress])
+
+  useEffect(()=>{
+    if(progress?.state==='succeeded'||progress?.state==='no_update'){
+      load().catch(()=>undefined)
+    }
+  },[progress?.state,load])
 
   async function apply(){
     if(!window.confirm('Uruchomić aktualizację DevBox z repozytorium Git? Backend i frontend zostaną przebudowane, a devbox.service po wdrożeniu zostanie zrestartowany.'))return
@@ -108,7 +131,16 @@ export function UpdatesPage() {
     try{
       const result=await request<{status:string;message:string}>('/update/apply',{method:'POST'})
       setMessage(result.message)
-      window.setTimeout(()=>load().catch(()=>undefined),5000)
+      setProgress({
+        state:'starting',
+        percent:1,
+        stage:'starting',
+        message:'Uruchamianie devbox-update.service…',
+        current_version:status?.current_version,
+        target_version:status?.latest_version,
+        updated_at:new Date().toISOString()
+      })
+      window.setTimeout(()=>loadProgress().catch(()=>undefined),500)
     }catch(c){setError(c instanceof Error?c.message:'Nie udało się uruchomić aktualizacji')}
     finally{setBusy(false)}
   }
@@ -117,6 +149,10 @@ export function UpdatesPage() {
   const mysqlOK=mysql ? mysql.running : undefined
   const dockerOK=docker ? docker.available : undefined
   const apiOK=systemInfo ? true : undefined
+  const progressPercent=clampUpdatePercent(progress?.percent)
+  const progressActive=updateIsActive(progress)
+  const progressFailed=progress?.state==='failed'
+  const progressFinished=progress?.state==='succeeded'||progress?.state==='no_update'
 
   return <>
     <div className="page-heading">
@@ -156,11 +192,39 @@ export function UpdatesPage() {
 
       {status?.last_error&&<div className="warning-banner">Nie udało się pobrać najnowszego commita: {status.last_error}</div>}
       <div className="form-actions update-actions">
-        <button type="button" onClick={apply} disabled={busy||!status?.update_available}>
-          {busy?'Uruchamianie…':'Aktualizuj teraz'}
+        <button type="button" onClick={apply} disabled={busy||progressActive||!status?.update_available}>
+          {busy?'Uruchamianie…':progressActive?'Aktualizacja trwa…':'Aktualizuj teraz'}
         </button>
         <span className="muted small">Ręczne uruchomienie startuje <code>devbox-update.service</code> w tle.</span>
       </div>
+    </section>
+
+    <section className={`panel update-progress-panel ${progressFailed?'is-failed':progressFinished?'is-complete':progressActive?'is-running':''}`} aria-live="polite">
+      <div className="update-progress-heading">
+        <div>
+          <span className="eyebrow">POSTĘP AKTUALIZACJI</span>
+          <h2>{progress?.message||'Brak aktywnej aktualizacji'}</h2>
+          <p className="muted small">Stan jest odczytywany z procesu <code>devbox-update.service</code>. Podczas restartu API panel automatycznie wznowi odświeżanie.</p>
+        </div>
+        <div className="update-progress-value">
+          <strong>{progressPercent}%</strong>
+          <span className="status-chip" data-ok={progressFinished?'true':progressFailed?'false':undefined}>{updateStateLabel(progress)}</span>
+        </div>
+      </div>
+
+      <div className="update-progress-bar">
+        <progress max={100} value={progressPercent}>{progressPercent}%</progress>
+        <div><span>0%</span><span>{progress?.stage&&progress.stage!=='idle'?progress.stage:'oczekiwanie'}</span><span>100%</span></div>
+      </div>
+
+      <div className="summary-grid update-progress-summary">
+        <div><span>Zainstalowana wersja</span><strong className="mono">{shortVersion(progress?.current_version||status?.current_version)}</strong></div>
+        <div><span>Wersja docelowa</span><strong className="mono">{shortVersion(progress?.target_version||status?.latest_version)}</strong></div>
+        <div><span>Rozpoczęto</span><strong>{formatDate(progress?.started_at)}</strong></div>
+        <div><span>Ostatnia zmiana</span><strong>{formatDate(progress?.updated_at)}</strong></div>
+      </div>
+
+      {progress?.error&&<div className="error-banner">{progress.error}</div>}
     </section>
 
     <section className="panel">
@@ -271,13 +335,17 @@ export function UpdatesPage() {
           <p className="muted small">Rzeczywisty przepływ wynikający z <code>devbox-updater</code> i <code>install.sh --update</code>.</p>
         </div>
       </div>
-      <ol className="update-pipeline">
-        <li><span>1</span><div><strong>Sprawdzenie Git</strong><small><code>git ls-remote</code> porównuje commit uruchomionej wersji z gałęzią <code>{status?.ref||'main'}</code>.</small></div></li>
-        <li><span>2</span><div><strong>Tymczasowy clone</strong><small>Updater pobiera płytki clone do katalogu tymczasowego i waliduje obecność instalatora, backendu oraz lockfile frontendu.</small></div></li>
-        <li><span>3</span><div><strong>Build backendu</strong><small>Go buduje binarki <code>devbox</code> oraz ograniczony <code>devbox-helper</code>.</small></div></li>
-        <li><span>4</span><div><strong>Build frontendu</strong><small><code>npm ci</code> i <code>npm run build</code> tworzą nowy pakiet SPA.</small></div></li>
-        <li><span>5</span><div><strong>Instalacja artefaktów</strong><small>Podmieniane są binarki, frontend i migracje; aktualizowana jest konfiguracja instalacji.</small></div></li>
-        <li><span>6</span><div><strong>Restart i kontrola</strong><small>systemd uruchamia aktualną usługę, wykonywany jest healthcheck API oraz diagnostyka <code>devbox doctor</code>.</small></div></li>
+      <ol className="update-pipeline update-pipeline-live">
+        {UPDATE_STAGES.map((stage,index)=>{
+          const state=updateStageState(progress,stage.id)
+          return <li key={stage.id} data-state={state}>
+            <span>{state==='done'?<Icon name="check" size={15}/>:index+1}</span>
+            <div>
+              <div className="update-stage-title"><strong>{stage.label}</strong><small>{stage.percent}%</small></div>
+              <small>{stage.description}</small>
+            </div>
+          </li>
+        })}
       </ol>
 
       <div className="update-safety-grid">
