@@ -61,7 +61,7 @@ func TestComposeArgsAvoidUnsupportedProjectDirectoryFlag(t *testing.T) {
 	if slices.Contains(args, "--project-directory") {
 		t.Fatalf("compose args must not contain --project-directory: %v", args)
 	}
-	want := []string{"compose", "--project-name", "sample", "--file", config}
+	want := []string{"compose", "-p", "sample", "-f", config}
 	if !slices.Equal(args, want) {
 		t.Fatalf("unexpected compose args: got %v want %v", args, want)
 	}
