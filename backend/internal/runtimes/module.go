@@ -18,7 +18,11 @@ type Module struct {
 }
 
 func NewModule(registry Registry, resolver ProjectResolver, secretStore secrets.SecretStore) *Module {
-	return &Module{service: NewService(registry, resolver, secretStore)}
+	return NewModuleWithService(NewService(registry, resolver, secretStore))
+}
+
+func NewModuleWithService(service *Service) *Module {
+	return &Module{service: service}
 }
 
 func (m *Module) Name() string { return "runtimes" }
