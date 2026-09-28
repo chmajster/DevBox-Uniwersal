@@ -17,6 +17,7 @@ import (
 var (
 	ErrInvalidInput        = errors.New("invalid project input")
 	ErrProviderUnavailable = errors.New("provider unavailable")
+	ErrWorkingTreeDirty    = errors.New("Git working tree has local changes")
 )
 
 type runtimeDefaultsApplier interface {
@@ -386,6 +387,13 @@ func (s *Service) EnqueueCheckout(ctx context.Context, id, branch string, actor 
 	if !s.git.IsRepository(ctx, p.LocalPath) {
 		return domain.Job{}, fmt.Errorf("%w: Git repository is not available", ErrProviderUnavailable)
 	}
+	state, err := s.git.State(ctx, p.LocalPath)
+	if err != nil {
+		return domain.Job{}, err
+	}
+	if state.Dirty {
+		return domain.Job{}, ErrWorkingTreeDirty
+	}
 	return s.jobRunner.Enqueue(ctx, jobs.Request{Type: JobCheckout, ProjectID: &p.ID, RequestedBy: actor, Payload: map[string]any{"project_id": p.ID, "branch": branch}})
 }
 func (s *Service) Deploy(ctx context.Context, id string, actor *string) (domain.Job, error) {
@@ -464,4 +472,37 @@ func projectNameFromSource(repositoryPath, repositoryURL string) string {
 	}
 	value = strings.TrimSuffix(value, ".git")
 	return strings.TrimSpace(value)
+}
+
+func (s *Service) GitHistory(ctx context.Context, id string, page, perPage int) ([]GitCommit, bool, error) {
+	p, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, false, err
+	}
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 30
+	}
+	if perPage > 100 {
+		perPage = 100
+	}
+	items, err := s.git.HistoryPage(ctx, p.LocalPath, perPage+1, (page-1)*perPage)
+	if err != nil {
+		return nil, false, err
+	}
+	hasMore := len(items) > perPage
+	if hasMore {
+		items = items[:perPage]
+	}
+	return items, hasMore, nil
+}
+
+func (s *Service) GitTags(ctx context.Context, id string) ([]string, error) {
+	p, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.git.Tags(ctx, p.LocalPath)
 }
