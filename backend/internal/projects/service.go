@@ -52,6 +52,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 	if slug == "" {
 		return Project{}, nil, fmt.Errorf("%w: name cannot produce an empty slug", ErrInvalidInput)
 	}
+	if err := s.repo.ReleaseArchivedIdentity(ctx, input.Name, slug); err != nil {
+		return Project{}, nil, err
+	}
 	if input.DeploymentMode == "" {
 		input.DeploymentMode = "native"
 	}
@@ -95,7 +98,15 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 			return Project{}, nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		if _, err := os.Stat(path); err == nil {
-			return Project{}, nil, fmt.Errorf("%w: destination path already exists", ErrInvalidInput)
+			path, err = SafeProjectPath(s.projectsRoot, slug+"-"+id[:8])
+			if err != nil {
+				return Project{}, nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			}
+			if _, statErr := os.Stat(path); statErr == nil {
+				return Project{}, nil, fmt.Errorf("%w: destination path already exists", ErrInvalidInput)
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				return Project{}, nil, fmt.Errorf("%w: inspect destination: %v", ErrInvalidInput, statErr)
+			}
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return Project{}, nil, fmt.Errorf("%w: inspect destination: %v", ErrInvalidInput, err)
 		}
