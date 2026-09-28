@@ -643,9 +643,11 @@ install_service() {
     return 0
   fi
   systemctl daemon-reload
-  systemctl enable devbox.service >>"$LOG_FILE" 2>&1
-  systemctl restart devbox.service >>"$LOG_FILE" 2>&1
-  systemctl enable --now devbox-update.timer >>"$LOG_FILE" 2>&1
+  {
+    systemctl enable devbox.service
+    systemctl restart devbox.service
+    systemctl enable --now devbox-update.timer
+  } >>"$LOG_FILE" 2>&1
   emit " OK " "Usługa devbox.service została uruchomiona ponownie z aktualnym backendem; auto-update z Git działa co 12 godzin."
 }
 
