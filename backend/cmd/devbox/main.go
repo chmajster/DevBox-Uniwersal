@@ -152,9 +152,11 @@ func serve() error {
 	credentialModule := credentials.NewModule(credentialService, auditService)
 
 	runtimeRegistry := runtimes.NewDefaultRegistry()
+	runtimeProjectResolver := runtimes.NewSQLiteProjectResolver(db)
+	runtimeEnvironmentResolver := runtimes.NewEnvironmentResolver(runtimeProjectResolver, secretStore)
 	runtimeModule := runtimes.NewModule(
 		runtimeRegistry,
-		runtimes.NewSQLiteProjectResolver(db),
+		runtimeProjectResolver,
 		secretStore,
 	)
 
@@ -259,7 +261,8 @@ func serve() error {
 			Routes:   networkService,
 			Compose:  dockerProvider,
 			Managed:  dockerProvider,
-			Database: databaseService,
+			Database:    databaseService,
+			Environment: runtimeEnvironmentResolver,
 		}),
 	} {
 		if err := jobRunner.Register(jobHandler); err != nil {
