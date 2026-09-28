@@ -213,7 +213,7 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Pro
 		p.AutoStart = *input.AutoStart
 	}
 	credentialName := ""
-	if p.CredentialKind != "" {
+	if p.CredentialKind != "" && p.CredentialID == "" {
 		credentialName = "default"
 	}
 	if input.ClearCredential {
