@@ -65,8 +65,47 @@ emit() {
   fi
 }
 
+update_progress_stage() {
+  [[ -n "${DEVBOX_UPDATE_PROGRESS_FILE:-}" ]] || return 0
+
+  local step="$1"
+  local label="$2"
+  local percent stage_name now tmp
+  case "$step" in
+    1) percent=38; stage_name="environment" ;;
+    2) percent=46; stage_name="dependencies" ;;
+    3) percent=58; stage_name="backend" ;;
+    4) percent=68; stage_name="frontend" ;;
+    5) percent=78; stage_name="artifacts" ;;
+    6) percent=87; stage_name="service" ;;
+    7) percent=94; stage_name="healthcheck" ;;
+    8) percent=98; stage_name="summary" ;;
+    *) return 0 ;;
+  esac
+
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  tmp="${DEVBOX_UPDATE_PROGRESS_FILE}.tmp.$"
+  mkdir -p "$(dirname "$DEVBOX_UPDATE_PROGRESS_FILE")" 2>/dev/null || true
+  {
+    printf 'STATE=running\n'
+    printf 'PERCENT=%s\n' "$percent"
+    printf 'STAGE=%s\n' "$stage_name"
+    printf 'MESSAGE=Instalator [%s/8]: %s\n' "$step" "$label"
+    printf 'CURRENT_VERSION=%s\n' "${DEVBOX_UPDATE_CURRENT_VERSION:-unknown}"
+    printf 'TARGET_VERSION=%s\n' "${DEVBOX_UPDATE_TARGET_VERSION:-}"
+    printf 'STARTED_AT=%s\n' "${DEVBOX_UPDATE_STARTED_AT:-}"
+    printf 'UPDATED_AT=%s\n' "$now"
+    printf 'FINISHED_AT=\n'
+    printf 'ERROR=\n'
+  } >"$tmp" 2>/dev/null && chmod 0644 "$tmp" 2>/dev/null && mv -f "$tmp" "$DEVBOX_UPDATE_PROGRESS_FILE" 2>/dev/null || {
+    rm -f "$tmp" 2>/dev/null || true
+    true
+  }
+}
+
 stage() {
   emit INFO "[$1/8] $2"
+  update_progress_stage "$1" "$2"
 }
 
 fail() {
