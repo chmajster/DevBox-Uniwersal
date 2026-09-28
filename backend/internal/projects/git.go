@@ -55,6 +55,13 @@ func (g *GitClient) Checkout(ctx context.Context, workDir, reference string) err
 	if err := ValidateBranch(reference); err != nil {
 		return err
 	}
+	status, err := g.run(ctx, workDir, nil, "status", "--porcelain")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(status) != "" {
+		return ErrWorkingTreeDirty
+	}
 	if _, err := g.run(ctx, workDir, nil, "switch", reference); err == nil {
 		return nil
 	}
@@ -181,7 +188,14 @@ func ProjectCredentialRef(project Project) *string {
 		return nil
 	}
 	if project.CredentialID != "" {
-		value := project.CredentialKind + "|credential/" + project.CredentialID + "|value"
+		kind := project.CredentialKind
+		if kind == "token" && project.SourceControlProvider == "github" {
+			kind = "github_token"
+		}
+		if kind == "token" && project.SourceControlProvider == "gitlab" {
+			kind = "gitlab_token"
+		}
+		value := kind + "|credential/" + project.CredentialID + "|value"
 		return &value
 	}
 	return CredentialRef(project.CredentialKind, project.ID, "default")
@@ -210,8 +224,16 @@ func (g *GitClient) run(ctx context.Context, workDir string, credentialRef *stri
 		}
 		secret = string(plain)
 		switch kind {
-		case "token":
+		case "token", "github_token":
 			basic := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + secret))
+			encodedSecret = basic
+			cmd.Env = append(cmd.Env,
+				"GIT_CONFIG_COUNT=1",
+				"GIT_CONFIG_KEY_0=http.extraHeader",
+				"GIT_CONFIG_VALUE_0=Authorization: Basic "+basic,
+			)
+		case "gitlab_token":
+			basic := base64.StdEncoding.EncodeToString([]byte("oauth2:" + secret))
 			encodedSecret = basic
 			cmd.Env = append(cmd.Env,
 				"GIT_CONFIG_COUNT=1",
