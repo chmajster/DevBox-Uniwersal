@@ -13,6 +13,7 @@
 - Added sanitized managed build contexts that exclude .env files, VCS metadata, dependency trees and common local caches.
 - Added atomic managed-container replacement with health verification and rollback to the previous container on failure.
 - Project runtime validation no longer requires PHP-FPM, Go, Node.js or Python executables on the host.
+- Added a dedicated Runtime containers CI workflow covering managed-container backend and frontend quality gates.
 
 
 ### Selected control-room UI
