@@ -38,9 +38,11 @@ type Backup struct {
 }
 
 type ProjectRef struct {
-	ID   string
-	Name string
-	Slug string
+	ID               string
+	Name             string
+	Slug             string
+	LocalPath        string
+	WorkingDirectory string
 }
 
 type MySQLStatus struct {
