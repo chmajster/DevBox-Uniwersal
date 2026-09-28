@@ -255,10 +255,11 @@ func serve() error {
 		projects.NewGitJobHandler(projects.JobPull, projectRepo, gitClient, jobRunner),
 		projects.NewGitJobHandler(projects.JobCheckout, projectRepo, gitClient, jobRunner),
 		projects.NewDeploymentHandler(projectRepo, gitClient, runtimeRegistry, jobRunner, projects.DeploymentIntegrations{
-			Ports:   portManager,
-			Routes:  networkService,
-			Compose: dockerProvider,
-			Managed: dockerProvider,
+			Ports:    portManager,
+			Routes:   networkService,
+			Compose:  dockerProvider,
+			Managed:  dockerProvider,
+			Database: databaseService,
 		}),
 	} {
 		if err := jobRunner.Register(jobHandler); err != nil {
