@@ -91,6 +91,16 @@ A content fingerprint covers the runtime, selected version/modules, source revis
 
 Host ports continue to come from the central PortAllocator and successful deployments are attached to the existing reverse-proxy routing layer.
 
+## Project database connectivity
+
+Database connectivity is resolved per project through a persisted database binding with modes `none`, `managed`, `compose` and `external`. The database subsystem separates the control-plane/admin endpoint from the application endpoint. Managed MySQL administration uses loopback TCP, while application containers use Docker DNS `devbox-mysql:3306` over the external `devbox-apps` network.
+
+Managed MySQL is a persistent Docker service with the `devbox-mysql-data` volume and an `unless-stopped` restart policy. Its root credential and all project database passwords are SecretStore-backed. Managed/container deployments pass sensitive runtime variables through protected temporary env files; project-owned Compose receives a private mode-0600 override outside the source tree. Project Compose files and generated Dockerfiles never receive stored secret plaintext.
+
+Runtime environment precedence is deterministic: generated runtime defaults < explicit project environment < project SecretStore environment < reserved database binding variables. Compose application-service selection prefers explicit configuration, then a DevBox label, then deterministic heuristics; ambiguity requires an explicit UI choice.
+
+Connection tests execute `SELECT 1`. Managed and external tests run from the Docker execution boundary; Compose tests execute against the selected database service. No WSL host/subnet IP is persisted. See ADR-011.
+
 ## Provider contracts
 
 Stable contracts live in `backend/internal/providers/contracts.go`:
