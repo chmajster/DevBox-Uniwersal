@@ -23,6 +23,7 @@ import { ROUTES } from './routes'
 import { ProjectRuntimePage } from './pages/ProjectRuntimePage'
 import { RuntimeManagerPage } from './pages/RuntimeManagerPage'
 import { UpdatesPage } from './pages/UpdatesPage'
+import { UsersPage } from './pages/UsersPage'
 import { ScriptAppsPage } from './pages/ScriptAppsPage'
 
 export function App() {
@@ -33,6 +34,7 @@ export function App() {
         <Route index element={<DashboardPage />} />
         <Route path={ROUTES.applications} element={<ProjectsPage />} />
         <Route path={ROUTES.credentials} element={<CredentialsPage />} />
+        <Route path={ROUTES.users} element={<UsersPage />} />
         <Route path={ROUTES.scriptApps} element={<ScriptAppsPage />} />
         <Route path="/applications" element={<Navigate to={ROUTES.applications} replace />} />
         <Route path="apps/new" element={<ProjectWizardPage />} />
