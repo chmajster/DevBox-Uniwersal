@@ -53,7 +53,7 @@ fi
 [[ -f "$TMP_DIR/source/frontend/package-lock.json" ]] || { log "Brak frontend/package-lock.json w źródłach."; exit 1; }
 
 log "Aktualizuję $CURRENT_VERSION -> $NEW_VERSION"
-DEVBOX_SOURCE_REPOSITORY="$SOURCE_REPOSITORY" DEVBOX_SOURCE_REF="$SOURCE_REF"   bash "$TMP_DIR/source/install.sh" --update >>"$LOG_FILE" 2>&1
+DEVBOX_SOURCE_REPOSITORY="$SOURCE_REPOSITORY" DEVBOX_SOURCE_REF="$SOURCE_REF" DEVBOX_USE_CURRENT_SOURCE=1 bash "$TMP_DIR/source/install.sh" --update >>"$LOG_FILE" 2>&1
 
 if command -v systemctl >/dev/null 2>&1; then
   systemctl restart devbox.service >>"$LOG_FILE" 2>&1
