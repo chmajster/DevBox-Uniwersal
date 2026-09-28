@@ -269,7 +269,6 @@ func phpDocumentRoot(workDir, framework string) string {
 	return "."
 }
 
-
 func phpFPMCandidates() []string {
 	// Keep common executable names first for deterministic selection, then
 	// discover versioned binaries from standard system directories. This
