@@ -539,3 +539,6 @@ input[type="checkbox"] { width: auto; margin: 0; }
   .update-service-row .status-chip { flex: 0 0 auto; }
 }
 
+
+a.secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; min-height: 40px; border: 1px solid var(--border); border-radius: 8px; padding: 9px 14px; font-weight: 600; line-height: 1.4; background: transparent; color: var(--text); }
+a.secondary-button:hover { background: var(--panel-alt); text-decoration: none; }

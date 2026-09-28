@@ -84,7 +84,7 @@ export function ScriptAppsPage() {
   return <>
     <div className="page-heading">
       <div><h1>Aplikacje z instalatora URL / curl</h1><p className="muted">Pobieranie skryptu, kolejka zadań, status, logi oraz sterowanie wykrytą usługą systemd lub kontenerem Docker.</p></div>
-      <div className="heading-actions"><Link className="secondary-button" to="/apps">Aplikacje</Link><Link className="secondary-button" to="/jobs">Zadania</Link></div>
+      <div className="heading-actions"><Link className="button-link secondary-button" to="/apps">Aplikacje</Link><Link className="button-link secondary-button" to="/jobs">Zadania</Link></div>
     </div>
     {error && <div className="error-banner" role="alert">{error}</div>}
     {notice && <div className="success-banner" role="status">{notice} <Link to="/jobs">Pokaż zadania</Link></div>}
