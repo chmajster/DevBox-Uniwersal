@@ -150,6 +150,16 @@ wsl_version() {
 systemd_available() {
   [[ "$(ps -p 1 -o comm= 2>/dev/null | tr -d ' ')" == "systemd" ]] && command -v systemctl >/dev/null 2>&1
 }
+docker_compose_available() {
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    return 0
+  fi
+  command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1
+}
+
+docker_daemon_available() {
+  command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
 
 default_directory_browse_roots() {
   local roots="$DATA_DIR/projects"
@@ -188,14 +198,12 @@ component_status() {
 
 docker_compose_status() {
   local version=""
-  if command -v docker >/dev/null 2>&1; then
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     version="$(docker compose version 2>/dev/null | head -n1 || true)"
-    if [[ -n "$version" ]]; then
-      emit " OK " "$(printf '%-9s' "Compose") $version"
-      return 0
-    fi
+    emit " OK " "$(printf '%-9s' "Compose") ${version:-docker-compose-v2}"
+    return 0
   fi
-  if command -v docker-compose >/dev/null 2>&1; then
+  if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
     version="$(docker-compose version 2>/dev/null | head -n1 || true)"
     emit " OK " "$(printf '%-9s' "Compose") ${version:-$(command -v docker-compose)}"
     return 0
@@ -354,41 +362,94 @@ select_docker_compose_package() {
   return 1
 }
 
-install_packages() {
-  local mysql_pkg compose_pkg apt_refreshed=0
-  mysql_pkg="$(select_mysql_package)"
-  compose_pkg="$(select_docker_compose_package || true)"
-  if [[ -z "$compose_pkg" ]]; then
-    emit INFO "Odświeżam listę pakietów, aby znaleźć Docker Compose."
-    DEBIAN_FRONTEND=noninteractive apt-get update -y >>"$LOG_FILE" 2>&1
-    apt_refreshed=1
-    compose_pkg="$(select_docker_compose_package || true)"
+apt_refresh_once() {
+  if [[ "${APT_REFRESHED:-0}" == "1" ]]; then
+    return 0
   fi
-  [[ -n "$compose_pkg" ]] || fail "Nie znaleziono pakietu Docker Compose (docker-compose-v2, docker-compose-plugin ani docker-compose) w repozytoriach APT."
+  emit INFO "Odświeżam listę pakietów APT."
+  DEBIAN_FRONTEND=noninteractive apt-get update -y >>"$LOG_FILE" 2>&1
+  APT_REFRESHED=1
+}
 
-  local packages=(ca-certificates curl sudo build-essential git docker.io "$compose_pkg" nginx "$mysql_pkg" php-cli composer python3 python3-pip golang-go nodejs npm)
+install_missing_packages() {
+  local packages=("$@")
   local missing=()
   local pkg
   for pkg in "${packages[@]}"; do
+    [[ -n "$pkg" ]] || continue
     if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
       missing+=("$pkg")
     fi
   done
-  if ((${#missing[@]} > 0)); then
-    emit INFO "Instaluję brakujące pakiety z kontrolowanej listy: ${missing[*]}"
-    if (( apt_refreshed == 0 )); then
-      DEBIAN_FRONTEND=noninteractive apt-get update -y >>"$LOG_FILE" 2>&1
-    fi
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}" >>"$LOG_FILE" 2>&1
-    emit " OK " "Pakiety systemowe zainstalowane."
-  else
-    emit " OK " "Pakiety systemowe są już zainstalowane."
+  if ((${#missing[@]} == 0)); then
+    return 0
   fi
 
-  if ! docker compose version >/dev/null 2>&1 && ! docker-compose version >/dev/null 2>&1; then
-    fail "Docker Compose nadal jest niedostępny po instalacji pakietu $compose_pkg. Sprawdź $LOG_FILE."
+  apt_refresh_once
+  emit INFO "Instaluję brakujące pakiety z kontrolowanej listy: ${missing[*]}"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}" >>"$LOG_FILE" 2>&1
+}
+
+ensure_docker_compose() {
+  if docker_compose_available; then
+    emit " OK " "Docker Compose jest już dostępny."
+    return 0
   fi
-  emit " OK " "Docker Compose jest dostępny ($compose_pkg)."
+
+  apt_refresh_once
+  local compose_pkg
+  compose_pkg="$(select_docker_compose_package || true)"
+  [[ -n "$compose_pkg" ]] || fail "Nie znaleziono pakietu Docker Compose. Sprawdzono: docker-compose-v2, docker-compose-plugin, docker-compose."
+
+  emit INFO "Docker Compose nie jest dostępny. Instaluję: $compose_pkg"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$compose_pkg" >>"$LOG_FILE" 2>&1
+
+  if ! docker_compose_available; then
+    fail "Pakiet $compose_pkg został zainstalowany, ale Docker Compose nadal nie działa. Sprawdź: docker compose version, docker-compose version oraz $LOG_FILE."
+  fi
+  emit " OK " "Docker Compose działa po instalacji pakietu $compose_pkg."
+}
+
+ensure_docker_ready() {
+  if docker_daemon_available; then
+    emit " OK " "Docker Engine odpowiada."
+    return 0
+  fi
+
+  if systemd_available && systemctl list-unit-files docker.service >/dev/null 2>&1; then
+    emit INFO "Docker Engine nie odpowiada. Uruchamiam docker.service."
+    systemctl enable --now docker.service >>"$LOG_FILE" 2>&1 || true
+    for _ in {1..15}; do
+      if docker_daemon_available; then
+        emit " OK " "Docker Engine uruchomiony."
+        return 0
+      fi
+      sleep 1
+    done
+  fi
+
+  if is_wsl; then
+    fail "Docker CLI jest dostępny, ale daemon nie odpowiada. W WSL uruchom Docker Desktop z integracją dla tej dystrybucji albo aktywuj lokalny docker.service. Szczegóły: $LOG_FILE."
+  fi
+  fail "Docker CLI jest dostępny, ale daemon nie odpowiada. Sprawdź docker.service i polecenie docker info. Szczegóły: $LOG_FILE."
+}
+
+install_packages() {
+  APT_REFRESHED=0
+
+  local mysql_pkg
+  mysql_pkg="$(select_mysql_package)"
+
+  local packages=(ca-certificates curl sudo build-essential git nginx "$mysql_pkg" php-cli composer python3 python3-pip golang-go nodejs npm)
+  if ! command -v docker >/dev/null 2>&1; then
+    packages+=(docker.io)
+  fi
+
+  install_missing_packages "${packages[@]}"
+  ensure_docker_compose
+  ensure_docker_ready
+
+  emit " OK " "Pakiety systemowe i środowisko Docker są gotowe."
 }
 
 cleanup_source_tree() {
@@ -699,7 +760,7 @@ run_install() {
   wsl="$(wsl_version)"
   emit " OK " "System: ${pretty:-Linux}; WSL=${wsl}; systemd=$(systemd_available && printf yes || printf no)"
 
-  stage 2 "Komponenty systemowe i źródła"
+  stage 2 "Komponenty systemowe, Docker/Compose i źródła"
   install_packages
   show_components
   ensure_source_tree
