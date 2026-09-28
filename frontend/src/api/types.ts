@@ -68,6 +68,26 @@ export interface SystemInfo {
   version: string
 }
 
+export interface SystemPlatformInfo {
+  os: string
+  arch: string
+  distro_id?: string
+  distro_name?: string
+  distro_version?: string
+  wsl: boolean
+  wsl_version?: number
+  systemd: boolean
+}
+
+export interface SystemComponentStatus {
+  name: string
+  installed: boolean
+  path?: string
+  version?: string
+  state: string
+  error?: string
+}
+
 export type RuntimeAvailability = 'available' | 'missing' | 'invalid'
 
 export interface RuntimeDependency {
