@@ -33,8 +33,9 @@ function asCollection<T>(payload: CollectionPayload<T> | null | undefined): T[] 
   return payload.items ?? payload.projects ?? payload.containers ?? payload.databases ?? payload.ports ?? []
 }
 
-export async function listProjects() {
-  return asCollection(await request<CollectionPayload<Project>>('/projects'))
+export async function listProjects(includeArchived = false) {
+  const suffix = includeArchived ? '?archived=true' : ''
+  return asCollection(await request<CollectionPayload<Project>>('/projects' + suffix))
 }
 
 export function getProject(projectID: string) {

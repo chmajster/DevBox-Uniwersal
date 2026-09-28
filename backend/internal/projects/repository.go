@@ -68,6 +68,44 @@ func (r *Repository) Get(ctx context.Context, id string) (Project, error) {
 	return p, err
 }
 
+func (r *Repository) ReleaseArchivedIdentity(ctx context.Context, name, slug string) error {
+	rows, err := r.db.QueryContext(ctx, `SELECT id,name,slug FROM projects WHERE archived_at IS NOT NULL AND (name=? OR slug=?)`, name, slug)
+	if err != nil {
+		return fmt.Errorf("find archived project identity: %w", err)
+	}
+	defer rows.Close()
+	type archivedIdentity struct{ id, name, slug string }
+	var matches []archivedIdentity
+	for rows.Next() {
+		var item archivedIdentity
+		if err := rows.Scan(&item.id, &item.name, &item.slug); err != nil {
+			return err
+		}
+		matches = append(matches, item)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, item := range matches {
+		suffix := item.id
+		if len(suffix) > 8 {
+			suffix = suffix[:8]
+		}
+		nameSuffix := " [archived " + suffix + "]"
+		baseName := item.name
+		if maxBase := 120 - len(nameSuffix); len(baseName) > maxBase {
+			baseName = baseName[:maxBase]
+		}
+		archivedName := baseName + nameSuffix
+		archivedSlug := item.slug + "-archived-" + suffix
+		if _, err := r.db.ExecContext(ctx, `UPDATE projects SET name=?,slug=?,updated_at=? WHERE id=? AND archived_at IS NOT NULL`,
+			archivedName, archivedSlug, time.Now().UTC().Format(time.RFC3339Nano), item.id); err != nil {
+			return fmt.Errorf("release archived project identity: %w", err)
+		}
+	}
+	return nil
+}
+
 func (r *Repository) Update(ctx context.Context, p Project, credentialName string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

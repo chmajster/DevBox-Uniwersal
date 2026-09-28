@@ -95,7 +95,15 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 			return Project{}, nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		if _, err := os.Stat(path); err == nil {
-			return Project{}, nil, fmt.Errorf("%w: destination path already exists", ErrInvalidInput)
+			path, err = SafeProjectPath(s.projectsRoot, slug+"-"+id[:8])
+			if err != nil {
+				return Project{}, nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			}
+			if _, statErr := os.Stat(path); statErr == nil {
+				return Project{}, nil, fmt.Errorf("%w: destination path already exists", ErrInvalidInput)
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				return Project{}, nil, fmt.Errorf("%w: inspect destination: %v", ErrInvalidInput, statErr)
+			}
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return Project{}, nil, fmt.Errorf("%w: inspect destination: %v", ErrInvalidInput, err)
 		}
@@ -134,6 +142,12 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 		if err := s.secretStore.Put(ctx, "git/"+id, credentialName, []byte(input.CredentialValue)); err != nil {
 			return Project{}, nil, fmt.Errorf("store Git credential: %w", err)
 		}
+	}
+	if err := s.repo.ReleaseArchivedIdentity(ctx, input.Name, slug); err != nil {
+		if credentialName != "" {
+			_ = s.secretStore.Delete(ctx, "git/"+id, credentialName)
+		}
+		return Project{}, nil, err
 	}
 	if err := s.repo.Create(ctx, p, credentialName); err != nil {
 		if credentialName != "" {
