@@ -342,12 +342,67 @@ EOF_MYSQL_BOOTSTRAP
   emit " OK " "Konto administracyjne MySQL dla DevBox zostało skonfigurowane i zweryfikowane."
 }
 
-select_mysql_package() {
+mysql_managed_mode() {
+  local value="${DEVBOX_MYSQL_MANAGED:-}"
+  if [[ -z "$value" ]]; then
+    value="$(get_env_value "$ENV_FILE" DEVBOX_MYSQL_MANAGED 2>/dev/null || true)"
+  fi
+
+  # Existing installations from before managed MySQL stored a host-admin
+  # password in devbox.env. Preserve that topology on repair/update unless the
+  # operator explicitly opts into managed MySQL; a clean installation defaults
+  # to the Docker-managed service.
+  if [[ -z "$value" ]] && [[ -n "$(get_env_value "$ENV_FILE" DEVBOX_MYSQL_ADMIN_PASSWORD 2>/dev/null || true)" ]]; then
+    value="false"
+  fi
+  [[ -n "$value" ]] || value="true"
+
+  case "${value,,}" in
+    false|0|no|off) return 1 ;;
+    true|1|yes|on) return 0 ;;
+    *) fail "DEVBOX_MYSQL_MANAGED musi mieć wartość true/false." ;;
+  esac
+}
+
+select_mysql_client_package() {
+  local pkg
+  for pkg in default-mysql-client mysql-client mariadb-client; do
+    if apt-cache show "$pkg" >/dev/null 2>&1; then
+      printf '%s' "$pkg"
+      return 0
+    fi
+  done
+  return 1
+}
+
+select_mysql_server_package() {
   if apt-cache show default-mysql-server >/dev/null 2>&1; then
     printf 'default-mysql-server'
   else
     printf 'mysql-server'
   fi
+}
+
+configure_mysql_mode() {
+  if mysql_managed_mode; then
+    upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_MANAGED "true"
+    upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_HOST "127.0.0.1"
+    upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_PORT "3306"
+    upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_ADMIN_USER "root"
+    upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_APP_HOST "%"
+    upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_IMAGE "mysql:8.4"
+    upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_CONTAINER "devbox-mysql"
+    upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_NETWORK "devbox-apps"
+    upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_VOLUME "devbox-mysql-data"
+    remove_env_key "$ENV_FILE" DEVBOX_MYSQL_ADMIN_PASSWORD
+    chown root:devbox "$ENV_FILE"
+    chmod 0640 "$ENV_FILE"
+    emit " OK " "MySQL DevBox działa jako trwały kontener devbox-mysql; host otrzymuje tylko klienta MySQL."
+    return 0
+  fi
+
+  upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_MANAGED "false"
+  configure_mysql_admin
 }
 
 select_docker_compose_package() {
@@ -437,10 +492,14 @@ ensure_docker_ready() {
 install_packages() {
   APT_REFRESHED=0
 
-  local mysql_pkg
-  mysql_pkg="$(select_mysql_package)"
+  local mysql_client_pkg
+  mysql_client_pkg="$(select_mysql_client_package || true)"
+  [[ -n "$mysql_client_pkg" ]] || fail "Nie znaleziono klienta MySQL/MariaDB (default-mysql-client, mysql-client, mariadb-client)."
 
-  local packages=(ca-certificates curl sudo build-essential git nginx "$mysql_pkg" php-cli composer python3 python3-pip golang-go nodejs npm)
+  local packages=(ca-certificates curl sudo build-essential git nginx "$mysql_client_pkg" php-cli composer python3 python3-pip golang-go nodejs npm)
+  if ! mysql_managed_mode; then
+    packages+=("$(select_mysql_server_package)")
+  fi
   if ! command -v docker >/dev/null 2>&1; then
     packages+=(docker.io)
   fi
@@ -774,7 +833,7 @@ run_install() {
   stage 5 "Instalacja plików i konfiguracji"
   install_artifacts
   configure_master_key
-  configure_mysql_admin
+  configure_mysql_mode
   install_nginx_integration
   configure_passwordless_access
 
