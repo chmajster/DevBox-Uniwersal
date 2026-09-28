@@ -95,6 +95,19 @@ type SourceControlPage struct {
 	TotalCount int `json:"total_count,omitempty"`
 }
 
+type ProjectSourceResolution struct {
+	IntegrationID string
+	Provider      string
+	CredentialID  string
+	Repository    SourceControlRepository
+	Branch        string
+}
+
+type ProjectSourceIntegration interface {
+	ResolveProjectSource(ctx context.Context, integrationID, repositoryPath, branch string) (ProjectSourceResolution, error)
+	LinkProjectSource(ctx context.Context, projectID string, resolution ProjectSourceResolution) error
+}
+
 type SourceControlIntegrationProvider interface {
 	TestConnection(ctx context.Context) (SourceControlUser, error)
 	CurrentUser(ctx context.Context) (SourceControlUser, error)
