@@ -64,6 +64,18 @@ func (p *CLIProvider) ConnectNetwork(ctx context.Context, container, network str
 	return err
 }
 
+func (p *CLIProvider) EnsureImage(ctx context.Context, image string) error {
+	if err := validateImageRef(image); err != nil {
+		return err
+	}
+	if _, err := p.InspectImage(ctx, image); err == nil {
+		return nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	return p.PullImage(ctx, image)
+}
+
 func (p *CLIProvider) EnsureContainer(ctx context.Context, spec providers.ContainerSpec) (providers.ContainerInfo, error) {
 	if err := validateContainerRef(spec.Name); err != nil {
 		return providers.ContainerInfo{}, err
