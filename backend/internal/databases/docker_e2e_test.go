@@ -37,7 +37,7 @@ func (e dockerMySQLExecutor) Restore(context.Context, io.Reader) error {
 }
 
 func (e dockerMySQLExecutor) query(ctx context.Context, statement string) (string, error) {
-	cmd := exec.CommandContext(ctx, "docker", "exec", "-i", e.container, "mysql", "-uroot", "--batch", "--skip-column-names")
+	cmd := exec.CommandContext(ctx, "docker", "exec", "-i", e.container, "mysql", "-uroot", "--protocol=TCP", "--host=127.0.0.1", "--batch", "--skip-column-names")
 	cmd.Stdin = strings.NewReader(statement)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -84,7 +84,7 @@ func TestDockerDatabaseConnectivityE2E(t *testing.T) {
 
 	ready := false
 	for deadline := time.Now().Add(90 * time.Second); time.Now().Before(deadline); {
-		cmd := exec.CommandContext(ctx, "docker", "exec", mysqlContainer, "mysqladmin", "ping", "--silent", "-uroot")
+		cmd := exec.CommandContext(ctx, "docker", "exec", mysqlContainer, "mysqladmin", "ping", "--protocol=TCP", "--host=127.0.0.1", "--silent", "-uroot")
 		if err := cmd.Run(); err == nil {
 			ready = true
 			break
