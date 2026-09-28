@@ -122,7 +122,7 @@ export function PluginsPage() {
     <section className="panel phpmyadmin-panel">
       <div>
         <div className="actions">
-          <Icon name="settings" size={24} />
+          <Icon name="cpu" size={24} />
           <div>
             <h2>PHP-FPM</h2>
             <p className="muted">Runtime FastCGI wymagany do uruchamiania aplikacji PHP zarządzanych przez DevBox Universal.</p>
