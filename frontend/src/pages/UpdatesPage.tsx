@@ -153,6 +153,9 @@ export function UpdatesPage() {
   const progressActive=updateIsActive(progress)
   const progressFailed=progress?.state==='failed'
   const progressFinished=progress?.state==='succeeded'||progress?.state==='no_update'
+  const currentStageLabel=progress?.stage&&progress.stage!=='idle'
+    ? UPDATE_STAGES.find(stage=>stage.id===progress.stage)?.label||progress.stage
+    : 'Oczekiwanie'
 
   return <>
     <div className="page-heading">
@@ -214,7 +217,7 @@ export function UpdatesPage() {
 
       <div className="update-progress-bar">
         <progress max={100} value={progressPercent}>{progressPercent}%</progress>
-        <div><span>0%</span><span>{progress?.stage&&progress.stage!=='idle'?progress.stage:'oczekiwanie'}</span><span>100%</span></div>
+        <div><span>0%</span><span>{currentStageLabel}</span><span>100%</span></div>
       </div>
 
       <div className="summary-grid update-progress-summary">
