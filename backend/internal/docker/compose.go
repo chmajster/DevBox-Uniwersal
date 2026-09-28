@@ -40,9 +40,24 @@ func (p *CLIProvider) runCompose(ctx context.Context, args ...string) ([]byte, [
 		if len(args) == 0 || args[0] != "compose" {
 			return nil, nil, fmt.Errorf("%w: invalid compose invocation", ErrInvalidInput)
 		}
-		args = args[1:]
+		return resolved.runner.Run(ctx, args[1:]...)
 	}
-	return resolved.runner.Run(ctx, args...)
+
+	stdout, stderr, runErr := resolved.runner.Run(ctx, args...)
+	if runErr == nil || !composeInvocationUnsupported(runErr) || p.legacyComposeRunner == nil {
+		return stdout, stderr, runErr
+	}
+	if len(args) == 0 || args[0] != "compose" {
+		return stdout, stderr, runErr
+	}
+	if _, _, legacyErr := p.legacyComposeRunner.Run(ctx, "version"); legacyErr != nil {
+		return stdout, stderr, runErr
+	}
+	legacyStdout, legacyStderr, legacyErr := p.legacyComposeRunner.Run(ctx, args[1:]...)
+	if legacyErr != nil {
+		return legacyStdout, legacyStderr, fmt.Errorf("docker compose failed: %v; docker-compose fallback failed: %w", runErr, legacyErr)
+	}
+	return legacyStdout, legacyStderr, nil
 }
 
 func (p *CLIProvider) streamCompose(ctx context.Context, args ...string) (io.ReadCloser, error) {
@@ -250,6 +265,23 @@ func (p *CLIProvider) ComposePS(ctx context.Context, directory, projectName stri
 	return items, nil
 }
 
+func composeInvocationUnsupported(err error) bool {
+	message := strings.ToLower(err.Error())
+	for _, fragment := range []string{
+		"not a docker command",
+		"is not a docker command",
+		"unknown command",
+		"unknown flag",
+		"unknown shorthand flag",
+		"flag provided but not defined",
+	} {
+		if strings.Contains(message, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
 func composePSFormatUnsupported(err error) bool {
 	message := strings.ToLower(err.Error())
 	for _, fragment := range []string{"unknown flag", "unknown option", "no such option", "flag provided but not defined"} {
@@ -327,9 +359,9 @@ func composeArgs(directory, projectName string) ([]string, error) {
 	if err := validateValue(configFile, "compose file"); err != nil {
 		return nil, err
 	}
-	// Do not pass --project-directory here. Older Docker Compose plugins reject
-	// that option at the top-level docker command. Because --file receives an
-	// absolute path, Compose already resolves the project directory from the
-	// directory containing the first Compose file.
-	return []string{"compose", "--project-name", projectName, "--file", configFile}, nil
+	// Keep Compose global options maximally compatible: -p/-f work with both
+	// Docker Compose v2 and the legacy docker-compose binary. Do not pass
+	// --project-directory; the absolute -f path already gives Compose the
+	// directory used for relative paths.
+	return []string{"compose", "-p", projectName, "-f", configFile}, nil
 }
