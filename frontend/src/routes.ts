@@ -3,6 +3,7 @@ export const ROUTES = {
   applications: '/apps',
   project: '/projects/:projectId/:tab?',
   logs: '/logs',
+  health: '/health',
   jobs: '/jobs',
   audit: '/audit'
 } as const
