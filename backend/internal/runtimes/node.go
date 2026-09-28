@@ -15,6 +15,7 @@ type nodeManifest struct {
 	Dependencies    map[string]string `json:"dependencies"`
 	DevDependencies map[string]string `json:"devDependencies"`
 	PackageManager  string            `json:"packageManager"`
+	Engines         map[string]string `json:"engines"`
 	Main            string            `json:"main"`
 }
 
@@ -56,7 +57,7 @@ func (r *NodeRuntime) Detect(_ context.Context, project ProjectContext) (Detecti
 		"vite.config.cjs",
 		"vite.config.cts",
 	)
-	files := existingFiles(project.WorkDir, "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock")
+	files := existingFiles(project.WorkDir, "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", ".nvmrc", ".node-version")
 	if viteConfig != "" {
 		files = append(files, viteConfig)
 	}
@@ -89,7 +90,7 @@ func (r *NodeRuntime) Detect(_ context.Context, project ProjectContext) (Detecti
 		startCommand = "node " + manifest.Main
 	}
 
-	return newDetection(
+	detection := newDetection(
 		r.Name(),
 		framework,
 		confidence,
@@ -100,7 +101,9 @@ func (r *NodeRuntime) Detect(_ context.Context, project ProjectContext) (Detecti
 			"package_manager":           manager,
 			"suggested_install_command": nodeInstallCommand(manager, fileExists(project.WorkDir, managerLockfile(manager))),
 		},
-	), nil
+	)
+	detection.Version = nodeVersionRequirement(project.WorkDir, manifest)
+	return detection, nil
 }
 
 func (r *NodeRuntime) Validate(_ context.Context, project ProjectContext) (ValidationResult, error) {
@@ -121,7 +124,7 @@ func (r *NodeRuntime) Validate(_ context.Context, project ProjectContext) (Valid
 		result.Errors = append(result.Errors, "package.json was not found")
 		return result, nil
 	}
-	if _, err := findExecutable("node"); err != nil {
+	if _, err := projectExecutable(project, "node", "node"); err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, err.Error())
 	}
@@ -131,9 +134,9 @@ func (r *NodeRuntime) Validate(_ context.Context, project ProjectContext) (Valid
 		result.Errors = append(result.Errors, "multiple Node.js lockfiles detected: "+strings.Join(lockfiles, ", "))
 	}
 	manager := nodePackageManager(project.WorkDir, manifest)
-	if _, err := findExecutable(manager); err != nil {
+	if _, _, err := nodeManagerInvocation(project, manager); err != nil {
 		result.Valid = false
-		result.Errors = append(result.Errors, fmt.Sprintf("%s is required by the selected lockfile/packageManager", manager))
+		result.Errors = append(result.Errors, fmt.Sprintf("%s is required by the selected lockfile/packageManager: %v", manager, err))
 	}
 	if _, ok := projectPort(project); !ok {
 		result.Warnings = append(result.Warnings, "runtime port is not configured; PORT will not be injected")
@@ -153,12 +156,12 @@ func (r *NodeRuntime) InstallDependencies(ctx context.Context, project ProjectCo
 		return fmt.Errorf("package.json was not found")
 	}
 	manager := nodePackageManager(project.WorkDir, manifest)
-	executable, err := findExecutable(manager)
+	executable, prefix, err := nodeManagerInvocation(project, manager)
 	if err != nil {
 		return err
 	}
-	args := nodeInstallArgs(manager, fileExists(project.WorkDir, managerLockfile(manager)))
-	return r.base.runner.Run(ctx, executable, args, project.WorkDir, project.Environment)
+	args := append(prefix, nodeInstallArgs(manager, fileExists(project.WorkDir, managerLockfile(manager)))...)
+	return r.base.runner.Run(ctx, executable, args, project.WorkDir, projectEnvironmentFor(project, "node"))
 }
 
 func (r *NodeRuntime) Build(ctx context.Context, project ProjectContext) error {
@@ -170,11 +173,12 @@ func (r *NodeRuntime) Build(ctx context.Context, project ProjectContext) error {
 		return nil
 	}
 	manager := nodePackageManager(project.WorkDir, manifest)
-	executable, err := findExecutable(manager)
+	executable, prefix, err := nodeManagerInvocation(project, manager)
 	if err != nil {
 		return err
 	}
-	return r.base.runner.Run(ctx, executable, []string{"run", "build"}, project.WorkDir, project.Environment)
+	args := append(prefix, "run", "build")
+	return r.base.runner.Run(ctx, executable, args, project.WorkDir, projectEnvironmentFor(project, "node"))
 }
 
 func (r *NodeRuntime) Start(_ context.Context, project ProjectContext) error {
@@ -186,31 +190,31 @@ func (r *NodeRuntime) Start(_ context.Context, project ProjectContext) error {
 		return fmt.Errorf("package.json was not found")
 	}
 	manager := nodePackageManager(project.WorkDir, manifest)
-	environment := map[string]string{}
+	environment := projectEnvironmentFor(project, "node")
 	port, hasPort := projectPort(project)
 	if hasPort {
 		environment["PORT"] = fmt.Sprintf("%d", port)
 	}
 
 	if manifest.Scripts["start"] != "" {
-		executable, err := findExecutable(manager)
+		executable, prefix, err := nodeManagerInvocation(project, manager)
 		if err != nil {
 			return err
 		}
-		return r.base.start(project, executable, []string{"run", "start"}, environment)
+		return r.base.start(project, executable, append(prefix, "run", "start"), environment)
 	}
 	if projectMode(project) == "development" && manifest.Scripts["dev"] != "" {
 		if !hasPort {
 			return fmt.Errorf("runtime port is not configured")
 		}
-		executable, err := findExecutable(manager)
+		executable, prefix, err := nodeManagerInvocation(project, manager)
 		if err != nil {
 			return err
 		}
-		return r.base.start(project, executable, []string{"run", "dev", "--", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", port)}, environment)
+		return r.base.start(project, executable, append(prefix, "run", "dev", "--", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", port)), environment)
 	}
 	if strings.TrimSpace(manifest.Main) != "" {
-		node, err := findExecutable("node")
+		node, err := projectExecutable(project, "node", "node")
 		if err != nil {
 			return err
 		}
@@ -252,6 +256,47 @@ func loadNodeManifest(workDir string) (*nodeManifest, error) {
 		manifest.Scripts = make(map[string]string)
 	}
 	return &manifest, nil
+}
+
+
+func nodeVersionRequirement(workDir string, manifest *nodeManifest) string {
+	for _, filename := range []string{".nvmrc", ".node-version"} {
+		content, err := readProjectFile(workDir, filename)
+		if err == nil && content != nil {
+			value := strings.TrimSpace(string(content))
+			value = strings.TrimPrefix(value, "v")
+			if value != "" {
+				return value
+			}
+		}
+	}
+	if manifest != nil {
+		return strings.TrimSpace(manifest.Engines["node"])
+	}
+	return ""
+}
+
+func nodeManagerInvocation(project ProjectContext, manager string) (string, []string, error) {
+	if manager == "npm" {
+		executable, err := projectExecutable(project, "npm", "npm")
+		return executable, nil, err
+	}
+	if project.Executables != nil && strings.TrimSpace(project.Executables["node"]) != "" {
+		if direct := strings.TrimSpace(project.Executables[manager]); direct != "" {
+			executable, err := projectExecutable(project, manager, manager)
+			return executable, nil, err
+		}
+		if strings.TrimSpace(project.Executables["corepack"]) != "" {
+			corepack, err := projectExecutable(project, "corepack", "corepack")
+			if err != nil {
+				return "", nil, err
+			}
+			return corepack, []string{manager}, nil
+		}
+		return "", nil, fmt.Errorf("assigned Node runtime does not provide %s or corepack", manager)
+	}
+	executable, err := findExecutable(manager)
+	return executable, nil, err
 }
 
 func nodeHasPackage(manifest *nodeManifest, packageName string) bool {
