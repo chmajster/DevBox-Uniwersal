@@ -7,6 +7,9 @@ const (
 	SourceLocal = "local"
 	SourceEmpty = "empty"
 
+	ContainerPolicyAuto   = "auto"
+	ContainerPolicyCustom = "custom"
+
 	DeploymentQueued         = "QUEUED"
 	DeploymentPreparing      = "PREPARING"
 	DeploymentUpdatingSource = "UPDATING_SOURCE"
@@ -17,6 +20,28 @@ const (
 	DeploymentSuccess        = "SUCCESS"
 	DeploymentFailed         = "FAILED"
 )
+
+type RuntimeModule struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+}
+
+type RuntimeContainerConfig struct {
+	ProjectID       string          `json:"project_id"`
+	Runtime         string          `json:"runtime"`
+	RuntimeVersion  string          `json:"runtime_version"`
+	ContainerPolicy string          `json:"container_policy"`
+	Modules         []RuntimeModule `json:"modules"`
+	ContainerName   string          `json:"container_name,omitempty"`
+	ImageTag        string          `json:"image_tag,omitempty"`
+	Fingerprint     string          `json:"build_fingerprint,omitempty"`
+}
+
+type RuntimeContainerState struct {
+	ContainerName string
+	ImageTag      string
+	Fingerprint   string
+}
 
 type Project struct {
 	ID               string     `json:"id"`
@@ -29,6 +54,8 @@ type Project struct {
 	Branch           string     `json:"branch,omitempty"`
 	LocalPath        string     `json:"local_path"`
 	Runtime          string     `json:"runtime"`
+	RuntimeVersion   string     `json:"runtime_version"`
+	ContainerPolicy  string     `json:"container_policy"`
 	DeploymentMode   string     `json:"deployment_mode"`
 	WorkingDirectory string     `json:"working_directory"`
 	BuildCommand     string     `json:"build_command"`
@@ -54,7 +81,8 @@ type CreateInput struct {
 	Branch           string `json:"branch"`
 	LocalPath        string `json:"local_path"`
 	Runtime          string `json:"runtime"`
-	DeploymentMode   string `json:"deployment_mode"`
+	RuntimeVersion   string `json:"runtime_version"`
+	ContainerPolicy  string `json:"container_policy"`
 	WorkingDirectory string `json:"working_directory"`
 	BuildCommand     string `json:"build_command"`
 	StartCommand     string `json:"start_command"`
@@ -70,8 +98,6 @@ type UpdateInput struct {
 	Description      *string `json:"description"`
 	RepositoryURL    *string `json:"repository_url"`
 	Branch           *string `json:"branch"`
-	Runtime          *string `json:"runtime"`
-	DeploymentMode   *string `json:"deployment_mode"`
 	WorkingDirectory *string `json:"working_directory"`
 	BuildCommand     *string `json:"build_command"`
 	StartCommand     *string `json:"start_command"`
