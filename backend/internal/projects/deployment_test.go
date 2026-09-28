@@ -141,3 +141,25 @@ func TestManagedEnvironmentPrecedenceDatabaseThenProjectThenRuntimeDefaults(t *t
 		t.Fatal("project SecretStore environment was not preserved")
 	}
 }
+
+func TestDatabaseLogFieldsExcludeRuntimeSecret(t *testing.T) {
+	sentinel := "runtime-sensitive-value"
+	fields := databaseLogFields(providers.ProjectDatabaseRuntime{
+		Connection: providers.DatabaseConnection{
+			Mode: providers.DatabaseModeManaged, Host: "devbox-mysql", Port: 3306,
+			Database: "plan", Username: "plan_user",
+		},
+		Secret: []byte(sentinel),
+	})
+	for key, value := range fields {
+		if text, ok := value.(string); ok && text == sentinel {
+			t.Fatalf("sensitive runtime value leaked through log field %s", key)
+		}
+	}
+	if _, exists := fields["password"]; exists {
+		t.Fatalf("password field must not exist: %#v", fields)
+	}
+	if _, exists := fields["secret"]; exists {
+		t.Fatalf("secret field must not exist: %#v", fields)
+	}
+}
