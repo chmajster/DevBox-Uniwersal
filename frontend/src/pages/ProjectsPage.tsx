@@ -82,7 +82,7 @@ export function ProjectsPage() {
     <div className="page-heading workspace-heading">
       <div><span className="eyebrow">WORKSPACE</span><h1>Aplikacje</h1><p className="muted">Od kodu do działającej aplikacji. Wszystko w jednym miejscu.</p></div>
       <div className="heading-actions"><button className="secondary-button" disabled={loading} onClick={() => setReload((value) => value + 1)}><Icon name="refresh" size={17} />Odśwież</button>
-        {user?.role === 'admin' && <Link className="secondary-button" to="/script-apps">Instalator URL / curl</Link>}{canManage && <Link className="button-link" to="/apps/new"><Icon name="plus" size={18} />Dodaj aplikację</Link>}
+        {user?.role === 'admin' && <Link className="button-link secondary-button" to="/script-apps"><Icon name="code" size={17} />Instalator URL / curl</Link>}{canManage && <Link className="button-link" to="/apps/new"><Icon name="plus" size={18} />Dodaj aplikację</Link>}
       </div>
     </div>
     <div className="project-toolbar">
