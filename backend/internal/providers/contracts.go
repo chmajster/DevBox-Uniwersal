@@ -110,8 +110,16 @@ type PortLease struct {
 	Purpose   string
 }
 
+type ComposePortBinding struct {
+	Service       string
+	HostPort      int
+	ContainerPort int
+	Protocol      string
+}
+
 type PortAllocator interface {
 	Reserve(ctx context.Context, projectID, purpose string, preferred *int) (PortLease, error)
+	ReserveFrom(ctx context.Context, projectID, purpose string, start int) (PortLease, error)
 	Release(ctx context.Context, port int) error
 	IsAvailable(ctx context.Context, port int) (bool, error)
 }
