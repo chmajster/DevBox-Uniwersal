@@ -200,6 +200,23 @@ export interface DatabaseRecord {
   updated_at: string
 }
 
+export interface DatabaseUser {
+  id: string
+  database_id: string
+  username: string
+  privileges: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface DatabaseUserCreateResult {
+  user: DatabaseUser
+  credential: {
+    username: string
+    password: string
+  }
+}
+
 export interface DatabaseBackup {
   id: string
   database_id: string

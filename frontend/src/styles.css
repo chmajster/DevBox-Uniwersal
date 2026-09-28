@@ -303,3 +303,46 @@ input[type="checkbox"] { width: auto; margin: 0; }
 @media (max-width: 900px) {
   .phpmyadmin-install-progress { width: 100%; }
 }
+
+
+/* Database user management */
+.database-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, .8fr) minmax(420px, 1.4fr);
+  gap: 16px;
+  align-items: start;
+}
+.database-admin-grid .panel { margin-top: 0; }
+.database-privileges { display: grid; gap: 8px; }
+.database-privileges > span { font-size: 14px; color: var(--text); }
+.database-privilege-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 14px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--panel-alt);
+}
+.database-privilege-grid .checkbox {
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+}
+.database-grants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: 520px;
+}
+.database-grants .badge { font-size: 10px; padding: 3px 6px; }
+.database-grants-editor { display: grid; gap: 14px; }
+.database-user-credential { margin-top: 0; }
+
+@media (max-width: 1000px) {
+  .database-admin-grid { grid-template-columns: 1fr; }
+  .database-privilege-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .database-privilege-grid { grid-template-columns: 1fr; }
+}
