@@ -6,6 +6,7 @@ import type { Job, LogEntry, Project } from '../api/types'
 import { ErrorState } from '../components/ErrorState'
 import { StatusBadge } from '../components/StatusBadge'
 import { PROJECT_TABS, type ProjectTab } from '../routes'
+import { ProjectDatabaseSection } from '../runtime/ProjectDatabaseSection'
 
 const tabLabels: Record<ProjectTab, string> = {
   overview: 'Overview',
@@ -118,7 +119,7 @@ function TabContent({ project, tab }: { project: Project; tab: ProjectTab }) {
     case 'environment':
       return <EnvironmentPanel environment={project.environment} />
     case 'database':
-      return <ResourcePanel path={`/databases?project_id=${encodeURIComponent(project.id)}`} />
+      return <ProjectDatabaseSection projectId={project.id} />
     case 'networking':
       return <ResourcePanel path={`/networking/ports?project_id=${encodeURIComponent(project.id)}`} />
     case 'backups':
