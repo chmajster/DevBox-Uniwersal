@@ -55,6 +55,42 @@ func TestGitCloneAndState(t *testing.T) {
 	}
 }
 
+func TestTrustedGitArgsMarksProjectAsSafeDirectory(t *testing.T) {
+	dir := t.TempDir()
+	resolved, args, err := trustedGitArgs(dir, "status", "--porcelain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	absolute, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evaluated, evalErr := filepath.EvalSymlinks(absolute); evalErr == nil {
+		absolute = evaluated
+	}
+	if resolved != absolute {
+		t.Fatalf("trustedGitArgs() dir = %q, want %q", resolved, absolute)
+	}
+	want := []string{"-c", "safe.directory=" + absolute, "status", "--porcelain"}
+	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("trustedGitArgs() = %#v, want %#v", args, want)
+	}
+}
+
+func TestTrustedGitArgsLeavesCloneWithoutWorkTreeUntouched(t *testing.T) {
+	resolved, args, err := trustedGitArgs("", "clone", "https://example.invalid/repo.git", "/tmp/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "" {
+		t.Fatalf("unexpected command directory: %q", resolved)
+	}
+	want := []string{"clone", "https://example.invalid/repo.git", "/tmp/repo"}
+	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("trustedGitArgs() = %#v, want %#v", args, want)
+	}
+}
+
 func TestGitStateParsingAndSecretMasking(t *testing.T) {
 	ahead, behind := parseAheadBehind("2 3")
 	if ahead != 2 || behind != 3 {

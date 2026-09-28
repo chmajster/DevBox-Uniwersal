@@ -27,7 +27,7 @@ DevBox Universal is an integrated local development control plane.
 
 ## Projects / Git / deployments
 
-- Git, local-directory and empty-project onboarding.
+- Git, local-directory and empty-project onboarding; local Git worktrees on WSL/Windows mounts use per-command `safe.directory` trust so DevBox can read repositories owned by the interactive Windows user without changing global Git configuration.
 - Project CRUD/archive, Git fetch/pull/checkout/history and credential masking.
 - Operator-only local-directory browser constrained to configured roots, with canonical symlink handling, traversal limits and audit events.
 - Deployment state machine uses Docker as the mandatory application execution boundary; project Compose/Dockerfile definitions take precedence, otherwise DevBox builds a managed runtime image.
