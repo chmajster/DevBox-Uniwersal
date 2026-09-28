@@ -23,6 +23,91 @@ type GitProvider interface {
 	Revision(ctx context.Context, workDir string) (string, error)
 }
 
+
+type SourceControlUser struct {
+	ID       string
+	Username string
+	Name     string
+	WebURL   string
+	Scopes   []string
+}
+
+type SourceControlNamespace struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Kind     string `json:"kind"`
+	WebURL   string `json:"web_url,omitempty"`
+}
+
+type SourceControlRepository struct {
+	ID            string `json:"id"`
+	Owner         string `json:"owner"`
+	Path          string `json:"path"`
+	Name          string `json:"name"`
+	CloneURL      string `json:"clone_url"`
+	SSHURL        string `json:"ssh_url,omitempty"`
+	WebURL        string `json:"web_url"`
+	DefaultBranch string `json:"default_branch"`
+	Visibility    string `json:"visibility,omitempty"`
+	Namespace     string `json:"namespace,omitempty"`
+}
+
+type SourceControlBranch struct {
+	Name      string `json:"name"`
+	CommitSHA string `json:"commit_sha,omitempty"`
+	Default   bool   `json:"default,omitempty"`
+	Protected bool   `json:"protected,omitempty"`
+}
+
+type SourceControlTag struct {
+	Name      string `json:"name"`
+	CommitSHA string `json:"commit_sha,omitempty"`
+}
+
+type SourceControlPullRequest struct {
+	Number       int       `json:"number"`
+	Title        string    `json:"title"`
+	State        string    `json:"state"`
+	Author       string    `json:"author"`
+	SourceBranch string    `json:"source_branch"`
+	TargetBranch string    `json:"target_branch"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	WebURL       string    `json:"web_url"`
+}
+
+type SourceControlCIStatus struct {
+	Available  bool   `json:"available"`
+	Provider   string `json:"provider"`
+	Status     string `json:"status,omitempty"`
+	Name       string `json:"name,omitempty"`
+	RunNumber  int64  `json:"run_number,omitempty"`
+	CommitSHA  string `json:"commit_sha,omitempty"`
+	DurationMS int64  `json:"duration_ms,omitempty"`
+	WebURL     string `json:"web_url,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+type SourceControlPage struct {
+	Page       int `json:"page"`
+	PerPage    int `json:"per_page"`
+	NextPage   int `json:"next_page,omitempty"`
+	TotalCount int `json:"total_count,omitempty"`
+}
+
+type SourceControlIntegrationProvider interface {
+	TestConnection(ctx context.Context) (SourceControlUser, error)
+	CurrentUser(ctx context.Context) (SourceControlUser, error)
+	ListNamespaces(ctx context.Context, search string, page, perPage int) ([]SourceControlNamespace, SourceControlPage, error)
+	ListRepositories(ctx context.Context, namespace, search string, page, perPage int) ([]SourceControlRepository, SourceControlPage, error)
+	GetRepository(ctx context.Context, repository string) (SourceControlRepository, error)
+	ListBranches(ctx context.Context, repository, search string, page, perPage int) ([]SourceControlBranch, SourceControlPage, error)
+	ListTags(ctx context.Context, repository string, page, perPage int) ([]SourceControlTag, SourceControlPage, error)
+	ListPullRequests(ctx context.Context, repository, state string, page, perPage int) ([]SourceControlPullRequest, SourceControlPage, error)
+	GetCommitStatus(ctx context.Context, repository, commitSHA string) (SourceControlCIStatus, error)
+	BuildWebURL(repository string, kind string, identifier string) (string, error)
+}
+
 type ProcessSpec struct {
 	Name        string
 	Command     string
