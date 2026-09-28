@@ -12,9 +12,9 @@ import (
 )
 
 type fakeNginxRunner struct {
-	failCandidate  bool
-	failGlobal     bool
-	calls          [][]string
+	failCandidate   bool
+	failGlobal      bool
+	calls           [][]string
 	candidateConfig string
 }
 
