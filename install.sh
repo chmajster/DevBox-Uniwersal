@@ -151,6 +151,18 @@ systemd_available() {
   [[ "$(ps -p 1 -o comm= 2>/dev/null | tr -d ' ')" == "systemd" ]] && command -v systemctl >/dev/null 2>&1
 }
 
+default_directory_browse_roots() {
+  local roots="$DATA_DIR/projects"
+  if is_wsl; then
+    local drive
+    for drive in /mnt/[a-z]; do
+      [[ -d "$drive" ]] || continue
+      roots+=":$drive"
+    done
+  fi
+  printf '%s' "$roots"
+}
+
 ensure_supported_linux() {
   local distro
   distro="$(os_release_value ID || true)"
@@ -405,7 +417,7 @@ install_artifacts() {
   upsert_env_file "$ENV_FILE" DEVBOX_MIGRATIONS_DIR "$INSTALL_ROOT/migrations"
   upsert_env_file "$ENV_FILE" DEVBOX_FRONTEND_DIR "$INSTALL_ROOT/frontend/dist"
   upsert_env_file "$ENV_FILE" DEVBOX_PROJECTS_ROOT "$DATA_DIR/projects"
-  upsert_env_file "$ENV_FILE" DEVBOX_DIRECTORY_BROWSE_ROOTS "$DATA_DIR/projects"
+  upsert_env_file "$ENV_FILE" DEVBOX_DIRECTORY_BROWSE_ROOTS "$(default_directory_browse_roots)"
   upsert_env_file "$ENV_FILE" DEVBOX_COOKIE_SECURE "false"
   local source_version
   source_version="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || printf 'local')"
