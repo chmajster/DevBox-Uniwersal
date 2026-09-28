@@ -90,7 +90,7 @@ func (s *Service) ProjectRuntime(ctx context.Context, projectID string) (Project
 		return ProjectRuntimeView{}, err
 	}
 
-	detection, runtime, err := s.selectedRuntime(ctx, resolved)
+	detection, _, err := s.selectedRuntime(ctx, resolved)
 	if err != nil {
 		return ProjectRuntimeView{}, err
 	}
