@@ -4,6 +4,16 @@ export type OperationalStatus = 'RUNNING' | 'STOPPED' | 'FAILED' | 'BUILDING' | 
 export type ProjectSourceType = 'git' | 'local' | 'empty'
 export type DeploymentMode = 'native' | 'docker' | 'Docker' | 'DockerCompose'
 
+export interface CentralCredential {
+  id: string
+  name: string
+  kind: 'token' | 'ssh_key'
+  has_secret: boolean
+  created_by?: string
+  created_at: string
+  updated_at: string
+}
+
 export interface User {
   id: string
   username: string
@@ -293,6 +303,7 @@ export interface Project {
   healthcheck: string
   auto_start: boolean
   credential_kind?: 'token' | 'ssh_key'
+  credential_id?: string
   current_commit?: string
   port?: number
   domain?: string
