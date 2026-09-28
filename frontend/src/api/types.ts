@@ -283,6 +283,15 @@ export interface PHPMyAdminStatus {
   url: string
 }
 
+export interface DockerComposePluginStatus {
+  installed: boolean
+  mode?: 'plugin' | 'legacy'
+  path?: string
+  version?: string
+  installable: boolean
+  message?: string
+}
+
 export interface PHPFPMStatus {
   installed: boolean
   path?: string

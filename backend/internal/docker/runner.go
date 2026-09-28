@@ -28,7 +28,7 @@ func (r execRunner) Run(ctx context.Context, args ...string) ([]byte, []byte, er
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		return stdout.Bytes(), stderr.Bytes(), commandError(stderr.String(), err)
+		return stdout.Bytes(), stderr.Bytes(), commandError(r.binary, stderr.String(), err)
 	}
 	return stdout.Bytes(), stderr.Bytes(), nil
 }
@@ -41,7 +41,7 @@ func (r execRunner) Stream(ctx context.Context, args ...string) (io.ReadCloser, 
 	}
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
-		return nil, commandError("", err)
+		return nil, commandError(r.binary, "", err)
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -73,9 +73,9 @@ func (s *commandStream) Close() error {
 	return s.err
 }
 
-func commandError(stderr string, err error) error {
+func commandError(binary, stderr string, err error) error {
 	if errors.Is(err, exec.ErrNotFound) {
-		return fmt.Errorf("%w: docker CLI not found", ErrUnavailable)
+		return fmt.Errorf("%w: %s CLI not found", ErrUnavailable, binary)
 	}
 	message := strings.TrimSpace(stderr)
 	if len(message) > 600 {

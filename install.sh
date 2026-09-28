@@ -150,6 +150,16 @@ wsl_version() {
 systemd_available() {
   [[ "$(ps -p 1 -o comm= 2>/dev/null | tr -d ' ')" == "systemd" ]] && command -v systemctl >/dev/null 2>&1
 }
+docker_compose_available() {
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    return 0
+  fi
+  command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1
+}
+
+docker_daemon_available() {
+  command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
 
 default_directory_browse_roots() {
   local roots="$DATA_DIR/projects"
@@ -186,9 +196,26 @@ component_status() {
   return 1
 }
 
+docker_compose_status() {
+  local version=""
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    version="$(docker compose version 2>/dev/null | head -n1 || true)"
+    emit " OK " "$(printf '%-9s' "Compose") ${version:-docker-compose-v2}"
+    return 0
+  fi
+  if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+    version="$(docker-compose version 2>/dev/null | head -n1 || true)"
+    emit " OK " "$(printf '%-9s' "Compose") ${version:-$(command -v docker-compose)}"
+    return 0
+  fi
+  emit WARN "$(printf '%-9s' "Compose") brak; projekty z compose.yaml/docker-compose.yml nie mogą zostać wdrożone"
+  return 1
+}
+
 show_components() {
   component_status Git git || true
   component_status Docker docker || true
+  docker_compose_status || true
   component_status Nginx nginx || true
   component_status MySQL mysql mariadb || true
   component_status PHP php || true
@@ -323,25 +350,106 @@ select_mysql_package() {
   fi
 }
 
-install_packages() {
-  local mysql_pkg
-  mysql_pkg="$(select_mysql_package)"
-  local packages=(ca-certificates curl sudo build-essential git docker.io nginx "$mysql_pkg" php-cli composer python3 python3-pip golang-go nodejs npm)
+select_docker_compose_package() {
+  local pkg
+  for pkg in docker-compose-v2 docker-compose-plugin docker-compose; do
+    if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' ||
+       apt-cache show "$pkg" >/dev/null 2>&1; then
+      printf '%s' "$pkg"
+      return 0
+    fi
+  done
+  return 1
+}
+
+apt_refresh_once() {
+  if [[ "${APT_REFRESHED:-0}" == "1" ]]; then
+    return 0
+  fi
+  emit INFO "Odświeżam listę pakietów APT."
+  DEBIAN_FRONTEND=noninteractive apt-get update -y >>"$LOG_FILE" 2>&1
+  APT_REFRESHED=1
+}
+
+install_missing_packages() {
+  local packages=("$@")
   local missing=()
   local pkg
   for pkg in "${packages[@]}"; do
+    [[ -n "$pkg" ]] || continue
     if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
       missing+=("$pkg")
     fi
   done
   if ((${#missing[@]} == 0)); then
-    emit " OK " "Pakiety systemowe są już zainstalowane."
     return 0
   fi
+
+  apt_refresh_once
   emit INFO "Instaluję brakujące pakiety z kontrolowanej listy: ${missing[*]}"
-  DEBIAN_FRONTEND=noninteractive apt-get update -y >>"$LOG_FILE" 2>&1
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}" >>"$LOG_FILE" 2>&1
-  emit " OK " "Pakiety systemowe zainstalowane."
+}
+
+ensure_docker_compose() {
+  if docker_compose_available; then
+    emit " OK " "Docker Compose jest już dostępny."
+    return 0
+  fi
+
+  apt_refresh_once
+  local compose_pkg
+  compose_pkg="$(select_docker_compose_package || true)"
+  [[ -n "$compose_pkg" ]] || fail "Nie znaleziono pakietu Docker Compose. Sprawdzono: docker-compose-v2, docker-compose-plugin, docker-compose."
+
+  emit INFO "Docker Compose nie jest dostępny. Instaluję: $compose_pkg"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$compose_pkg" >>"$LOG_FILE" 2>&1
+
+  if ! docker_compose_available; then
+    fail "Pakiet $compose_pkg został zainstalowany, ale Docker Compose nadal nie działa. Sprawdź: docker compose version, docker-compose version oraz $LOG_FILE."
+  fi
+  emit " OK " "Docker Compose działa po instalacji pakietu $compose_pkg."
+}
+
+ensure_docker_ready() {
+  if docker_daemon_available; then
+    emit " OK " "Docker Engine odpowiada."
+    return 0
+  fi
+
+  if systemd_available && systemctl list-unit-files docker.service >/dev/null 2>&1; then
+    emit INFO "Docker Engine nie odpowiada. Uruchamiam docker.service."
+    systemctl enable --now docker.service >>"$LOG_FILE" 2>&1 || true
+    for _ in {1..15}; do
+      if docker_daemon_available; then
+        emit " OK " "Docker Engine uruchomiony."
+        return 0
+      fi
+      sleep 1
+    done
+  fi
+
+  if is_wsl; then
+    fail "Docker CLI jest dostępny, ale daemon nie odpowiada. W WSL uruchom Docker Desktop z integracją dla tej dystrybucji albo aktywuj lokalny docker.service. Szczegóły: $LOG_FILE."
+  fi
+  fail "Docker CLI jest dostępny, ale daemon nie odpowiada. Sprawdź docker.service i polecenie docker info. Szczegóły: $LOG_FILE."
+}
+
+install_packages() {
+  APT_REFRESHED=0
+
+  local mysql_pkg
+  mysql_pkg="$(select_mysql_package)"
+
+  local packages=(ca-certificates curl sudo build-essential git nginx "$mysql_pkg" php-cli composer python3 python3-pip golang-go nodejs npm)
+  if ! command -v docker >/dev/null 2>&1; then
+    packages+=(docker.io)
+  fi
+
+  install_missing_packages "${packages[@]}"
+  ensure_docker_compose
+  ensure_docker_ready
+
+  emit " OK " "Pakiety systemowe i środowisko Docker są gotowe."
 }
 
 cleanup_source_tree() {
@@ -453,6 +561,7 @@ install_nginx_integration() {
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper validate-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper reload-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper start-update
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package docker-compose
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-fpm
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-curl
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-mbstring
@@ -595,9 +704,11 @@ install_service() {
     return 0
   fi
   systemctl daemon-reload
-  systemctl enable devbox.service >>"$LOG_FILE" 2>&1
-  systemctl restart devbox.service >>"$LOG_FILE" 2>&1
-  systemctl enable --now devbox-update.timer >>"$LOG_FILE" 2>&1
+  {
+    systemctl enable devbox.service
+    systemctl restart devbox.service
+    systemctl enable --now devbox-update.timer
+  } >>"$LOG_FILE" 2>&1
   emit " OK " "Usługa devbox.service została uruchomiona ponownie z aktualnym backendem; auto-update z Git działa co 12 godzin."
 }
 
@@ -649,7 +760,7 @@ run_install() {
   wsl="$(wsl_version)"
   emit " OK " "System: ${pretty:-Linux}; WSL=${wsl}; systemd=$(systemd_available && printf yes || printf no)"
 
-  stage 2 "Komponenty systemowe i źródła"
+  stage 2 "Komponenty systemowe, Docker/Compose i źródła"
   install_packages
   show_components
   ensure_source_tree
