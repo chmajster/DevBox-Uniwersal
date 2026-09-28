@@ -30,7 +30,7 @@ func (r *Repository) Create(ctx context.Context, p Project, credentialName strin
 	}
 	defer tx.Rollback()
 	_, err = tx.ExecContext(ctx, `INSERT INTO projects(id,name,slug,description,status,work_dir,created_by,created_at,updated_at,source_type,local_path,runtime,runtime_version,container_policy,deployment_mode,working_directory,build_command,start_command,healthcheck,auto_start,current_commit) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		p.ID, p.Name, p.Slug, nullable(p.Description), p.Status, p.LocalPath, p.CreatedBy, p.CreatedAt.UTC().Format(time.RFC3339Nano), p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.SourceType, nullable(p.LocalPath), p.Runtime, p.RuntimeVersion, p.ContainerPolicy, p.DeploymentMode, p.WorkingDirectory, p.BuildCommand, p.StartCommand, p.Healthcheck, boolInt(p.AutoStart), nullable(p.CurrentCommit))
+		p.ID, p.Name, p.Slug, nullable(p.Description), p.Status, p.LocalPath, p.CreatedBy, p.CreatedAt.UTC().Format(time.RFC3339Nano), p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.SourceType, nullable(p.LocalPath), p.Runtime, p.RuntimeVersion, p.ContainerPolicy, "docker", p.WorkingDirectory, p.BuildCommand, p.StartCommand, p.Healthcheck, boolInt(p.AutoStart), nullable(p.CurrentCommit))
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
 	}
@@ -74,8 +74,8 @@ func (r *Repository) Update(ctx context.Context, p Project, credentialName strin
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `UPDATE projects SET name=?,slug=?,description=?,status=?,work_dir=?,local_path=?,runtime=?,runtime_version=?,container_policy=?,deployment_mode=?,working_directory=?,build_command=?,start_command=?,healthcheck=?,auto_start=?,current_commit=?,updated_at=? WHERE id=?`,
-		p.Name, p.Slug, nullable(p.Description), p.Status, p.LocalPath, nullable(p.LocalPath), p.Runtime, p.RuntimeVersion, p.ContainerPolicy, p.DeploymentMode, p.WorkingDirectory, p.BuildCommand, p.StartCommand, p.Healthcheck, boolInt(p.AutoStart), nullable(p.CurrentCommit), p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.ID)
+	_, err = tx.ExecContext(ctx, `UPDATE projects SET name=?,slug=?,description=?,status=?,work_dir=?,local_path=?,runtime=?,runtime_version=?,container_policy=?,working_directory=?,build_command=?,start_command=?,healthcheck=?,auto_start=?,current_commit=?,updated_at=? WHERE id=?`,
+		p.Name, p.Slug, nullable(p.Description), p.Status, p.LocalPath, nullable(p.LocalPath), p.Runtime, p.RuntimeVersion, p.ContainerPolicy, p.WorkingDirectory, p.BuildCommand, p.StartCommand, p.Healthcheck, boolInt(p.AutoStart), nullable(p.CurrentCommit), p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.ID)
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
 	}
@@ -179,7 +179,7 @@ func (r *Repository) SaveRuntimeContainerConfig(ctx context.Context, projectID s
 	}
 	defer tx.Rollback()
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	result, err := tx.ExecContext(ctx, `UPDATE projects SET runtime=?,runtime_version=?,container_policy=?,deployment_mode='docker',updated_at=? WHERE id=?`,
+	result, err := tx.ExecContext(ctx, `UPDATE projects SET runtime=?,runtime_version=?,container_policy=?,updated_at=? WHERE id=?`,
 		config.Runtime, config.RuntimeVersion, config.ContainerPolicy, now, projectID)
 	if err != nil {
 		return fmt.Errorf("update runtime container config: %w", err)
@@ -295,7 +295,7 @@ func (r *Repository) ListDeployments(ctx context.Context, projectID string) ([]D
 	return out, rows.Err()
 }
 
-const projectSelect = `SELECT p.id,p.name,p.slug,COALESCE(p.description,''),p.status,p.source_type,COALESCE(s.repository_url,''),COALESCE(s.reference,''),COALESCE(p.local_path,''),p.runtime,p.runtime_version,p.container_policy,p.deployment_mode,p.working_directory,p.build_command,p.start_command,p.healthcheck,p.auto_start,COALESCE(s.credential_kind,''),COALESCE(s.credential_secret_id,''),COALESCE(p.current_commit,''),p.created_by,p.created_at,p.updated_at,p.archived_at,(SELECT port FROM ports WHERE project_id=p.id AND released_at IS NULL ORDER BY created_at DESC LIMIT 1),(SELECT hostname FROM domains WHERE project_id=p.id ORDER BY created_at DESC LIMIT 1) FROM projects p LEFT JOIN project_sources s ON s.project_id=p.id`
+const projectSelect = `SELECT p.id,p.name,p.slug,COALESCE(p.description,''),p.status,p.source_type,COALESCE(s.repository_url,''),COALESCE(s.reference,''),COALESCE(p.local_path,''),p.runtime,p.runtime_version,p.container_policy,p.working_directory,p.build_command,p.start_command,p.healthcheck,p.auto_start,COALESCE(s.credential_kind,''),COALESCE(s.credential_secret_id,''),COALESCE(p.current_commit,''),p.created_by,p.created_at,p.updated_at,p.archived_at,(SELECT port FROM ports WHERE project_id=p.id AND released_at IS NULL ORDER BY created_at DESC LIMIT 1),(SELECT hostname FROM domains WHERE project_id=p.id ORDER BY created_at DESC LIMIT 1) FROM projects p LEFT JOIN project_sources s ON s.project_id=p.id`
 
 type scanFunc func(dest ...any) error
 
@@ -305,7 +305,7 @@ func scanProject(scan scanFunc) (Project, error) {
 	var createdBy, archived, domain sql.NullString
 	var port sql.NullInt64
 	var created, updated string
-	if err := scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &p.SourceType, &p.RepositoryURL, &p.Branch, &p.LocalPath, &p.Runtime, &p.RuntimeVersion, &p.ContainerPolicy, &p.DeploymentMode, &p.WorkingDirectory, &p.BuildCommand, &p.StartCommand, &p.Healthcheck, &auto, &p.CredentialKind, &p.CredentialID, &p.CurrentCommit, &createdBy, &created, &updated, &archived, &port, &domain); err != nil {
+	if err := scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &p.SourceType, &p.RepositoryURL, &p.Branch, &p.LocalPath, &p.Runtime, &p.RuntimeVersion, &p.ContainerPolicy, &p.WorkingDirectory, &p.BuildCommand, &p.StartCommand, &p.Healthcheck, &auto, &p.CredentialKind, &p.CredentialID, &p.CurrentCommit, &createdBy, &created, &updated, &archived, &port, &domain); err != nil {
 		return Project{}, err
 	}
 	p.AutoStart = auto != 0
