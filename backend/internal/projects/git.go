@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -187,10 +188,30 @@ func ProjectCredentialRef(project Project) *string {
 	return CredentialRef(project.CredentialKind, project.ID, "default")
 }
 
+func trustedGitArgs(workDir string, args ...string) (string, []string, error) {
+	commandArgs := append([]string(nil), args...)
+	if strings.TrimSpace(workDir) == "" {
+		return "", commandArgs, nil
+	}
+	absolute, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve Git working directory: %w", err)
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(absolute); resolveErr == nil {
+		absolute = resolved
+	}
+	commandArgs = append([]string{"-c", "safe.directory=" + absolute}, commandArgs...)
+	return absolute, commandArgs, nil
+}
+
 func (g *GitClient) run(ctx context.Context, workDir string, credentialRef *string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	if workDir != "" {
-		cmd.Dir = workDir
+	commandDir, commandArgs, err := trustedGitArgs(workDir, args...)
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, "git", commandArgs...)
+	if commandDir != "" {
+		cmd.Dir = commandDir
 	}
 	cmd.Env = os.Environ()
 	var secret string
