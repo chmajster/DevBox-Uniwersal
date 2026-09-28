@@ -203,7 +203,7 @@ func (r *Repository) ListDeployments(ctx context.Context, projectID string) ([]D
 	return out, rows.Err()
 }
 
-const projectSelect = `SELECT p.id,p.name,p.slug,COALESCE(p.description,''),p.status,p.source_type,COALESCE(s.repository_url,''),COALESCE(s.reference,''),COALESCE(p.local_path,''),p.runtime,p.deployment_mode,p.working_directory,p.build_command,p.start_command,p.healthcheck,p.auto_start,COALESCE(s.credential_kind,''),COALESCE(s.credential_secret_id,''),COALESCE(p.current_commit,''),p.created_by,p.created_at,p.updated_at,p.archived_at,(SELECT port FROM ports WHERE project_id=p.id AND released_at IS NULL ORDER BY created_at DESC LIMIT 1),(SELECT hostname FROM domains WHERE project_id=p.id ORDER BY created_at DESC LIMIT 1) FROM projects p LEFT JOIN project_sources s ON s.project_id=p.id`
+const projectSelect = `SELECT p.id,p.name,p.slug,COALESCE(p.description,''),p.status,p.source_type,COALESCE(s.repository_url,''),COALESCE(s.reference,''),COALESCE(p.local_path,''),p.runtime,p.deployment_mode,p.working_directory,p.build_command,p.start_command,p.healthcheck,p.auto_start,COALESCE(s.credential_kind,''),COALESCE(s.credential_secret_id,''),COALESCE((SELECT provider FROM project_source_control WHERE project_id=p.id),''),COALESCE(p.current_commit,''),p.created_by,p.created_at,p.updated_at,p.archived_at,(SELECT port FROM ports WHERE project_id=p.id AND released_at IS NULL ORDER BY created_at DESC LIMIT 1),(SELECT hostname FROM domains WHERE project_id=p.id ORDER BY created_at DESC LIMIT 1) FROM projects p LEFT JOIN project_sources s ON s.project_id=p.id`
 
 type scanFunc func(dest ...any) error
 
@@ -213,7 +213,7 @@ func scanProject(scan scanFunc) (Project, error) {
 	var createdBy, archived, domain sql.NullString
 	var port sql.NullInt64
 	var created, updated string
-	if err := scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &p.SourceType, &p.RepositoryURL, &p.Branch, &p.LocalPath, &p.Runtime, &p.DeploymentMode, &p.WorkingDirectory, &p.BuildCommand, &p.StartCommand, &p.Healthcheck, &auto, &p.CredentialKind, &p.CredentialID, &p.CurrentCommit, &createdBy, &created, &updated, &archived, &port, &domain); err != nil {
+	if err := scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &p.SourceType, &p.RepositoryURL, &p.Branch, &p.LocalPath, &p.Runtime, &p.DeploymentMode, &p.WorkingDirectory, &p.BuildCommand, &p.StartCommand, &p.Healthcheck, &auto, &p.CredentialKind, &p.CredentialID, &p.SourceControlProvider, &p.CurrentCommit, &createdBy, &created, &updated, &archived, &port, &domain); err != nil {
 		return Project{}, err
 	}
 	p.AutoStart = auto != 0
