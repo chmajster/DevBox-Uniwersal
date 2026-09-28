@@ -41,6 +41,12 @@ func New(deps Dependencies) http.Handler {
 
 	mux.Handle("POST /api/v1/auth/logout", a.authenticate(http.HandlerFunc(a.logout)))
 	mux.Handle("GET /api/v1/auth/me", a.authenticate(http.HandlerFunc(a.me)))
+	mux.Handle("GET /api/v1/users", a.authenticate(requireRole(domain.RoleAdmin, http.HandlerFunc(a.listUsers))))
+	mux.Handle("POST /api/v1/users", a.authenticate(requireRole(domain.RoleAdmin, http.HandlerFunc(a.createUser))))
+	mux.Handle("PATCH /api/v1/users/{id}", a.authenticate(requireRole(domain.RoleAdmin, http.HandlerFunc(a.updateUser))))
+	mux.Handle("POST /api/v1/users/{id}/password", a.authenticate(requireRole(domain.RoleAdmin, http.HandlerFunc(a.changeUserPassword))))
+	mux.Handle("POST /api/v1/users/{id}/sessions/revoke", a.authenticate(requireRole(domain.RoleAdmin, http.HandlerFunc(a.revokeUserSessions))))
+	mux.Handle("DELETE /api/v1/users/{id}", a.authenticate(requireRole(domain.RoleAdmin, http.HandlerFunc(a.deleteUser))))
 	mux.Handle("GET /api/v1/system/info", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.systemInfo))))
 	mux.Handle("GET /api/v1/system/platform", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.systemPlatform))))
 	mux.Handle("GET /api/v1/system/components", a.authenticate(requireRole(domain.RoleViewer, http.HandlerFunc(a.systemComponents))))
