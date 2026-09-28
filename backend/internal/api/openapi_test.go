@@ -24,7 +24,6 @@ func TestOpenAPISpecContainsCoreAndModuleRoutes(t *testing.T) {
 	}
 }
 
-
 func TestOpenAPIPortConfigurationMethodsAndRoles(t *testing.T) {
 	spec := buildOpenAPISpec("test")
 	paths := spec["paths"].(map[string]any)
