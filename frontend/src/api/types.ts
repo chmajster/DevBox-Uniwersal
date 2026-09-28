@@ -402,3 +402,31 @@ export interface Deployment {
   triggered_by?: string
   created_at: string
 }
+
+export interface ApplicationHealth {
+  id: string
+  project_id: string
+  project_name: string
+  type: string
+  target: string
+  interval_seconds: number
+  timeout_seconds: number
+  enabled: boolean
+  status: string
+  message?: string
+  response_time_ms: number
+  error?: string
+  checked_at?: string
+}
+
+export interface HealthHistoryEntry {
+  id: number
+  check_id: string
+  project_id: string
+  project_name: string
+  status: string
+  response_time_ms: number
+  message?: string
+  error?: string
+  checked_at: string
+}
