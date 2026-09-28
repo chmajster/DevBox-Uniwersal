@@ -339,6 +339,17 @@ export interface PHPFPMStatus {
   message?: string
 }
 
+export interface PostgreSQLPluginStatus {
+  installed: boolean
+  running: boolean
+  path?: string
+  version?: string
+  host?: string
+  port?: number
+  installable: boolean
+  message?: string
+}
+
 export interface PHPExtension {
   id: string
   name: string
