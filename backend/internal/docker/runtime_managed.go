@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/containerspec"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 )
 
 func (p *CLIProvider) ManagedImageExists(ctx context.Context, image string) (bool, error) {
@@ -86,7 +87,7 @@ func (p *CLIProvider) BuildManaged(ctx context.Context, spec containerspec.Deplo
 	return nil
 }
 
-func (p *CLIProvider) ReplaceManaged(ctx context.Context, spec containerspec.DeploymentSpec) error {
+func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspec.DeploymentSpec, additional []providers.PublishedPort) error {
 	if err := p.Available(ctx); err != nil {
 		return err
 	}
@@ -98,6 +99,10 @@ func (p *CLIProvider) ReplaceManaged(ctx context.Context, spec containerspec.Dep
 	}
 	if spec.HostPort < 1 || spec.HostPort > 65535 || spec.ContainerPort < 1 || spec.ContainerPort > 65535 {
 		return fmt.Errorf("%w: invalid managed container port", ErrInvalidInput)
+	}
+	publishArgs, err := managedPublishArgs(spec, additional)
+	if err != nil {
+		return err
 	}
 	backupName := spec.ContainerName + "-previous"
 	_, _, _ = p.runner.Run(ctx, "container", "rm", "-f", "-v", backupName)
@@ -124,8 +129,8 @@ func (p *CLIProvider) ReplaceManaged(ctx context.Context, spec containerspec.Dep
 		"--restart", "unless-stopped",
 		"--security-opt", "no-new-privileges:true",
 		"--cap-drop", "ALL",
-		"--publish", strconv.Itoa(spec.HostPort) + ":" + strconv.Itoa(spec.ContainerPort),
 	}
+	args = append(args, publishArgs...)
 	if spec.ReadOnly {
 		args = append(args, "--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=64m")
 	}

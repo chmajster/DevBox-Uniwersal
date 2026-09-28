@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"syscall"
 	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
@@ -228,19 +229,29 @@ func scanPort(scan rowScanner) (PortRecord, error) {
 }
 
 func probeSocket(port int) (bool, error) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
+	ipv4, err := net.Listen("tcp4", fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {
 		if isAddressInUse(err) {
 			return false, nil
 		}
 		return false, err
 	}
-	return true, listener.Close()
+	defer ipv4.Close()
+	ipv6, err := net.Listen("tcp6", fmt.Sprintf("[::]:%d", port))
+	if err != nil {
+		if errors.Is(err, syscall.EAFNOSUPPORT) || errors.Is(err, syscall.EPROTONOSUPPORT) || errors.Is(err, syscall.EADDRNOTAVAIL) {
+			return true, nil
+		}
+		if isAddressInUse(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, ipv6.Close()
 }
 
 func isAddressInUse(err error) bool {
-	var opErr *net.OpError
-	return errors.As(err, &opErr)
+	return errors.Is(err, syscall.EADDRINUSE)
 }
 
 func isConstraintError(err error) bool {

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Configurable Docker port publishing
+
+- Added project HTTP/internal and published-port settings, optional HTTPS passthrough, high defaults (8080/8443), sequential collision fallback and durable resolved-port persistence.
+- Kept exact manual port reservations unchanged; added ownership-aware allocation/cleanup and fixed primary-port selection so HTTPS does not replace HTTP.
+- Added a separate configuration UI with validation, save/deploy actions, applied mappings and application links.
+- Added managed-listener reconfiguration, multi-port Docker publication and opt-in Compose overrides stored outside application repositories.
+- Added migration `008_project_port_publishing.sql`, shared optional provider contracts, ADR-010 and regression/integration tests.
+
 ### Managed runtime containers
 
 - Removed native host runtime deployment for applications. PHP, Node.js, Python, Go and static projects now execute through Docker.

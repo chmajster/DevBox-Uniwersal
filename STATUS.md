@@ -86,3 +86,12 @@ DevBox Universal is an integrated local development control plane.
 - Signed release artifacts and rollback-capable updater.
 - Full browser E2E coverage.
 - Automatic local HTTPS.
+
+## Configurable project port publishing
+
+- Project configuration now separates the container listener from the published host port. New managed applications start at HTTP 8080; optional TLS passthrough starts at HTTPS 8443.
+- The central allocator skips database and socket collisions one port at a time, recognizes reused owned leases, and persists resolved host ports across redeploys/restarts.
+- Generated HTTP runtime listeners and image fingerprints follow internal-port changes. Host-port-only changes do not invalidate images or remove live source mounts.
+- Optional Compose port management uses an external, durable `!override` file for the selected web service. It is enabled by saving project port configuration and requires Docker Compose 2.24.4+. Unconfigured Compose projects retain their original topology and legacy compatibility.
+- Tests cover validation, concurrent allocation, cancellation, IPv4/IPv6 collisions, ownership-aware rollback, persistence, primary HTTP selection, UI fields and opt-in real Docker publication/live mounts/Compose remapping.
+- HTTPS certificate provisioning, firewall/NAT/WSL forwarding, and changing a custom application's listener remain separate concerns. See `docs/project-port-publishing.md` and ADR-010.

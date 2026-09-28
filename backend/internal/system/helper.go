@@ -35,8 +35,8 @@ var allowedEnvKeys = map[string]struct{}{
 	"DEVBOX_NGINX_SITES_ENABLED":      {},
 	"DEVBOX_PRIVILEGED_HELPER":        {},
 	"DEVBOX_SUDO_BINARY":              {},
-	"DEVBOX_UPDATE_REPOSITORY":         {},
-	"DEVBOX_UPDATE_REF":                {},
+	"DEVBOX_UPDATE_REPOSITORY":        {},
+	"DEVBOX_UPDATE_REF":               {},
 }
 
 type PrivilegedHelper struct {
