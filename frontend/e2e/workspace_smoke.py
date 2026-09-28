@@ -102,6 +102,17 @@ def install_api(context, role='admin', authenticated=True):
     return state
 
 def no_overflow(page):
+    if not page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'):
+        debug = page.evaluate("""() => ({
+            innerWidth: window.innerWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            offenders: [...document.querySelectorAll('body *')].map((el) => {
+                const rect = el.getBoundingClientRect()
+                const style = getComputedStyle(el)
+                return { tag: el.tagName, className: String(el.className || ''), text: (el.textContent || '').trim().slice(0, 100), left: rect.left, right: rect.right, width: rect.width, whiteSpace: style.whiteSpace }
+            }).filter((item) => item.right > window.innerWidth + 0.5 || item.left < -0.5).sort((a, b) => b.right - a.right).slice(0, 20)
+        })""")
+        print('OVERFLOW_DEBUG=' + json.dumps(debug, ensure_ascii=False))
     assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Horizontal page overflow'
 
 def main():
