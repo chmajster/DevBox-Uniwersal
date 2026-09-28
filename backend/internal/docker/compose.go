@@ -714,5 +714,5 @@ func composeArgs(directory, projectName string) ([]string, error) {
 	// Docker Compose v2 and the legacy docker-compose binary. Do not pass
 	// --project-directory; the absolute -f path already gives Compose the
 	// directory used for relative paths.
-	return []string{"compose", "-p", projectName, "-f", configFile}, nil
+	return withPortOverride(directory, projectName, []string{"compose", "-p", projectName, "-f", configFile})
 }

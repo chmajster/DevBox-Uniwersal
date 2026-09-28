@@ -185,20 +185,46 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	currentStage := DeploymentPreparing
 	commitAfter := commitBefore
 	var (
-		allocatedPort  int
-		composeStarted bool
-		composeDir     string
-		composeName    string
+		legacyBinding          *providers.ComposePortBinding
+		legacyAllocatedPort    int
+		portPlan               *deploymentPortPlan
+		restoreComposePorts    func() error
+		restorePreviousCompose bool
+		composeCommitted       bool
+		composeStarted         bool
+		composeDir             string
+		composeName            string
 	)
 	defer func() {
 		if runErr == nil {
 			return
 		}
-		if composeStarted && h.integrations.Compose != nil {
-			_ = h.integrations.Compose.ComposeDown(context.Background(), composeDir, composeName)
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		cleanupSafe := true
+		if composeStarted && !composeCommitted && h.integrations.Compose != nil {
+			if err := h.integrations.Compose.ComposeDown(cleanupCtx, composeDir, composeName); err != nil {
+				cleanupSafe = false
+				// Docker may still be serving these ports; retain the leases
+				// rather than hand them to a different application.
+				if portPlan != nil {
+					portPlan.activated = true
+				}
+				_ = h.logger.Log(cleanupCtx, job.ID, "error", "deployment.ports.cleanup_failed", map[string]any{"error": err.Error()})
+			}
 		}
-		if allocatedPort > 0 && h.integrations.Ports != nil {
-			_ = h.integrations.Ports.Release(context.Background(), allocatedPort)
+		if restoreComposePorts != nil && !composeCommitted && cleanupSafe {
+			if err := restoreComposePorts(); err != nil {
+				_ = h.logger.Log(cleanupCtx, job.ID, "error", "deployment.ports.restore_failed", map[string]any{"error": err.Error()})
+			} else if composeStarted && restorePreviousCompose {
+				if err := h.integrations.Compose.ComposeUp(cleanupCtx, composeDir, composeName, "", nil); err != nil {
+					_ = h.logger.Log(cleanupCtx, job.ID, "error", "deployment.compose.restore_failed", map[string]any{"error": err.Error()})
+				}
+			}
+		}
+		portPlan.rollback()
+		if legacyAllocatedPort > 0 && cleanupSafe && !composeCommitted {
+			_ = h.integrations.Ports.Release(cleanupCtx, legacyAllocatedPort)
 		}
 		finished := time.Now().UTC()
 		_ = h.repo.FinishDeployment(context.Background(), deploymentID, DeploymentFailed, currentStage, commitAfter, runErr.Error(), finished, finished.Sub(started))
@@ -269,6 +295,40 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 		composeDir = workDir
 		composeName = p.Slug
+		network, err := h.repo.PortConfiguration(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		if network.Configured {
+			publisher, ok := h.integrations.Compose.(providers.ComposePortPublisher)
+			if !ok {
+				return nil, fmt.Errorf("%w: configurable Compose port publishing", ErrProviderUnavailable)
+			}
+			target, err := publisher.InspectComposePortTarget(ctx, composeDir, composeName, network.Settings.ComposeService)
+			if err != nil {
+				return nil, err
+			}
+			internalPort := network.Settings.ContainerPort
+			if internalPort == 0 {
+				internalPort = target.ContainerPort
+			}
+			portPlan, err = h.preparePortPlan(ctx, p, network, internalPort)
+			if err != nil {
+				return nil, err
+			}
+			restorePreviousCompose = network.Applied != nil || p.Status == "running"
+			restoreComposePorts, err = publisher.ConfigureComposePorts(ctx, composeDir, composeName, target.Service, portPlan.bindings())
+			if err != nil {
+				return nil, err
+			}
+			h.logPortPlan(ctx, job.ID, "reserved", portPlan)
+		} else if publisher, ok := h.integrations.Compose.(providers.ComposePortPublisher); ok {
+			// A project that has not opted in retains its own Compose port
+			// topology, including compatibility with legacy docker-compose.
+			if err := publisher.ClearComposePorts(composeDir, composeName); err != nil {
+				return nil, err
+			}
+		}
 		if err := h.integrations.Compose.ComposeValidate(ctx, composeDir, composeName); err != nil {
 			return nil, fmt.Errorf("docker compose validation: %w", err)
 		}
@@ -288,43 +348,52 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 				return nil, fmt.Errorf("docker compose build: %w", err)
 			}
 		}
+		if !network.Configured {
+			binding, err := h.integrations.Compose.ComposePortBinding(ctx, composeDir, composeName)
+			if err != nil {
+				return nil, fmt.Errorf("docker compose port discovery: %w", err)
+			}
+			assignedPort := 0
+			if p.Port != nil && *p.Port > 0 {
+				assignedPort = *p.Port
+			} else {
+				if h.integrations.Ports == nil {
+					return nil, errors.New("provider unavailable: port allocator")
+				}
+				startPort := binding.RequestedHostPort
+				switch startPort {
+				case 80:
+					startPort = 8080
+				case 443:
+					startPort = 8443
+				}
+				if parsed, ok := healthcheckPort(p.Healthcheck); ok {
+					startPort = parsed
+				}
+				lease, reserveErr := h.integrations.Ports.ReserveFrom(ctx, p.ID, "application", startPort)
+				if reserveErr != nil {
+					return nil, fmt.Errorf("allocate compose host port from %d: %w", startPort, reserveErr)
+				}
+				assignedPort = lease.Port
+				legacyAllocatedPort = lease.Port
+				_ = h.logger.Log(ctx, job.ID, "info", "deployment.compose.port.allocated", map[string]any{
+					"project_id":     p.ID,
+					"requested_port": startPort,
+					"assigned_port":  assignedPort,
+				})
+			}
+			binding.HostPort = assignedPort
 
-		binding, err := h.integrations.Compose.ComposePortBinding(ctx, composeDir, composeName)
-		if err != nil {
-			return nil, fmt.Errorf("docker compose port discovery: %w", err)
+			legacyBinding = &binding
 		}
-		assignedPort := 0
-		if p.Port != nil && *p.Port > 0 {
-			assignedPort = *p.Port
-		} else {
-			if h.integrations.Ports == nil {
-				return nil, errors.New("provider unavailable: port allocator")
-			}
-			startPort := binding.RequestedHostPort
-			if parsed, ok := healthcheckPort(p.Healthcheck); ok {
-				startPort = parsed
-			}
-			lease, reserveErr := h.integrations.Ports.ReserveFrom(ctx, p.ID, "application", startPort)
-			if reserveErr != nil {
-				return nil, fmt.Errorf("allocate compose host port from %d: %w", startPort, reserveErr)
-			}
-			assignedPort = lease.Port
-			allocatedPort = lease.Port
-			_ = h.logger.Log(ctx, job.ID, "info", "deployment.compose.port.allocated", map[string]any{
-				"project_id":     p.ID,
-				"requested_port": startPort,
-				"assigned_port":  assignedPort,
-			})
-		}
-		binding.HostPort = assignedPort
-
 		if err := setStage(DeploymentStarting); err != nil {
 			return nil, err
 		}
-		if err := h.integrations.Compose.ComposeUp(ctx, composeDir, composeName, "", &binding); err != nil {
+		// Compose can partially start services before returning an error.
+		composeStarted = true
+		if err := h.integrations.Compose.ComposeUp(ctx, composeDir, composeName, "", legacyBinding); err != nil {
 			return nil, fmt.Errorf("docker compose up: %w", err)
 		}
-		composeStarted = true
 		if err := setStage(DeploymentHealthcheck); err != nil {
 			return nil, err
 		}
@@ -332,12 +401,36 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			return nil, fmt.Errorf("docker compose healthcheck: %w", err)
 		}
 
+		targetPort := 0
+		if p.Port != nil {
+			targetPort = *p.Port
+		} else if parsed, ok := healthcheckPort(p.Healthcheck); ok {
+			targetPort = parsed
+		}
+		if legacyBinding != nil {
+			targetPort = legacyBinding.HostPort
+		}
+		if portPlan != nil {
+			publisher := h.integrations.Compose.(providers.ComposePortPublisher)
+			if err := publisher.CheckPublishedHTTP(ctx, portPlan.state.HTTP.HostPort); err != nil {
+				return nil, fmt.Errorf("configured Compose HTTP port: %w", err)
+			}
+			composeCommitted = true
+			if err := portPlan.commit(); err != nil {
+				return nil, err
+			}
+			targetPort = portPlan.state.HTTP.HostPort
+			h.logPortPlan(ctx, job.ID, "published", portPlan)
+		}
+		composeCommitted = true
 		if h.integrations.Routes != nil {
-			if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), assignedPort); err != nil {
+			if targetPort == 0 {
+				return nil, errors.New("compose deployment is healthy but no host target port is configured for reverse proxy")
+			}
+			if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), targetPort); err != nil {
 				return nil, fmt.Errorf("reverse proxy: %w", err)
 			}
 		}
-		allocatedPort = 0
 		return h.finishSuccess(ctx, deploymentID, p.ID, commitBefore, commitAfter, started, setStage)
 	}
 
@@ -348,20 +441,14 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		return nil, fmt.Errorf("provider unavailable: docker: %w", err)
 	}
 
-	port := 0
-	if p.Port != nil && *p.Port > 0 {
-		port = *p.Port
-	} else {
-		if h.integrations.Ports == nil {
-			return nil, errors.New("provider unavailable: port allocator")
-		}
-		lease, reserveErr := h.integrations.Ports.Reserve(ctx, p.ID, "application", nil)
-		if reserveErr != nil {
-			return nil, fmt.Errorf("allocate port: %w", reserveErr)
-		}
-		port = lease.Port
-		allocatedPort = port
+	network, err := h.repo.PortConfiguration(ctx, p.ID)
+	if err != nil {
+		return nil, err
 	}
+	if network.Settings.HTTPSEnabled && !hasDockerfile {
+		return nil, fmt.Errorf("HTTPS publishing requires a custom Dockerfile or Compose service with a TLS listener; generated runtime images provide HTTP only")
+	}
+	port := network.Settings.HostPort
 
 	var spec containerspec.DeploymentSpec
 	if hasDockerfile {
@@ -393,6 +480,18 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 	}
 
+	spec, err = containerspec.WithContainerPort(spec, network.Settings.ContainerPort)
+	if err != nil {
+		return nil, err
+	}
+	portPlan, err = h.preparePortPlan(ctx, p, network, spec.ContainerPort)
+	if err != nil {
+		return nil, err
+	}
+	spec.HostPort = portPlan.state.HTTP.HostPort
+	port = spec.HostPort
+	h.logPortPlan(ctx, job.ID, "reserved", portPlan)
+
 	state, err := h.repo.RuntimeContainerState(ctx, p.ID)
 	if err != nil {
 		return nil, err
@@ -423,9 +522,13 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	if err := setStage(DeploymentStarting); err != nil {
 		return nil, err
 	}
-	if err := h.integrations.Managed.ReplaceManaged(ctx, spec); err != nil {
+	if err := h.replaceWithPortPlan(ctx, spec, portPlan); err != nil {
 		return nil, fmt.Errorf("replace managed container: %w", err)
 	}
+	if err := portPlan.commit(); err != nil {
+		return nil, err
+	}
+	h.logPortPlan(ctx, job.ID, "published", portPlan)
 	if err := setStage(DeploymentHealthcheck); err != nil {
 		return nil, err
 	}
@@ -442,7 +545,6 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 	}
 
-	allocatedPort = 0
 	return h.finishSuccess(ctx, deploymentID, p.ID, commitBefore, commitAfter, started, setStage)
 }
 
@@ -554,10 +656,10 @@ func routeHostname(p Project) string {
 
 func runtimeContext(p Project, workDir string, ports ...int) runtimes.ProjectContext {
 	config := map[string]any{
-		"build_command":   p.BuildCommand,
-		"start_command":   p.StartCommand,
-		"healthcheck":     p.Healthcheck,
-		"auto_start":      p.AutoStart,
+		"build_command": p.BuildCommand,
+		"start_command": p.StartCommand,
+		"healthcheck":   p.Healthcheck,
+		"auto_start":    p.AutoStart,
 	}
 	if len(ports) > 0 && ports[0] > 0 {
 		config["port"] = ports[0]

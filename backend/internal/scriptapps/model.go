@@ -46,8 +46,8 @@ type CreateInput struct {
 }
 
 type CreateResult struct {
-	App App    `json:"app"`
-	Job any    `json:"job,omitempty"`
+	App App `json:"app"`
+	Job any `json:"job,omitempty"`
 }
 
 type LogsResult struct {

@@ -118,3 +118,7 @@ The Linux installer builds backend and frontend, installs the control plane unde
 The HTTP API runs unprivileged. Operations requiring Administrator/root privileges must be delegated through a narrow, auditable system-service boundary rather than running the entire API as Administrator/root. See ADR-006 and ADR-008.
 
 `devbox-helper` exposes only typed, whitelisted operations. It cannot execute an arbitrary executable/argument vector, cannot write an arbitrary path and cannot install a package name supplied directly by a caller without allowlist mapping.
+
+### Project port publishing
+
+`projects.PortConfiguration` keeps desired settings and the last applied mapping in additive SQLite state. Deployment jobs use the central `PortManager` through the optional `SequentialPortAllocator`/`PortLeaseOwner` contracts, keep previous leases until a replacement is healthy, and retain leases when cleanup cannot safely confirm the ports are unused. Resolved host ports become the stable project settings. Generated container listeners are configured in `containerspec`; actual Docker and opt-in Compose publication remains in the Docker provider. Compose overrides are stored in a private durable directory, not in the application source tree. See ADR-010 and `docs/project-port-publishing.md`.
