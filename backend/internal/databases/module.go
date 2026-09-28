@@ -71,12 +71,12 @@ func (m *Module) mysqlStatus(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) mysqlAction(w http.ResponseWriter, r *http.Request) {
 	actor, remote := requestIdentity(r)
-	status, err := m.service.ManagedMySQLAction(r.Context(), r.PathValue("action"), actor, remote)
+	job, err := m.service.QueueManagedMySQLAction(r.Context(), r.PathValue("action"), actor, remote)
 	if err != nil {
 		writeModuleError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, status)
+	writeData(w, http.StatusAccepted, job)
 }
 
 func (m *Module) listDatabases(w http.ResponseWriter, r *http.Request) {
