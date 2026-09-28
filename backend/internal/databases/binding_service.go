@@ -125,7 +125,7 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 		item.SecretRef = ""
 	case DatabaseModeCompose, DatabaseModeExternal:
 		if input.Password != "" {
-			item.SecretRef = item.ID
+			item.SecretRef = newID()
 			if err := s.secrets.Put(ctx, bindingSecretScope(projectID), item.SecretRef, []byte(input.Password)); err != nil {
 				return DatabaseBinding{}, fmt.Errorf("store database binding credential: %w", err)
 			}
