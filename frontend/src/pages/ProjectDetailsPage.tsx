@@ -6,6 +6,8 @@ import type { Job, LogEntry, Project } from '../api/types'
 import { ErrorState } from '../components/ErrorState'
 import { StatusBadge } from '../components/StatusBadge'
 import { PROJECT_TABS, type ProjectTab } from '../routes'
+import { ProjectRuntimeSection } from '../runtime/ProjectRuntimeSection'
+import { ProjectSourceControlSection } from '../sourcecontrol/ProjectSourceControlSection'
 
 const tabLabels: Record<ProjectTab, string> = {
   overview: 'Overview',
@@ -98,18 +100,9 @@ function TabContent({ project, tab }: { project: Project; tab: ProjectTab }) {
         {field('Local path', project.local_path)}
       </div>
     case 'runtime':
-      return <div className="detail-grid">
-        {field('Runtime', project.runtime)}
-        {field('Status', project.status)}
-        {field('Start command', project.start_command)}
-        {field('Healthcheck', project.healthcheck)}
-      </div>
+      return <ProjectRuntimeSection projectId={project.id} />
     case 'git':
-      return <div className="detail-grid">
-        {field('Provider', project.source?.provider)}
-        {field('Repository', project.repository_url ?? project.source?.repository_url)}
-        {field('Reference', project.branch ?? project.source?.reference)}
-      </div>
+      return <ProjectSourceControlSection projectId={project.id} />
     case 'deployments':
       return <ResourcePanel path={`/projects/${encodeURIComponent(project.id)}/deployments`} />
     case 'logs':
