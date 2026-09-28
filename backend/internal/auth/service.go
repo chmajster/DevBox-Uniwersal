@@ -42,6 +42,13 @@ func (s *Service) BootstrapAdmin(ctx context.Context, username, password string)
 	if count > 0 {
 		return nil
 	}
+	if password == "" {
+		generated, genErr := randomToken(32)
+		if genErr != nil {
+			return fmt.Errorf("generate internal bootstrap secret: %w", genErr)
+		}
+		password = generated
+	}
 	if len(password) < 12 {
 		return fmt.Errorf("bootstrap admin password must contain at least 12 characters")
 	}
@@ -133,4 +140,15 @@ func newID() string {
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+func (s *Service) PasswordlessAdmin(ctx context.Context) (domain.User, error) {
+	user, err := s.users.ByUsername(ctx, "admin")
+	if err != nil {
+		return domain.User{}, err
+	}
+	if !user.Active {
+		return domain.User{}, ErrInactiveUser
+	}
+	return user, nil
 }
