@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Live updater progress
+
+- Added persistent live update state with percentage, current stage, source/target versions and timestamps, exposed through `GET /api/v1/update/progress`.
+- The updater now records source checks, clone/validation, all eight installer stages, final restart, success/no-update and failure states in `/var/lib/devbox/update-status`.
+- The Updates UI polls only the lightweight local progress endpoint during execution, survives the expected API restart, renders a 0–100% progress bar and marks every real updater stage as pending/current/completed/failed/skipped.
+- Installer stage reporting remains a no-op outside updater-driven `--update` runs, so normal install/repair/status behavior is unchanged.
+
 ### Control-plane user management
 
 - Added admin-only user management for DevBox accounts: create accounts, assign Admin/Operator/Viewer roles, enable or disable accounts, change or generate passwords, revoke all user sessions and delete accounts.
