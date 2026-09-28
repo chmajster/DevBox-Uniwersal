@@ -137,6 +137,8 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	}
 	mux.Handle("GET /api/v1/plugins/php-fpm/status", viewer(m.phpFPMStatus))
 	mux.Handle("POST /api/v1/plugins/php-fpm/install", admin(m.installPHPFPM))
+	mux.Handle("GET /api/v1/plugins/php/extensions", viewer(m.phpExtensions))
+	mux.Handle("POST /api/v1/plugins/php/extensions/install", admin(m.installPHPExtensions))
 }
 
 func (m *Module) phpFPMStatus(w http.ResponseWriter, r *http.Request) {

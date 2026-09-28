@@ -199,7 +199,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			_ = h.integrations.Ports.Release(context.Background(), allocatedPort)
 		}
 		finished := time.Now().UTC()
-		_ = h.repo.FinishDeployment(context.Background(), deploymentID, DeploymentFailed, DeploymentFailed, commitAfter, runErr.Error(), finished, finished.Sub(started))
+		_ = h.repo.FinishDeployment(context.Background(), deploymentID, DeploymentFailed, currentStage, commitAfter, runErr.Error(), finished, finished.Sub(started))
 		_ = h.repo.UpdateStatus(context.Background(), p.ID, "failed")
 		_ = h.logger.Log(context.Background(), job.ID, "error", "deployment.failed", map[string]any{"stage": currentStage, "error": runErr.Error()})
 	}()

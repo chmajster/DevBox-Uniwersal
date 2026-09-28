@@ -58,7 +58,7 @@ func TestDeploymentFailurePersistsProviderUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items[0].Status != DeploymentFailed || items[0].Stage != DeploymentFailed || !strings.Contains(items[0].Error, "provider unavailable") {
+	if len(items) != 1 || items[0].Status != DeploymentFailed || items[0].Stage != DeploymentUpdatingSource || !strings.Contains(items[0].Error, "provider unavailable") {
 		t.Fatalf("failure state not persisted: %+v", items)
 	}
 }
