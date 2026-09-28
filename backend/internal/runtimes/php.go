@@ -99,7 +99,7 @@ func (r *PHPRuntime) Validate(ctx context.Context, project ProjectContext) (Vali
 	}
 	if _, err := findExecutable(phpFPMCandidates()...); err != nil {
 		result.Valid = false
-		result.Errors = append(result.Errors, "PHP-FPM is required: "+err.Error())
+		result.Errors = append(result.Errors, "PHP-FPM is required but is not installed. Install it from Plugins → PHP-FPM.")
 	}
 
 	manifest, err := loadComposerManifest(project.WorkDir)
