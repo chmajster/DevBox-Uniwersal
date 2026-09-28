@@ -1,97 +1,190 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { request } from '../api/client'
-import type { ProjectRuntimeInfo, RuntimeValidation } from '../api/types'
+import type { Job, ProjectRuntimeInfo, RuntimeContainerConfig, RuntimeModuleOption } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 
 interface Props {
   projectId: string
 }
 
+const runtimeOptions = [
+  { value: '', label: 'Automatycznie wykryj' },
+  { value: 'php', label: 'PHP' },
+  { value: 'node', label: 'Node.js' },
+  { value: 'python', label: 'Python' },
+  { value: 'go', label: 'Go' },
+  { value: 'static', label: 'Static / HTML' },
+] as const
+
+const emptyConfig: RuntimeContainerConfig = {
+  project_id: '',
+  runtime: '',
+  runtime_version: '',
+  container_policy: 'auto',
+  modules: [],
+}
+
 export function ProjectRuntimeSection({ projectId }: Props) {
   const { user } = useAuth()
   const [runtime, setRuntime] = useState<ProjectRuntimeInfo | null>(null)
-  const [validation, setValidation] = useState<RuntimeValidation | null>(null)
+  const [config, setConfig] = useState<RuntimeContainerConfig>({ ...emptyConfig, project_id: projectId })
+  const [catalog, setCatalog] = useState<RuntimeModuleOption[]>([])
+  const [query, setQuery] = useState('')
   const [error, setError] = useState('')
-  const [validating, setValidating] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
 
   useEffect(() => {
     setError('')
-    setValidation(null)
-    request<ProjectRuntimeInfo>(`/projects/${encodeURIComponent(projectId)}/runtime`)
-      .then(setRuntime)
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Failed to load project runtime'))
+    setMessage('')
+    Promise.all([
+      request<ProjectRuntimeInfo>(`/projects/${encodeURIComponent(projectId)}/runtime`).catch(() => null),
+      request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`),
+    ])
+      .then(([runtimeInfo, runtimeConfig]) => {
+        setRuntime(runtimeInfo)
+        setConfig(runtimeConfig)
+      })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Nie udało się wczytać konfiguracji runtime'))
   }, [projectId])
 
-  async function validate() {
-    setValidating(true)
-    setError('')
-    try {
-      const result = await request<RuntimeValidation>(`/projects/${encodeURIComponent(projectId)}/runtime/validate`, {
-        method: 'POST',
-        body: '{}'
+  useEffect(() => {
+    if (!config.runtime) {
+      setCatalog([])
+      return
+    }
+    request<RuntimeModuleOption[]>(`/runtimes/${encodeURIComponent(config.runtime)}/modules`)
+      .then((items) => setCatalog(items ?? []))
+      .catch((reason: unknown) => {
+        setCatalog([])
+        setError(reason instanceof Error ? reason.message : 'Nie udało się wczytać listy modułów')
       })
-      setValidation(result)
+  }, [config.runtime])
+
+  const selected = useMemo(() => new Set(config.modules.map((item) => item.name)), [config.modules])
+  const filteredCatalog = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (!needle) return catalog
+    return catalog.filter((item) =>
+      item.name.toLowerCase().includes(needle) ||
+      item.label.toLowerCase().includes(needle) ||
+      item.description.toLowerCase().includes(needle)
+    )
+  }, [catalog, query])
+
+  function toggleModule(name: string, enabled: boolean) {
+    setConfig((current) => ({
+      ...current,
+      modules: enabled
+        ? [...current.modules.filter((item) => item.name !== name), { name }]
+        : current.modules.filter((item) => item.name !== name),
+    }))
+  }
+
+  async function saveAndRebuild() {
+    setBusy(true)
+    setError('')
+    setMessage('')
+    try {
+      const saved = await request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`, {
+        method: 'PUT',
+        body: JSON.stringify(config),
+      })
+      setConfig(saved)
+      const job = await request<Job>(`/projects/${encodeURIComponent(projectId)}/runtime/rebuild`, {
+        method: 'POST',
+        body: '{}',
+      })
+      setMessage(`Konfiguracja zapisana. Przebudowa kontenera została dodana do kolejki: ${job.id.slice(0, 12)}.`)
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : 'Runtime validation failed')
+      setError(reason instanceof Error ? reason.message : 'Nie udało się zapisać konfiguracji runtime')
     } finally {
-      setValidating(false)
+      setBusy(false)
     }
   }
 
-  return <section className="runtime-section">
+  const readOnly = user?.role === 'viewer'
+
+  return <section className="runtime-section panel">
     <div className="section-heading">
       <div>
-        <h2>Runtime</h2>
-        <p className="muted">Detection, host availability and project-specific runtime commands.</p>
+        <h2>Runtime i moduły</h2>
+        <p className="muted">Runtime aplikacji działa wyłącznie w Dockerze. DevBox nie instaluje PHP, Go, Node.js ani Pythona na hoście.</p>
       </div>
-      {user?.role !== 'viewer' && <button type="button" onClick={validate} disabled={validating}>
-        {validating ? 'Validating…' : 'Validate runtime'}
+      {!readOnly && <button type="button" onClick={() => void saveAndRebuild()} disabled={busy}>
+        {busy ? 'Zapisywanie…' : 'Zapisz i przebuduj kontener'}
       </button>}
     </div>
 
     {error && <div className="error-banner">{error}</div>}
-    {runtime && <>
-      <div className="cards runtime-summary">
-        <article><span>Detected runtime</span><strong>{runtime.runtime}</strong></article>
-        <article><span>Framework</span><strong>{runtime.framework || 'Generic'}</strong></article>
-        <article><span>Availability</span><strong className={`status-text status-${runtime.availability}`}>{runtime.availability}</strong></article>
-        <article><span>Version</span><strong>{runtime.version ?? 'Unknown'}</strong></article>
-        <article><span>Confidence</span><strong>{runtime.confidence}%</strong></article>
-        <article><span>Configured runtime</span><strong>{runtime.configured_runtime || 'Auto-detect'}</strong></article>
-      </div>
+    {message && <div className="validation-box validation-ok">{message}</div>}
 
-      <div className="runtime-detail-grid">
-        <article>
-          <h3>Commands</h3>
-          <label>Build</label>
-          <code className="command-block">{runtime.build_command || 'No build command required'}</code>
-          <label>Start</label>
-          <code className="command-block">{runtime.start_command || 'No start command detected'}</code>
-        </article>
-        <article>
-          <h3>Detected files</h3>
-          <ul>{runtime.detected_files.map((file) => <li key={file}><code>{file}</code></li>)}</ul>
-        </article>
-        <article>
-          <h3>Dependencies</h3>
-          <ul>{(runtime.dependencies ?? []).map((dependency) => <li key={dependency.name}>
-            <strong>{dependency.name}</strong> · <span className={`status-text status-${dependency.status}`}>{dependency.status}</span>
-            {dependency.version && <> · <code>{dependency.version}</code></>}
-          </li>)}</ul>
-        </article>
-        <article>
-          <h3>Environment</h3>
-          {runtime.environment && Object.keys(runtime.environment).length > 0
-            ? <ul>{Object.entries(runtime.environment).map(([key, value]) => <li key={key}><code>{key}</code> = <code>{value}</code></li>)}</ul>
-            : <p className="muted">No runtime environment variables configured.</p>}
-        </article>
-      </div>
-    </>}
+    <div className="form-grid">
+      <label>Runtime
+        <select
+          disabled={readOnly}
+          value={config.runtime}
+          onChange={(event) => setConfig({ ...config, runtime: event.target.value, runtime_version: '', modules: [] })}
+        >
+          {runtimeOptions.map((item) => <option key={item.value || 'auto'} value={item.value}>{item.label}</option>)}
+        </select>
+      </label>
 
-    {validation && <div className={validation.valid ? 'validation-box validation-ok' : 'validation-box validation-fail'}>
-      <strong>{validation.valid ? 'Runtime configuration is valid' : 'Runtime configuration is invalid'}</strong>
-      {(validation.errors ?? []).map((message) => <div key={message}>{message}</div>)}
-      {(validation.warnings ?? []).map((message) => <div key={message}>Warning: {message}</div>)}
+      <label>Wersja obrazu runtime
+        <input
+          disabled={readOnly || !config.runtime}
+          value={config.runtime_version}
+          onChange={(event) => setConfig({ ...config, runtime_version: event.target.value })}
+          placeholder="puste = domyślna"
+        />
+      </label>
+
+      <label className="span-2">Polityka kontenera
+        <select
+          disabled={readOnly}
+          value={config.container_policy}
+          onChange={(event) => setConfig({ ...config, container_policy: event.target.value as 'auto' | 'custom' })}
+        >
+          <option value="auto">Automatyczna — użyj Compose/Dockerfile projektu, a jeśli ich nie ma wygeneruj obraz DevBox</option>
+          <option value="custom">Własny Docker — wymagany Compose lub Dockerfile projektu</option>
+        </select>
+      </label>
+    </div>
+
+    {runtime && <div className="cards runtime-summary">
+      <article><span>Wykryty runtime</span><strong>{runtime.runtime}</strong></article>
+      <article><span>Framework</span><strong>{runtime.framework || 'Generic'}</strong></article>
+      <article><span>Pewność detekcji</span><strong>{runtime.confidence}%</strong></article>
+      <article><span>Aktywny kontener</span><strong>{config.container_name || 'jeszcze nie utworzony'}</strong></article>
+      <article><span>Obraz</span><strong><code>{config.image_tag || '—'}</code></strong></article>
+      <article><span>Fingerprint</span><strong><code>{config.build_fingerprint?.slice(0, 16) || '—'}</code></strong></article>
+    </div>}
+
+    {config.runtime && <div className="runtime-modules">
+      <div className="section-heading">
+        <div>
+          <h3>Moduły obrazu</h3>
+          <p className="muted">Zaznaczone elementy są instalowane podczas budowania obrazu, wewnątrz kontenera.</p>
+        </div>
+        <input
+          aria-label="Szukaj modułów runtime"
+          placeholder="Szukaj modułu…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </div>
+      <div className="runtime-module-list">
+        {filteredCatalog.map((item) => <label className="runtime-module-row" key={item.name}>
+          <input
+            type="checkbox"
+            disabled={readOnly}
+            checked={selected.has(item.name)}
+            onChange={(event) => toggleModule(item.name, event.target.checked)}
+          />
+          <span><strong>{item.label}</strong><code>{item.name}</code><small>{item.description}</small></span>
+        </label>)}
+        {filteredCatalog.length === 0 && <p className="muted">Brak dodatkowych modułów dla wybranego runtime albo brak wyników wyszukiwania.</p>}
+      </div>
     </div>}
   </section>
 }
