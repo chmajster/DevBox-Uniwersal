@@ -27,12 +27,12 @@ class SPAHandler(SimpleHTTPRequestHandler):
 def project(identifier, name, runtime, status, domain):
     return dict(id=identifier, name=name, slug=identifier, description='Aplikacja testowa',
                 status=status, source_type='git', runtime=runtime, branch='main', port=8080,
-                domain=domain, deployment_mode='native', local_path='/test/app', working_directory='.',
+                domain=domain, runtime_version='', container_policy='auto', local_path='/test/app', working_directory='.',
                 build_command='', start_command='', healthcheck='', auto_start=False,
                 current_commit='a1b2c3d4e5', created_at='2026-09-28T08:00:00Z', updated_at='2026-09-28T08:00:00Z')
 
 def install_api(context, role='admin', authenticated=True):
-    state = dict(authenticated=authenticated, posts=[], calls=[], failures=set(), tick=0,
+    state = dict(authenticated=authenticated, posts=[], calls=[], failures=set(), tick=0, deployment_stage='PREPARING',
                  projects=[project('portal', 'Portal zespołu', 'PHP', 'running', 'portal.test'),
                            project('api', 'API projektu', 'Go', 'running', 'api.test'),
                            project('worker', 'Worker', 'Python', 'stopped', '')])
@@ -85,6 +85,13 @@ def install_api(context, role='admin', authenticated=True):
                         process=dict(host_process_count=148, pid=100, goroutines=18, heap_allocated_bytes=1024, runtime_reserved_bytes=2048, uptime_seconds=5000))
         elif endpoint == '/projects':
             data = state['projects']
+        elif method == 'GET' and endpoint == '/projects/portal':
+            data = state['projects'][0]
+        elif method == 'GET' and endpoint == '/projects/portal/deployments':
+            data = [dict(id='deployment-test', project_id='portal', job_id='job-test',
+                         status=state['deployment_stage'], stage=state['deployment_stage'],
+                         commit_before='a1b2c3d4e5', commit_after='', duration_ms=0,
+                         started_at='2026-09-28T08:00:00Z', created_at='2026-09-28T08:00:00Z')]
         elif endpoint == '/logs':
             source = parse_qs(parsed.query).get('source', ['all'])[0]
             data = [entry for entry in logs if source == 'all' or entry['source'] == source]
@@ -187,7 +194,9 @@ def main():
             page.get_by_role('button', name='Anuluj', exact=True).click()
             assert not state['posts']
             page.get_by_role('button', name='Wdróż Portal zespołu', exact=True).click()
-            expect(page.get_by_text('Wdrożenie „Portal zespołu” dodano do kolejki zadań.', exact=False)).to_be_visible()
+            expect(page).to_have_url(re.compile(r'/apps/portal[?]tab=deployments$'))
+            expect(page.get_by_text('AKTUALNY DEPLOYMENT', exact=True)).to_be_visible()
+            expect(page.get_by_role('heading', name='Przygotowanie', exact=True)).to_be_visible()
             assert state['posts'] == ['/projects/portal/deploy']
 
             for width in (900, 390, 320):

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiURL, request } from '../api/client'
 import { listLogs, logQuery } from '../api/operations'
 import type { Deployment, GitState, Job, LogEntry, Project } from '../api/types'
@@ -7,6 +7,10 @@ import { useAuth } from '../auth/AuthContext'
 import { ProjectRuntimeSection } from '../runtime/ProjectRuntimeSection'
 
 type Tab = 'overview' | 'git' | 'deployments' | 'logs' | 'configuration'
+
+function tabFromParam(value: string | null): Tab {
+  return value === 'git' || value === 'deployments' || value === 'logs' || value === 'configuration' ? value : 'overview'
+}
 
 const deploymentStages = ['QUEUED', 'PREPARING', 'UPDATING_SOURCE', 'DEPENDENCIES', 'BUILDING', 'STARTING', 'HEALTHCHECK', 'SUCCESS'] as const
 
@@ -36,6 +40,7 @@ function deploymentProgress(item: Deployment) {
 
 export function ProjectDetailPage() {
   const { id = '' } = useParams()
+  const [searchParams] = useSearchParams()
   const { user } = useAuth()
   const [project, setProject] = useState<Project | null>(null)
   const [git, setGit] = useState<GitState | null>(null)
@@ -46,7 +51,7 @@ export function ProjectDetailPage() {
   const [logSearch, setLogSearch] = useState('')
   const [liveLogs, setLiveLogs] = useState(true)
   const logCursorRef = useRef(0)
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>(() => tabFromParam(searchParams.get('tab')))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
   const [config, setConfig] = useState({ working_directory: '', build_command: '', start_command: '', healthcheck: '', auto_start: false })
