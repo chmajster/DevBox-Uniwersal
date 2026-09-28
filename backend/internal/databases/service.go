@@ -263,7 +263,7 @@ func (s *Service) ListUsers(ctx context.Context) ([]DatabaseUser, error) {
 	return s.repo.ListUsers(ctx)
 }
 
-func (s *Service) CreateUser(ctx context.Context, databaseID, username string, privileges []string, actor *string, remote *string) (DatabaseUser, string, error) {
+func (s *Service) CreateUser(ctx context.Context, databaseID, username, requestedPassword string, privileges []string, actor *string, remote *string) (DatabaseUser, string, error) {
 	if s.secrets == nil {
 		return DatabaseUser{}, "", ErrSecretsUnavailable
 	}
@@ -284,9 +284,14 @@ func (s *Service) CreateUser(ctx context.Context, databaseID, username string, p
 	if err != nil {
 		return DatabaseUser{}, "", err
 	}
-	password, err := GeneratePassword()
-	if err != nil {
-		return DatabaseUser{}, "", err
+	password := requestedPassword
+	if password == "" {
+		password, err = GeneratePassword()
+		if err != nil {
+			return DatabaseUser{}, "", err
+		}
+	} else if len(password) < 8 || len(password) > 256 {
+		return DatabaseUser{}, "", errors.New("database user password must contain between 8 and 256 characters")
 	}
 	now := time.Now().UTC()
 	user := DatabaseUser{ID: newID(), DatabaseID: database.ID, Username: username, SecretRef: "", Privileges: privileges, CreatedAt: now, UpdatedAt: now}
@@ -336,7 +341,7 @@ func (s *Service) DeleteUser(ctx context.Context, id string, actor *string, remo
 	return nil
 }
 
-func (s *Service) ChangeUserPassword(ctx context.Context, id string, actor *string, remote *string) (string, error) {
+func (s *Service) ChangeUserPassword(ctx context.Context, id, requestedPassword string, actor *string, remote *string) (string, error) {
 	if s.secrets == nil {
 		return "", ErrSecretsUnavailable
 	}
@@ -348,9 +353,14 @@ func (s *Service) ChangeUserPassword(ctx context.Context, id string, actor *stri
 	if err != nil {
 		return "", err
 	}
-	password, err := GeneratePassword()
-	if err != nil {
-		return "", err
+	password := requestedPassword
+	if password == "" {
+		password, err = GeneratePassword()
+		if err != nil {
+			return "", err
+		}
+	} else if len(password) < 8 || len(password) > 256 {
+		return "", errors.New("database user password must contain between 8 and 256 characters")
 	}
 	if err := s.engine.ChangePassword(ctx, user.Username, password); err != nil {
 		return "", err

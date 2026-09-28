@@ -471,6 +471,25 @@ EOF_NGINX
   emit " OK " "Nginx używa kontrolowanego include z $NGINX_STATE_DIR; walidacja/reload działa przez devbox-helper."
 }
 
+configure_master_key() {
+  local existing key
+  existing="$(get_env_value "$ENV_FILE" DEVBOX_MASTER_KEY 2>/dev/null || true)"
+  if [[ -n "$existing" ]]; then
+    emit " OK " "Master key SecretStore jest skonfigurowany."
+    return 0
+  fi
+  if command -v openssl >/dev/null 2>&1; then
+    key="$(openssl rand -base64 32 | tr -d '\n')"
+  else
+    key="$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
+  fi
+  [[ -n "$key" ]] || fail "Nie udało się wygenerować DEVBOX_MASTER_KEY."
+  upsert_env_file "$ENV_FILE" DEVBOX_MASTER_KEY "$key"
+  chown root:devbox "$ENV_FILE"
+  chmod 0640 "$ENV_FILE"
+  emit " OK " "SecretStore został automatycznie skonfigurowany."
+}
+
 configure_passwordless_access() {
   upsert_env_file "$ENV_FILE" DEVBOX_AUTH_DISABLED "true"
   upsert_env_file "$ENV_FILE" DEVBOX_BOOTSTRAP_ADMIN_USERNAME "$BOOTSTRAP_USERNAME"
@@ -615,6 +634,7 @@ run_install() {
 
   stage 5 "Instalacja plików i konfiguracji"
   install_artifacts
+  configure_master_key
   configure_mysql_admin
   install_nginx_integration
   configure_passwordless_access

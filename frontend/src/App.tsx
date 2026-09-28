@@ -5,6 +5,7 @@ import { AuditPage } from './pages/AuditPage'
 import { BackupsPage } from './pages/BackupsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DatabasesPage } from './pages/DatabasesPage'
+import { DatabaseUsersPage } from './pages/DatabaseUsersPage'
 import { CredentialsPage } from './pages/CredentialsPage'
 import { DockerPage } from './pages/DockerPage'
 import { DomainsPage } from './pages/DomainsPage'
@@ -41,6 +42,7 @@ export function App() {
         <Route path={ROUTES.health} element={<HealthPage />} />
         <Route path={ROUTES.backups} element={<BackupsPage />} />
         <Route path="databases" element={<DatabasesPage />} />
+        <Route path={ROUTES.databaseUsers} element={<DatabaseUsersPage />} />
         <Route path="domains" element={<DomainsPage />} />
         <Route path="ports" element={<PortsPage />} />
         <Route path={ROUTES.plugins} element={<PluginsPage />} />
