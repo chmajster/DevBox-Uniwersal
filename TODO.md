@@ -1,18 +1,14 @@
 # TODO
 
-Items intentionally left outside Agent 1 scope:
+Current remaining work:
 
-- Implement Git provider and Project service/repository/HTTP module.
-- Implement durable JobRunner and worker; current work defines contracts and read API only.
-- Implement runtime registry and concrete runtimes.
-- Implement DockerProvider.
-- Implement MySQL DatabaseProvider.
-- Implement Nginx ReverseProxyProvider.
-- Implement SQLite-backed PortAllocator with OS socket reconciliation.
-- Implement Windows/WSL system discovery and privilege-separated helper/service.
-- Implement monitoring scheduler and health history.
-- Add CSRF protection before introducing browser state-changing domain endpoints beyond auth.
-- Add login rate limiting and session administration.
-- Add secret-key rotation/versioning and wire SecretStore into concrete provider credential flows.
-- Add Project/Deployment domain UI after their backend modules exist.
-- Add end-to-end browser tests once domain workflows are available.
+- Add login rate limiting, active-session administration and global session revocation.
+- Add master-key versioning and online secret rotation.
+- Publish signed/versioned release artifacts with checksums and rollback-capable updates.
+- Add end-to-end browser tests for install → login → project onboarding → runtime → proxy → health → delete.
+- Extend runtime management with per-project version selection/installation.
+- Add automatic local HTTPS certificate provisioning and lifecycle.
+- Add complete DevBox configuration/database/project metadata backup and restore.
+- Add application templates for common stacks.
+- Add remote DevBox Agent nodes with authenticated controller/agent transport.
+- Add finer-grained permissions beyond Admin/Operator/Viewer when multi-user deployments require them.
