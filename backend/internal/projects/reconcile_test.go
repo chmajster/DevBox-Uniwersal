@@ -35,8 +35,8 @@ func TestReconcileAutoStartQueuesOnceAndMarksReconcilePayload(t *testing.T) {
 		ContainerPolicy: ContainerPolicyAuto,
 		DeploymentMode:  "docker",
 		AutoStart:       true,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	manual := auto
 	manual.ID = NewID()
