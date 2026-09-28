@@ -549,6 +549,11 @@ func (s *Service) PHPMyAdminAction(ctx context.Context, action string, actor *st
 	if s.phpMyAdmin == nil {
 		return PHPMyAdminStatus{}, errors.New("phpMyAdmin manager is not configured")
 	}
+	if action != "stop" && s.managed != nil {
+		if err := s.ensureManagedReady(ctx); err != nil {
+			return PHPMyAdminStatus{}, err
+		}
+	}
 	var (
 		status PHPMyAdminStatus
 		err    error
