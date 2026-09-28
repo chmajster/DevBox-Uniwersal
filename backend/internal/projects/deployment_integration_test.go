@@ -241,7 +241,6 @@ func TestDeploymentIntegrationDockerComposeReusesExistingProjectPort(t *testing.
 	}
 }
 
-
 func integrationProject(t *testing.T, overrides Project) (*Repository, Project, string) {
 	t.Helper()
 	db, err := database.Open(filepath.Join(t.TempDir(), "devbox.db"))
