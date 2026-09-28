@@ -15,6 +15,7 @@ const items: NavigationItem[] = [
   { to: ROUTES.logs, label: 'Logi', icon: 'logs', group: 'Operacje' },
   { to: ROUTES.health, label: 'Monitoring', icon: 'activity', group: 'Operacje' },
   { to: ROUTES.backups, label: 'Kopie zapasowe', icon: 'backup', group: 'Operacje', roles: ['admin'] },
+  { to: ROUTES.updates, label: 'Aktualizacje', icon: 'refresh', group: 'Operacje', roles: ['admin'] },
   { to: ROUTES.audit, label: 'Audyt', icon: 'shield', group: 'Operacje', roles: ['admin', 'operator'] },
   { to: '/runtimes', label: 'Runtime', icon: 'code', group: 'Infrastruktura' }
 ]
