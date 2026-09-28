@@ -60,7 +60,7 @@ DevBox Universal is an integrated local development control plane.
 - Per-project database bindings support `none`, DevBox-managed MySQL, project-owned Compose MySQL/MariaDB and external MySQL/MariaDB.
 - Managed MySQL runs as `devbox-mysql` on the shared `devbox-apps` network with persistent `devbox-mysql-data`, loopback-only admin publication and durable lifecycle jobs.
 - Admin and application endpoints are separate: control-plane operations use the loopback endpoint while application containers use `devbox-mysql:3306`.
-- Existing database/user/grant provisioning is reused; generated credentials and external/Compose passwords are SecretStore-backed and injected only at runtime.
+- Existing database/user/grant provisioning is reused; database-user passwords may be explicitly empty or securely generated when omitted, while generated credentials and external/Compose passwords remain SecretStore-backed and are injected only at runtime.
 - Project Compose files remain untouched; DevBox creates a mode-0600 override outside the repository for environment/network additions and detects or explicitly selects the application service.
 - Connection tests execute real `SELECT 1`; managed tests traverse Docker DNS on `devbox-apps`, Compose tests use the selected database service and external tests run from the Docker execution boundary.
 - PHP projects with an active database binding require `pdo_mysql` or `mysqli` in their project container configuration.

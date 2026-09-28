@@ -166,7 +166,7 @@ func (s *Service) RotateProjectDatabasePassword(ctx context.Context, projectID s
 	if len(users) == 0 {
 		return errors.New("database credentials are unavailable")
 	}
-	if _, err := s.ChangeUserPassword(ctx, users[0].ID, "", actor, remote); err != nil {
+	if _, err := s.ChangeUserPassword(ctx, users[0].ID, nil, actor, remote); err != nil {
 		return err
 	}
 	return nil

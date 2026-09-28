@@ -123,6 +123,53 @@ func TestCreateUserErrorDoesNotLeakPassword(t *testing.T) {
 	}
 }
 
+func TestResolveRequestedDatabasePasswordAllowsExplicitEmpty(t *testing.T) {
+	requested := ""
+	password, err := resolveRequestedDatabasePassword(&requested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if password != "" {
+		t.Fatalf("expected empty password, got %q", password)
+	}
+}
+
+func TestResolveRequestedDatabasePasswordGeneratesWhenOmitted(t *testing.T) {
+	password, err := resolveRequestedDatabasePassword(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(password) < 8 {
+		t.Fatalf("expected generated password, got length %d", len(password))
+	}
+}
+
+func TestResolveRequestedDatabasePasswordRejectsShortNonEmpty(t *testing.T) {
+	requested := "short"
+	if _, err := resolveRequestedDatabasePassword(&requested); err == nil {
+		t.Fatal("expected short non-empty password to be rejected")
+	}
+}
+
+func TestCreateUserSupportsEmptyPasswordSecret(t *testing.T) {
+	store := &fakeSecretStore{values: map[string][]byte{"database-user/ref": []byte{}}}
+	executor := &fakeMySQLExecutor{}
+	provider := &MySQLProvider{
+		cfg:     MySQLConfig{ApplicationHost: "%"},
+		secrets: store,
+		exec:    executor,
+	}
+	if err := provider.CreateUser(context.Background(), "app_user", "ref"); err != nil {
+		t.Fatal(err)
+	}
+	if len(executor.statements) != 1 {
+		t.Fatalf("expected one statement, got %d", len(executor.statements))
+	}
+	if !strings.Contains(executor.statements[0], "IDENTIFIED BY ''") {
+		t.Fatalf("expected explicit empty MySQL password, got %s", executor.statements[0])
+	}
+}
+
 func TestSanitizeMySQLErrorRedactsPasswordAndPreservesDiagnostic(t *testing.T) {
 	raw := "ERROR 1045 (28000): Access denied for user 'devbox_admin'@'localhost' password=super-secret"
 	got := sanitizeMySQLError(raw)

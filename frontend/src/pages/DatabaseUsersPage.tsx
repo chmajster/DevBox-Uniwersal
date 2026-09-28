@@ -24,6 +24,7 @@ export function DatabaseUsersPage() {
   const [databaseId, setDatabaseId] = useState(params.get('database') ?? '')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [generatePassword, setGeneratePassword] = useState(false)
   const [privileges, setPrivileges] = useState<string[]>(DEFAULT_PRIVILEGES)
   const [editingUser, setEditingUser] = useState<DatabaseUser | null>(null)
   const [editingPrivileges, setEditingPrivileges] = useState<string[]>([])
@@ -76,7 +77,7 @@ export function DatabaseUsersPage() {
         body: JSON.stringify({
           database_id: databaseId,
           username: username.trim(),
-          password,
+          ...(generatePassword ? {} : { password }),
           privileges,
         }),
       })
@@ -87,6 +88,7 @@ export function DatabaseUsersPage() {
       })
       setUsername('')
       setPassword('')
+      setGeneratePassword(false)
       setPrivileges(DEFAULT_PRIVILEGES)
       setMessage(`Użytkownik ${result.user.username} został utworzony i przypisany do bazy.`)
       await load()
@@ -103,11 +105,11 @@ export function DatabaseUsersPage() {
     })
   }
 
-  async function savePassword(item: DatabaseUser) {
+  async function savePassword(item: DatabaseUser, generate = false) {
     await run(async () => {
       const result = await request<{ password: string }>(`/database-users/${item.id}/password`, {
         method: 'POST',
-        body: JSON.stringify({ password: newPassword }),
+        ...(generate ? {} : { body: JSON.stringify({ password: newPassword }) }),
       })
       setCredential({
         database: databaseById.get(item.database_id)?.name ?? item.database_id,
@@ -115,7 +117,9 @@ export function DatabaseUsersPage() {
         password: result.password,
       })
       setNewPassword('')
-      setMessage(`Hasło użytkownika ${item.username} zostało zmienione.`)
+      setMessage(generate
+        ? `Wygenerowano nowe hasło użytkownika ${item.username}.`
+        : `Hasło użytkownika ${item.username} zostało ustawione.`)
     })
   }
 
@@ -165,7 +169,8 @@ export function DatabaseUsersPage() {
         <option value="">Wybierz bazę</option>{databases.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select></label>
       <label>Nazwa użytkownika<input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="app_user" /></label>
-      <label className="span-2">Hasło<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 8 znaków; puste = wygeneruj automatycznie" /></label>
+      <label className="span-2">Hasło<input type="password" value={password} disabled={generatePassword} onChange={(e) => setPassword(e.target.value)} placeholder={generatePassword ? 'Hasło zostanie wygenerowane automatycznie' : 'Może pozostać puste'} /></label>
+      <label className="checkbox span-2"><input type="checkbox" checked={generatePassword} onChange={(e) => setGeneratePassword(e.target.checked)} /> Wygeneruj bezpieczne hasło automatycznie</label>
       <div className="span-2 database-privileges">
         <span>Uprawnienia</span>
         <div className="database-privilege-grid">{AVAILABLE_PRIVILEGES.map((p) => <label className="checkbox" key={p}><input type="checkbox" checked={privileges.includes(p)} onChange={() => togglePrivilege(p, 'create')} />{p}</label>)}</div>
@@ -205,8 +210,11 @@ export function DatabaseUsersPage() {
         <div className="form-actions"><button type="submit" disabled={busy || editingPrivileges.length === 0}>Zapisz uprawnienia</button></div>
       </form>
       <div className="form-grid">
-        <label className="span-2">Nowe hasło<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Min. 8 znaków; puste = wygeneruj automatycznie" /></label>
-        <div className="form-actions"><button type="button" className="secondary" disabled={busy} onClick={() => savePassword(editingUser)}>{newPassword ? 'Ustaw hasło' : 'Wygeneruj nowe hasło'}</button></div>
+        <label className="span-2">Nowe hasło<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Może pozostać puste" /></label>
+        <div className="form-actions">
+          <button type="button" className="secondary" disabled={busy} onClick={() => savePassword(editingUser)}>Ustaw hasło</button>
+          <button type="button" className="secondary" disabled={busy} onClick={() => savePassword(editingUser, true)}>Wygeneruj nowe hasło</button>
+        </div>
       </div>
     </section>}
   </>
