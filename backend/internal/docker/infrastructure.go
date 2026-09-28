@@ -61,3 +61,17 @@ func (p *CLIProvider) ConnectNetwork(ctx context.Context, container, network str
 	}
 	return err
 }
+
+func (p *CLIProvider) EnsureContainer(ctx context.Context, spec providers.ContainerSpec) (providers.ContainerInfo, error) {
+	if err := validateContainerRef(spec.Name); err != nil {
+		return providers.ContainerInfo{}, err
+	}
+	item, err := p.Inspect(ctx, spec.Name)
+	if err == nil {
+		return item, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return providers.ContainerInfo{}, err
+	}
+	return p.Create(ctx, spec)
+}
