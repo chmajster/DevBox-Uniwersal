@@ -85,6 +85,9 @@ func NewService(repo *Repository, engine databaseEngine, secretStore secrets.Sec
 			return nil, err
 		}
 	}
+	if err := runner.Register(NewProjectDatabaseProvisionJobHandler(service)); err != nil {
+		return nil, err
+	}
 	return service, nil
 }
 
@@ -175,6 +178,55 @@ func (s *Service) DeleteDatabase(ctx context.Context, id string, actor *string, 
 	}
 	s.recordAudit(ctx, actor, "database.delete", "database", &id, map[string]any{"name": item.Name}, remote)
 	return nil
+}
+
+func (s *Service) QueueProjectProvision(ctx context.Context, projectID, engine, charset, applicationService string, actor *string, remote *string) (domain.Job, error) {
+	if s.secrets == nil {
+		return domain.Job{}, ErrSecretsUnavailable
+	}
+	if _, err := s.repo.ProjectByID(ctx, projectID); err != nil {
+		return domain.Job{}, err
+	}
+	if binding, err := s.GetDatabaseBinding(ctx, projectID); err == nil && binding.Mode != DatabaseModeNone && binding.Mode != DatabaseModeManaged {
+		return domain.Job{}, fmt.Errorf("project database binding is already configured in %s mode", binding.Mode)
+	}
+	if existing, err := s.repo.DatabaseByProject(ctx, projectID); err == nil {
+		return domain.Job{}, fmt.Errorf("project already has database %s", existing.Name)
+	} else if !errors.Is(err, ErrNotFound) {
+		return domain.Job{}, err
+	}
+	engine = strings.ToLower(strings.TrimSpace(engine))
+	if engine == "" {
+		engine = "mysql"
+	}
+	if s.managed != nil && engine != "mysql" {
+		return domain.Job{}, errors.New("managed database engine must be mysql; use Compose or external mode for MariaDB")
+	}
+	charset = strings.TrimSpace(charset)
+	if charset == "" {
+		charset = "utf8mb4"
+	}
+	applicationService = strings.TrimSpace(applicationService)
+	projectRef := projectID
+	job, err := s.jobs.Enqueue(ctx, jobs.Request{
+		Type:        JobTypeProjectDatabaseProvision,
+		ProjectID:   &projectRef,
+		RequestedBy: actor,
+		Payload: map[string]any{
+			"project_id":          projectID,
+			"engine":              engine,
+			"charset":             charset,
+			"application_service": applicationService,
+		},
+	})
+	if err != nil {
+		return domain.Job{}, err
+	}
+	s.recordAudit(ctx, actor, "database.provision.enqueue", "project", &projectID, map[string]any{
+		"job_id": job.ID,
+		"engine": engine,
+	}, remote)
+	return job, nil
 }
 
 func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, charset string, actor *string, remote *string, applicationService ...string) (ProvisionResult, error) {
