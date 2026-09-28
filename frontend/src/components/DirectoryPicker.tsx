@@ -38,7 +38,7 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
     async function loadRoots() {
       setLoading(current => new Set(current).add(''))
       try {
-        const listing = await request<DirectoryListing>('/projects/directories')
+        const listing = await request<DirectoryListing>('/project-directories')
         if (cancelled) return
         const roots = listing.directories ?? []
         setListings(current => ({ ...current, '': roots }))
@@ -69,7 +69,7 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
       return next
     })
     try {
-      const listing = await request<DirectoryListing>(`/projects/directories?path=${encodeURIComponent(path)}`)
+      const listing = await request<DirectoryListing>(`/project-directories?path=${encodeURIComponent(path)}`)
       setListings(current => ({
         ...current,
         [path]: listing.directories ?? [],

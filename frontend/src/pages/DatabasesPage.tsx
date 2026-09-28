@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { request } from '../api/client'
-import type { DatabaseBackup, DatabaseRecord, Job, MySQLStatus, PHPMyAdminStatus, ProvisionResult } from '../api/types'
+import type { DatabaseBackup, DatabaseRecord, Job, MySQLStatus, PHPMyAdminStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 
 function formatBytes(value?: number) {
@@ -25,8 +25,6 @@ export function DatabasesPage() {
   const [selectedDatabase, setSelectedDatabase] = useState<DatabaseRecord | null>(null)
   const [backups, setBackups] = useState<DatabaseBackup[]>([])
   const [databaseName, setDatabaseName] = useState('')
-  const [projectId, setProjectId] = useState('')
-  const [credential, setCredential] = useState<ProvisionResult['credential'] | null>(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -71,20 +69,6 @@ export function DatabasesPage() {
       })
       setDatabaseName('')
       setMessage(`Database ${item.name} created.`)
-      await load()
-    })
-  }
-
-  async function provisionProject(event: FormEvent) {
-    event.preventDefault()
-    await run(async () => {
-      const result = await request<ProvisionResult>(`/projects/${encodeURIComponent(projectId)}/database/provision`, {
-        method: 'POST',
-        body: JSON.stringify({ engine: 'mysql', charset: 'utf8mb4' }),
-      })
-      setCredential(result.credential)
-      setProjectId('')
-      setMessage(`Database ${result.database.name} provisioned for project.`)
       await load()
     })
   }
@@ -193,37 +177,13 @@ export function DatabasesPage() {
     {error && <div className="error-banner">{error}</div>}
     {message && <div className="success-banner">{message}</div>}
 
-    {credential && <section className="credential-card">
-      <div>
-        <strong>Jednorazowe dane dostępowe</strong>
-        <p className="muted">Skopiuj je teraz. Hasło nie jest zwracane ponownie przez listy API.</p>
-      </div>
-      <code>
-        DB_HOST={credential.host}<br />
-        DB_PORT={credential.port}<br />
-        DB_NAME={credential.database}<br />
-        DB_USER={credential.username}<br />
-        DB_PASSWORD={credential.password}
-      </code>
-      <button type="button" className="secondary" onClick={() => setCredential(null)}>Ukryj</button>
-    </section>}
-
-    {canMutate && <div className="database-forms">
-      <form className="panel compact-form" onSubmit={createDatabase}>
-        <h2>Utwórz bazę</h2>
-        <label>Nazwa
-          <input value={databaseName} onChange={(event) => setDatabaseName(event.target.value)} placeholder="app_db" required />
-        </label>
-        <button type="submit" disabled={busy}>Utwórz</button>
-      </form>
-      <form className="panel compact-form" onSubmit={provisionProject}>
-        <h2>Baza dla projektu</h2>
-        <label>ID projektu
-          <input value={projectId} onChange={(event) => setProjectId(event.target.value)} placeholder="project UUID" required />
-        </label>
-        <button type="submit" disabled={busy}>Provision</button>
-      </form>
-    </div>}
+    {canMutate && <form className="panel compact-form" onSubmit={createDatabase}>
+      <h2>Utwórz bazę</h2>
+      <label>Nazwa
+        <input value={databaseName} onChange={(event) => setDatabaseName(event.target.value)} placeholder="app_db" required />
+      </label>
+      <button type="submit" disabled={busy}>Utwórz</button>
+    </form>}
 
     <div className="table-scroll">
       <table>
