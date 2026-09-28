@@ -86,7 +86,7 @@ update_progress_stage() {
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   tmp="${DEVBOX_UPDATE_PROGRESS_FILE}.tmp.$"
   mkdir -p "$(dirname "$DEVBOX_UPDATE_PROGRESS_FILE")" 2>/dev/null || true
-  {
+  if ! {
     printf 'STATE=running\n'
     printf 'PERCENT=%s\n' "$percent"
     printf 'STAGE=%s\n' "$stage_name"
@@ -97,10 +97,17 @@ update_progress_stage() {
     printf 'UPDATED_AT=%s\n' "$now"
     printf 'FINISHED_AT=\n'
     printf 'ERROR=\n'
-  } >"$tmp" 2>/dev/null && chmod 0644 "$tmp" 2>/dev/null && mv -f "$tmp" "$DEVBOX_UPDATE_PROGRESS_FILE" 2>/dev/null || {
+  } >"$tmp" 2>/dev/null; then
     rm -f "$tmp" 2>/dev/null || true
-    true
-  }
+    return 0
+  fi
+  if ! chmod 0644 "$tmp" 2>/dev/null; then
+    rm -f "$tmp" 2>/dev/null || true
+    return 0
+  fi
+  if ! mv -f "$tmp" "$DEVBOX_UPDATE_PROGRESS_FILE" 2>/dev/null; then
+    rm -f "$tmp" 2>/dev/null || true
+  fi
 }
 
 stage() {
