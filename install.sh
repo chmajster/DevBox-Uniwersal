@@ -444,6 +444,7 @@ install_nginx_integration() {
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper validate-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper reload-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper start-update
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-fpm
 EOF_SUDOERS
   chmod 0440 "$sudoers_tmp"
   if ! visudo -cf "$sudoers_tmp" >>"$LOG_FILE" 2>&1; then
