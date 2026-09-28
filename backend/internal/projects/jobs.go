@@ -314,11 +314,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			defer clear(databaseRuntime.Secret)
 		}
 		if databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
-			_ = h.logger.Log(ctx, job.ID, "info", "deployment.database.resolved", map[string]any{
-				"mode": databaseRuntime.Connection.Mode, "host": databaseRuntime.Connection.Host,
-				"port": databaseRuntime.Connection.Port, "database": databaseRuntime.Connection.Database,
-				"username": databaseRuntime.Connection.Username,
-			})
+			_ = h.logger.Log(ctx, job.ID, "info", "deployment.database.resolved", databaseLogFields(databaseRuntime))
 			if databaseRuntime.Connection.Mode != providers.DatabaseModeCompose {
 				if err := h.integrations.Database.TestApplicationConnection(ctx, p.ID); err != nil {
 					return nil, err
@@ -846,6 +842,17 @@ func mergeDatabaseEnvironment(spec *containerspec.DeploymentSpec, database map[s
 	for key, value := range database {
 		delete(spec.Environment, key)
 		spec.SensitiveEnvironment[key] = value
+	}
+}
+
+func databaseLogFields(runtime providers.ProjectDatabaseRuntime) map[string]any {
+	connection := runtime.Connection
+	return map[string]any{
+		"mode": connection.Mode,
+		"host": connection.Host,
+		"port": connection.Port,
+		"database": connection.Database,
+		"username": connection.Username,
 	}
 }
 
