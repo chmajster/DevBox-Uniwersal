@@ -174,7 +174,34 @@ input:disabled { opacity: .65; cursor: not-allowed; }
 .runtime-section { display: grid; gap: 18px; }
 .section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
 .section-heading h2 { margin: 0; }
-.runtime-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 0; }
+.runtime-summary {
+  margin: 2px 0 0;
+  display: grid;
+  gap: 8px;
+  width: min(720px, 100%);
+}
+.runtime-summary > div {
+  display: grid;
+  grid-template-columns: minmax(190px, 280px) minmax(0, 1fr);
+  column-gap: 32px;
+  align-items: baseline;
+  min-width: 0;
+}
+.runtime-summary dt {
+  color: var(--text);
+  font-weight: 400;
+  min-width: 0;
+}
+.runtime-summary dd {
+  margin: 0;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.runtime-summary dd code {
+  font-weight: 700;
+  color: inherit;
+}
 .runtime-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .runtime-detail-grid article { border: 1px solid var(--border); background: var(--panel); border-radius: 10px; padding: 18px; }
 .runtime-detail-grid h3 { margin-top: 0; }
@@ -569,21 +596,12 @@ a.secondary-button:hover { background: var(--panel-alt); text-decoration: none; 
 .runtime-module-row > span { display: grid; gap: 4px; min-width: 0; }
 .runtime-module-row code { width: fit-content; }
 .runtime-module-row small { color: var(--muted); line-height: 1.4; }
-.runtime-summary article {
-  display: grid;
-  gap: 8px;
-  align-content: start;
-}
-.runtime-summary article span {
-  display: block;
-  margin-bottom: 2px;
-}
-.runtime-summary article strong {
-  display: block;
-  line-height: 1.45;
-}
-.runtime-summary article code { overflow-wrap: anywhere; }
+.runtime-summary code { overflow-wrap: anywhere; }
 @media (max-width: 720px) {
+  .runtime-summary > div {
+    grid-template-columns: minmax(135px, 42%) minmax(0, 1fr);
+    column-gap: 18px;
+  }
   .runtime-modules .section-heading { align-items: stretch; }
   .runtime-modules .section-heading input { width: 100%; }
   .runtime-module-list { grid-template-columns: 1fr; }

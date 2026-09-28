@@ -151,14 +151,14 @@ export function ProjectRuntimeSection({ projectId }: Props) {
       </label>
     </div>
 
-    {runtime && <div className="cards runtime-summary">
-      <article><span>Wykryty runtime</span><strong>{runtime.runtime}</strong></article>
-      <article><span>Framework</span><strong>{runtime.framework || 'Generic'}</strong></article>
-      <article><span>Pewność detekcji</span><strong>{runtime.confidence}%</strong></article>
-      <article><span>Aktywny kontener</span><strong>{config.container_name || 'jeszcze nie utworzony'}</strong></article>
-      <article><span>Obraz</span><strong><code>{config.image_tag || '—'}</code></strong></article>
-      <article><span>Fingerprint</span><strong><code>{config.build_fingerprint?.slice(0, 16) || '—'}</code></strong></article>
-    </div>}
+    {runtime && <dl className="runtime-summary" aria-label="Podsumowanie wykrytego runtime">
+      <div><dt>Wykryty runtime</dt><dd>{runtime.runtime}</dd></div>
+      <div><dt>Framework</dt><dd>{runtime.framework || 'Generic'}</dd></div>
+      <div><dt>Pewność detekcji</dt><dd>{runtime.confidence}%</dd></div>
+      <div><dt>Aktywny kontener</dt><dd>{config.container_name || 'jeszcze nie utworzony'}</dd></div>
+      <div><dt>Obraz</dt><dd><code>{config.image_tag || '—'}</code></dd></div>
+      <div><dt>Fingerprint</dt><dd><code>{config.build_fingerprint?.slice(0, 16) || '—'}</code></dd></div>
+    </dl>}
 
     {config.runtime && <div className="runtime-modules">
       <div className="section-heading">
