@@ -134,7 +134,8 @@ type DeploymentIntegrations struct {
 	Routes   ProjectRouteManager
 	Compose  ComposeDeployer
 	Managed  ManagedContainerDeployer
-	Database providers.ProjectDatabaseResolver
+	Database    providers.ProjectDatabaseResolver
+	Environment runtimes.EnvironmentResolver
 }
 
 type DeploymentHandler struct {
@@ -197,6 +198,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		composeName            string
 		databaseRuntime        = providers.ProjectDatabaseRuntime{Connection: providers.DatabaseConnection{Mode: providers.DatabaseModeNone}}
 		databaseCleanup        func() error
+		projectEnvironment     = runtimes.ResolvedEnvironment{Plain: map[string]string{}, Sensitive: map[string]string{}}
 	)
 	defer func() {
 		if runErr == nil {
@@ -296,6 +298,12 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 
 	if err := setStage(DeploymentDatabase); err != nil {
 		return nil, err
+	}
+	if h.integrations.Environment != nil {
+		projectEnvironment, err = h.integrations.Environment.ResolveEnvironment(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if h.integrations.Database != nil {
 		databaseRuntime, err = h.integrations.Database.ResolveRuntimeDatabase(ctx, p.ID)
@@ -561,8 +569,9 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 	}
 
+	mergeProjectEnvironment(&spec, projectEnvironment)
 	if databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
-		spec.SensitiveEnvironment = projectDatabaseEnvironment(databaseRuntime)
+		mergeDatabaseEnvironment(&spec, projectDatabaseEnvironment(databaseRuntime))
 		if databaseRuntime.Network != "" {
 			spec.Networks = append(spec.Networks, databaseRuntime.Network)
 		}
@@ -794,6 +803,33 @@ func validDeploymentTransition(from, to string) bool {
 		DeploymentHealthcheck:    DeploymentSuccess,
 	}
 	return next[from] == to
+}
+
+func mergeProjectEnvironment(spec *containerspec.DeploymentSpec, environment runtimes.ResolvedEnvironment) {
+	if spec.Environment == nil {
+		spec.Environment = map[string]string{}
+	}
+	if spec.SensitiveEnvironment == nil {
+		spec.SensitiveEnvironment = map[string]string{}
+	}
+	for key, value := range environment.Plain {
+		spec.Environment[key] = value
+		delete(spec.SensitiveEnvironment, key)
+	}
+	for key, value := range environment.Sensitive {
+		delete(spec.Environment, key)
+		spec.SensitiveEnvironment[key] = value
+	}
+}
+
+func mergeDatabaseEnvironment(spec *containerspec.DeploymentSpec, database map[string]string) {
+	if spec.SensitiveEnvironment == nil {
+		spec.SensitiveEnvironment = map[string]string{}
+	}
+	for key, value := range database {
+		delete(spec.Environment, key)
+		spec.SensitiveEnvironment[key] = value
+	}
 }
 
 func projectDatabaseEnvironment(runtime providers.ProjectDatabaseRuntime) map[string]string {
