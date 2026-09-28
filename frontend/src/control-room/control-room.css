@@ -1,0 +1,187 @@
+/* Selected operator-console design. Legacy module layouts remain functional. */
+:root[data-theme="dark"] {
+  --bg: #0b151c; --panel: #111e27; --panel-alt: #182833;
+  --text: #e4eff8; --muted: #9bb2c6; --border: #283e4d; --border-soft: #213442;
+  --accent: #11c796; --link: #35d9ae; --on-accent: #071f19; --accent-soft: #143a35;
+  --success: #43e1ae; --success-bg: #12372f; --success-border: #216250;
+  --warning: #f1b56c; --warning-bg: #342a21; --warning-border: #785431;
+  --error-text: #ff919d; --error-bg: #3a222c; --error-border: #773f50;
+  --console-bg: #09131b; --focus: #6be9c5; --shadow: none;
+  --chart-blue: #45adf9; --chart-violet: #a687f5; --gauge-track: #283c48;
+  --radius: 9px;
+}
+:root[data-theme="light"] { --chart-blue: #1478c4; --chart-violet: #7852bc; --gauge-track: #dde7ec; --radius: 9px; }
+body { font-size: 13px; }
+.control-shell { grid-template-columns: 232px minmax(0, 1fr); background: var(--bg); }
+.control-shell .workspace-sidebar { background: var(--panel); padding: 22px 12px 15px; border-color: var(--border); }
+.control-shell .workspace-brand { padding: 0 10px; gap: 10px; }
+.control-shell .brand-mark { width: 34px; height: 34px; border-radius: 9px; background: #087c66; color: #e7fff6; }
+.control-shell .brand-copy { font-size: 21px; letter-spacing: -.5px; }
+.control-shell .brand-copy > span { font-size: 8px; margin-top: 5px; letter-spacing: 3px; }
+.control-shell .workspace-sidebar .workspace-nav { margin-top: 34px; gap: 25px; }
+.control-shell .nav-group { gap: 4px; }
+.control-shell .nav-group-label { font-size: 9px; margin-bottom: 7px; }
+.control-shell .workspace-nav a { min-height: 36px; padding: 8px 12px; font-size: 12px; border: 1px solid transparent; border-radius: 6px; gap: 12px; }
+.control-shell .workspace-nav a.active { color: var(--text); border-color: var(--success-border); background: var(--accent-soft); box-shadow: inset 2px 0 var(--accent); }
+.control-shell .workspace-nav a.active > .icon { color: var(--link); }
+.console-host-summary { margin: 20px 6px 0; padding: 13px 12px; border: 1px solid var(--border); border-radius: 7px; font-size: 11px; }
+.console-host-summary > div { display: flex; align-items: center; gap: 9px; }
+.console-host-summary > div > span:last-child { display: grid; min-width: 0; }
+.console-host-summary strong { font-size: 11px; font-weight: 600; }
+.console-host-summary small { font-size: 10px; color: var(--muted); overflow-wrap: anywhere; }
+.console-host-summary p { display: flex; align-items: center; gap: 7px; margin: 14px 0; overflow-wrap: anywhere; }
+.console-host-summary progress { height: 7px; margin-bottom: 6px; }
+.control-shell .sidebar-footer { border: 0; margin-top: 15px; padding: 0 7px; }
+.control-shell .collapse-button { display: flex; width: 100%; height: 38px; justify-content: flex-start; font-size: 11px; font-weight: 400; margin: 0; gap: 11px; }
+.control-shell.is-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
+.control-shell.is-collapsed > .sidebar .console-host-summary { display: none; }
+.control-shell.is-collapsed > .sidebar .collapse-button { justify-content: center; }
+.control-shell .workspace-topbar { height: 66px; min-height: 66px; padding: 12px 24px; gap: 20px; background: var(--panel); }
+.control-shell .workspace-search { width: min(49%, 600px); min-height: 36px; background: var(--panel-alt); border-color: var(--border); font-size: 12px; }
+.control-shell .workspace-search kbd { font-size: 9px; }
+.control-shell .topbar-actions { gap: 8px; }
+.control-shell .topbar-user { font-size: 11px; display: grid; }
+.control-shell .user-caption span { font-size: 10px; }
+.control-shell .workspace-avatar { width: 31px; height: 31px; border-radius: 50%; }
+.console-system-state { display: flex; align-items: center; gap: 10px; margin-left: auto; text-decoration: none; white-space: nowrap; }
+.console-system-state > span:last-child { display: grid; gap: 1px; }
+.console-system-state strong { font-size: 11px; font-weight: 600; }
+.console-system-state small { color: var(--muted); font-size: 10px; }
+.system-healthy { color: var(--success); }
+.system-warning { color: var(--warning); }
+.mobile-page-label { display: none; }
+.control-shell .content { padding: 24px; max-width: 1800px; }
+.control-shell .content h1 { font-size: 24px; font-weight: 650; letter-spacing: -.55px; }
+.control-shell .content h2 { font-size: 14px; font-weight: 600; letter-spacing: 0; }
+.control-shell button, .control-shell .button-link { font-size: 12px; border-radius: 6px; min-height: 36px; }
+.control-shell .icon-button { min-height: 34px; }
+.control-shell .button-link:not(.secondary):not(.secondary-button), .control-shell button:not([class]) { background: #087c66; border-color: #0b987c; color: #f2fffb; }
+.control-shell .secondary-button { background: var(--panel); }
+.control-shell input, .control-shell select, .control-shell textarea { border-radius: 6px; }
+.console-heading { display: flex; align-items: center; gap: 18px; justify-content: space-between; margin-bottom: 20px; }
+.console-heading h1 { margin: 0 0 3px; }
+.console-heading p { color: var(--muted); font-size: 12px; margin: 0; }
+.console-heading-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.console-clock { display: grid; text-align: right; border-right: 1px solid var(--border); padding-right: 21px; margin-right: 8px; }
+.console-clock > span { color: var(--muted); font-size: 10px; }
+.console-clock > time { font-size: 23px; font-weight: 650; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.console-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+.console-kpi { display: flex; align-items: flex-start; gap: 14px; padding: 18px 17px 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel); color: var(--text); text-decoration: none; min-width: 0; }
+.console-kpi:hover { border-color: var(--accent); }
+.console-kpi-icon { width: 41px; height: 44px; background: var(--accent-soft); color: var(--link); display: grid; place-items: center; border-radius: 8px; flex-shrink: 0; }
+.console-kpi > div { min-width: 0; }
+.console-kpi > div > span { display: block; font-size: 12px; color: var(--muted); }
+.console-kpi strong { display: block; font-size: 29px; font-weight: 650; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.console-kpi small { display: flex; align-items: center; gap: 7px; margin-top: 12px; color: var(--muted); font-size: 10px; }
+.kpi-2 .console-kpi-icon { background: var(--panel-alt); color: var(--chart-blue); }
+.status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.console-kpi .status-dot, .console-host-summary .status-dot { color: var(--success); }
+.console-kpi .dot-unknown, .console-host-summary .dot-unknown { color: var(--warning); }
+.console-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: stretch; }
+.console-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 0 15px 12px; min-width: 0; scroll-margin-top: 85px; }
+.console-panel-heading { display: flex; align-items: center; gap: 10px; justify-content: space-between; min-height: 48px; border-bottom: 1px solid var(--border-soft); margin-bottom: 6px; }
+.console-panel-heading h2 { margin: 0; display: flex; align-items: center; gap: 11px; }
+.console-panel-heading h2 > .icon { color: var(--link); }
+.console-panel-heading > a { display: flex; align-items: center; gap: 6px; text-decoration: none; font-size: 10px; white-space: nowrap; }
+.environment-content { display: grid; grid-template-columns: 1.25fr 1fr; gap: 19px; padding-top: 8px; align-items: center; min-height: 185px; }
+.resource-gauges { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }
+.resource-gauge { min-width: 0; text-align: center; }
+.gauge-dial { max-width: 120px; width: 100%; margin: auto; position: relative; }
+.gauge-dial svg { width: 100%; display: block; }
+.gauge-track, .gauge-value { fill: none; stroke-width: 8px; }
+.gauge-track { stroke: var(--gauge-track); }
+.gauge-value { stroke: var(--gauge-color); stroke-linecap: round; }
+.gauge-cpu { --gauge-color: var(--success); }
+.gauge-memory { --gauge-color: var(--chart-blue); }
+.gauge-disk { --gauge-color: var(--chart-violet); }
+.gauge-label { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; line-height: 1.5; }
+.gauge-label > span { font-size: 11px; }
+.gauge-label strong { font-size: clamp(18px, 1.7vw, 25px); font-variant-numeric: tabular-nums; }
+.resource-gauge > small { font-size: 10px; color: var(--muted); display: block; margin: 8px -2px 0; }
+.environment-facts { margin: 0; min-width: 0; }
+.environment-facts > div { display: flex; justify-content: space-between; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border-soft); font-size: 10px; }
+.environment-facts > div:last-child { border: 0; }
+.environment-facts dt { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+.environment-facts dd { margin: 0; text-align: right; }
+.environment-facts a { text-decoration: none; }
+.text-success { color: var(--success); }
+.console-service { display: flex; align-items: center; gap: 10px; min-height: 47px; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+.console-service:last-child { border: 0; }
+.service-icon { width: 33px; height: 33px; display: grid; place-items: center; background: var(--panel-alt); color: var(--muted); border: 1px solid var(--border); border-radius: 7px; flex-shrink: 0; }
+.service-title { display: grid; min-width: 0; flex: 1; text-decoration: none; color: var(--text); }
+.service-title strong { font-size: 11px; font-weight: 600; }
+.service-title small { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.service-title:hover strong { color: var(--link); }
+.service-latency { width: 46px; color: var(--muted); font-size: 10px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.console-badge { display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; border: 1px solid; border-radius: 12px; padding: 2px 6px; font-size: 8px; font-weight: 650; line-height: 1.5; }
+.console-badge .status-dot { width: 5px; height: 5px; }
+.badge-success { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.badge-warning { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
+.badge-danger { background: var(--error-bg); color: var(--error-text); border-color: var(--error-border); }
+.badge-info { background: var(--panel-alt); color: var(--chart-blue); border-color: var(--border); }
+.badge-muted { background: var(--panel-alt); color: var(--muted); border-color: var(--border); }
+.console-table-scroll { width: 100%; max-width: 100%; overflow-x: auto; }
+.console-panel table { min-width: 460px; font-size: 10px; background: transparent; }
+.console-panel th { background: transparent; padding: 9px 7px; font-size: 8px; letter-spacing: .6px; }
+.console-panel td { min-width: 0; padding: 8px 7px; }
+.console-panel td:first-child, .console-panel th:first-child { padding-left: 0; }
+.console-panel td:last-child, .console-panel th:last-child { padding-right: 0; }
+.console-jobs td { height: 33px; }
+.console-panel td > a { text-decoration: none; }
+.console-app-name { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
+.console-app-name > .service-icon { color: var(--link); }
+.console-app-name > span:last-child { display: grid; min-width: 0; max-width: 125px; }
+.console-app-name strong { font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.console-app-name small { color: var(--muted); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.console-app-name:hover strong { color: var(--link); }
+.clip-cell { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runtime-tag { font-size: 9px; padding: 3px 6px; border-radius: 5px; background: var(--panel-alt); }
+.control-shell .status-badge { padding: 2px 6px; font-size: 8px; }
+.control-shell .status-stopped { color: var(--error-text); background: var(--error-bg); border-color: var(--error-border); }
+.console-empty { color: var(--muted); padding: 22px 5px !important; font-size: 11px; }
+.log-preview-toolbar { display: flex; align-items: center; gap: 8px; padding: 4px 0 10px; flex-wrap: wrap; }
+.log-preview-toolbar select, .history-controls select { font-size: 10px; min-height: 30px; margin: 0; padding: 5px 9px; background: var(--panel-alt); width: auto; }
+.log-preview-toolbar > span { font-size: 9px; color: var(--muted); margin-left: auto; }
+.console-log-lines { height: 198px; background: var(--console-bg); border: 1px solid var(--border-soft); padding: 9px 5px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; }
+.console-log-line { display: grid; grid-template-columns: 56px 58px 42px minmax(170px, 1fr); gap: 10px; padding: 3px 0; min-width: 425px; }
+.console-log-line time, .console-log-line strong { color: var(--muted); font-weight: 400; }
+.console-log-line > span { color: var(--success); text-overflow: ellipsis; overflow: hidden; }
+.console-log-line code { font: inherit; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.console-log-line.log-warn code, .console-log-line.log-warn strong { color: var(--warning); }
+.console-log-line.log-error code, .console-log-line.log-error strong { color: var(--error-text); }
+.metric-history { --chart-color: var(--success); }
+.history-memory { --chart-color: var(--chart-blue); }
+.history-disk { --chart-color: var(--chart-violet); }
+.history-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 6px; }
+.history-tabs { display: flex; gap: 2px; }
+.control-shell .history-tabs button { background: transparent; border: 1px solid transparent; color: var(--muted); min-height: 27px; border-radius: 5px; padding: 3px 9px; font-size: 10px; font-weight: 400; }
+.control-shell .history-tabs button[aria-pressed="true"] { color: var(--text); background: var(--accent-soft); border-color: var(--success-border); }
+.chart-legend { display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 10px; margin-top: 7px; color: var(--muted); }
+.chart-legend .status-dot { color: var(--chart-color); }
+.history-chart { display: block; width: 100%; height: auto; max-height: 175px; }
+.history-chart text { fill: var(--muted); font-family: inherit; font-size: 10px; }
+.chart-grid { stroke: var(--border-soft); stroke-width: 1; }
+.chart-line { fill: none; stroke: var(--chart-color); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.chart-point { fill: var(--chart-color); }
+.history-note { margin: 4px 0 0; color: var(--muted); font-size: 9px; line-height: 1.6; }
+.console-update { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 13px; font-size: 10px; color: var(--muted); }
+.console-warnings { margin-top: 20px; }
+.control-shell .workspace-card, .control-shell .panel, .control-shell .project-card, .control-shell .runtime-card, .control-shell .table-wrap { border-radius: 9px; box-shadow: none; }
+.control-shell .project-card { padding: 18px; }
+.control-shell .project-grid { gap: 16px; }
+.control-shell .project-symbol { border-radius: 8px; }
+.control-shell .project-toolbar input { font-size: 12px; }
+.control-shell .project-card h2 { font-size: 17px; }
+.control-shell .project-toolbar { margin-top: 10px; }
+.control-shell .error-banner { font-size: 11px; }
+.workspace-login .login-story { background: #0e2027; }
+.workspace-login .login-capabilities > div { background: #142f32; border-color: #294549; }
+:root[data-theme="dark"] .workspace-login .login-form-panel { background: var(--bg); }
+@media (min-width: 1600px) { .console-kpi { padding: 23px; } .environment-content { min-height: 210px; } .console-panel-heading { min-height: 53px; } .console-panel table { font-size: 12px; } .console-panel th, .console-badge, .control-shell .status-badge { font-size: 10px; } .console-service { min-height: 54px; } .console-app-name strong, .service-title strong { font-size: 13px; } }
+@media (max-width: 1250px) { .console-clock > span { max-width: 140px; } .console-clock { padding-right: 14px; } .console-heading p { max-width: 260px; } .console-kpi { padding-left: 12px; padding-right: 12px; gap: 9px; } .environment-content { grid-template-columns: 1fr; gap: 12px; } .environment-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; } .environment-content { min-height: 260px; } .console-service { min-height: 65px; } .control-shell .workspace-search { width: 40%; } .control-shell .workspace-search span, .control-shell .workspace-search kbd { display: inline; } }
+@media (max-width: 1100px) { .console-clock { display: none; } .console-grid { grid-template-columns: minmax(0, 1fr); } .console-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .environment-content { grid-template-columns: 1.2fr 1fr; min-height: 180px; } .environment-facts { display: block; } .console-service { min-height: 49px; } .console-heading-actions { gap: 8px; } .control-shell .content { padding: 20px; } .control-shell .workspace-topbar { gap: 10px; } .console-system-state small { display: none; } }
+@media (max-width: 900px) { .control-shell, .control-shell.is-collapsed { grid-template-columns: minmax(0, 1fr); } .control-shell .workspace-topbar { padding: 10px 17px; } .control-shell .workspace-search { width: 43%; } .console-host-summary { margin-top: 16px; } }
+@media (max-width: 650px) { .control-shell .content { padding: 18px 14px; } .console-heading { flex-wrap: wrap; gap: 15px; } .console-heading p { max-width: none; } .console-heading-actions { flex-wrap: wrap; } .console-heading-actions .button-link { margin-left: auto; } .console-heading-actions { width: 100%; } .console-kpis { gap: 10px; } .console-kpi { gap: 9px; padding: 14px 11px; } .console-kpi > div > span { font-size: 11px; } .console-kpi strong { font-size: 26px; } .console-kpi-icon { width: 31px; height: 35px; } .console-kpi small { font-size: 9px; gap: 5px; } .console-kpi small > .status-dot { display: none; } .environment-content { grid-template-columns: 1fr; } .resource-gauges { padding: 12px 0; } .environment-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; } .console-grid { gap: 13px; } .console-system-state { display: none; } .control-shell .workspace-search { flex: 1; width: auto; } .control-shell .workspace-search kbd { display: none; } .control-shell .topbar-actions { gap: 2px; } .control-shell .topbar-user, .control-shell .topbar-divider, .control-shell .topbar-actions > .workspace-avatar { display: none; } .console-panel { padding-left: 12px; padding-right: 12px; } .console-update { flex-direction: column; align-items: flex-start; gap: 2px; } .history-controls { flex-wrap: wrap; } }
+@media (max-width: 380px) { .console-kpi { flex-direction: column; gap: 6px; } .console-kpi-icon { display: none; } .environment-facts { grid-template-columns: 1fr; } .console-service { gap: 7px; } .service-latency { display: none; } .control-shell .workspace-topbar { padding: 9px; gap: 6px; } .control-shell .workspace-search > span { display: none; } .console-panel-heading > a { font-size: 9px; } .control-shell .content h2 { font-size: 13px; } }
+@media (prefers-reduced-motion: reduce) { .chart-line, .gauge-value { transition: none; } }
+@media print { .control-shell { display: block; } .console-host-summary, .console-heading-actions, .console-update { display: none; } .console-panel { break-inside: avoid; } }
