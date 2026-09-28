@@ -578,7 +578,7 @@ a.secondary-button:hover { background: var(--panel-alt); text-decoration: none; 
 
 
 /* Live deployment state */
-.deployment-live { display: grid; gap: 16px; }
+.deployment-live { display: grid; gap: 16px; min-width: 0; }
 .deployment-live-success { border-color: var(--success-border); }
 .deployment-live-failed { border-color: var(--error-border); }
 .deployment-live-progress { display: grid; gap: 8px; }
@@ -590,6 +590,8 @@ a.secondary-button:hover { background: var(--panel-alt); text-decoration: none; 
   grid-template-columns: repeat(8, minmax(90px, 1fr));
   gap: 8px;
   overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
   padding-bottom: 4px;
 }
 .deployment-stage-track > div {
