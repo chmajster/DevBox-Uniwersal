@@ -100,7 +100,7 @@ func (p *CLIProvider) ReplaceManaged(ctx context.Context, spec containerspec.Dep
 		return fmt.Errorf("%w: invalid managed container port", ErrInvalidInput)
 	}
 	backupName := spec.ContainerName + "-previous"
-	_, _, _ = p.runner.Run(ctx, "container", "rm", "-f", backupName)
+	_, _, _ = p.runner.Run(ctx, "container", "rm", "-f", "-v", backupName)
 
 	hadPrevious := false
 	if _, _, err := p.runner.Run(ctx, "container", "rename", spec.ContainerName, backupName); err == nil {
@@ -111,7 +111,7 @@ func (p *CLIProvider) ReplaceManaged(ctx context.Context, spec containerspec.Dep
 	}
 
 	rollback := func() {
-		_, _, _ = p.runner.Run(context.Background(), "container", "rm", "-f", spec.ContainerName)
+		_, _, _ = p.runner.Run(context.Background(), "container", "rm", "-f", "-v", spec.ContainerName)
 		if hadPrevious {
 			_, _, _ = p.runner.Run(context.Background(), "container", "rename", backupName, spec.ContainerName)
 			_, _, _ = p.runner.Run(context.Background(), "container", "start", spec.ContainerName)
@@ -129,6 +129,12 @@ func (p *CLIProvider) ReplaceManaged(ctx context.Context, spec containerspec.Dep
 	if spec.ReadOnly {
 		args = append(args, "--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=64m")
 	}
+	mountArgs, err := managedMountArgs(spec)
+	if err != nil {
+		rollback()
+		return err
+	}
+	args = append(args, mountArgs...)
 	labelKeys := make([]string, 0, len(spec.Labels))
 	for key := range spec.Labels {
 		labelKeys = append(labelKeys, key)
@@ -176,16 +182,64 @@ func (p *CLIProvider) ReplaceManaged(ctx context.Context, spec containerspec.Dep
 		return err
 	}
 	if hadPrevious {
-		_, _, _ = p.runner.Run(ctx, "container", "rm", "-f", backupName)
+		_, _, _ = p.runner.Run(ctx, "container", "rm", "-f", "-v", backupName)
 	}
 	return nil
+}
+
+func managedMountArgs(spec containerspec.DeploymentSpec) ([]string, error) {
+	args := make([]string, 0, (len(spec.BindMounts)+len(spec.AnonymousVolumes))*2)
+	sources := make([]string, 0, len(spec.BindMounts))
+	for source := range spec.BindMounts {
+		sources = append(sources, source)
+	}
+	sort.Strings(sources)
+	for _, source := range sources {
+		target := strings.TrimSpace(spec.BindMounts[source])
+		if !filepath.IsAbs(source) {
+			return nil, fmt.Errorf("%w: bind mount source must be absolute", ErrInvalidInput)
+		}
+		if strings.ContainsAny(source, "\x00\r\n,") {
+			return nil, fmt.Errorf("%w: bind mount source contains unsupported characters", ErrInvalidInput)
+		}
+		if !strings.HasPrefix(target, "/") || strings.ContainsAny(target, "\x00\r\n,") {
+			return nil, fmt.Errorf("%w: invalid bind mount target", ErrInvalidInput)
+		}
+		info, err := os.Stat(source)
+		if err != nil {
+			return nil, fmt.Errorf("%w: bind mount source is unavailable: %v", ErrInvalidInput, err)
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("%w: bind mount source must be a directory", ErrInvalidInput)
+		}
+		args = append(args, "--mount", "type=bind,source="+source+",target="+target)
+	}
+
+	volumes := append([]string(nil), spec.AnonymousVolumes...)
+	sort.Strings(volumes)
+	seen := map[string]struct{}{}
+	for _, target := range volumes {
+		target = strings.TrimSpace(target)
+		if target == "" {
+			continue
+		}
+		if _, duplicate := seen[target]; duplicate {
+			continue
+		}
+		seen[target] = struct{}{}
+		if !strings.HasPrefix(target, "/") || strings.ContainsAny(target, "\x00\r\n,") {
+			return nil, fmt.Errorf("%w: invalid anonymous volume target", ErrInvalidInput)
+		}
+		args = append(args, "--mount", "type=volume,target="+target)
+	}
+	return args, nil
 }
 
 func (p *CLIProvider) RemoveManaged(ctx context.Context, containerName string) error {
 	if err := validateContainerRef(containerName); err != nil {
 		return err
 	}
-	_, _, err := p.runner.Run(ctx, "container", "rm", "-f", containerName)
+	_, _, err := p.runner.Run(ctx, "container", "rm", "-f", "-v", containerName)
 	if errors.Is(err, ErrNotFound) {
 		return nil
 	}
