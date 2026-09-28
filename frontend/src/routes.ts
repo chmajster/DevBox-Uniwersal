@@ -2,6 +2,8 @@ export const ROUTES = {
   dashboard: '/',
   applications: '/apps',
   credentials: '/credentials',
+  integrations: '/integrations',
+  runtimes: '/runtimes',
   project: '/projects/:projectId/:tab?',
   logs: '/logs',
   health: '/health',
