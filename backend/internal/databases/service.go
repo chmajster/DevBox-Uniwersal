@@ -567,11 +567,15 @@ func (s *Service) PHPMyAdminAction(ctx context.Context, action string, actor *st
 	case "install":
 		status, err = s.phpMyAdmin.Install(ctx)
 	case "start":
-		status, err = s.phpMyAdmin.Start(ctx)
+		if _, err = s.phpMyAdmin.Install(ctx); err == nil {
+			status, err = s.phpMyAdmin.Start(ctx)
+		}
 	case "stop":
 		status, err = s.phpMyAdmin.Stop(ctx)
 	case "restart":
-		status, err = s.phpMyAdmin.Restart(ctx)
+		if _, err = s.phpMyAdmin.Install(ctx); err == nil {
+			status, err = s.phpMyAdmin.Restart(ctx)
+		}
 	default:
 		return PHPMyAdminStatus{}, errors.New("unsupported phpMyAdmin action")
 	}
