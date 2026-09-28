@@ -3,7 +3,9 @@ package runtimes
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -29,6 +31,25 @@ type RuntimeInfo struct {
 
 type Inspector interface {
 	Inspect(ctx context.Context) RuntimeInfo
+}
+
+func projectExecutable(project ProjectContext, key string, candidates ...string) (string, error) {
+	if project.Executables != nil {
+		if configured := strings.TrimSpace(project.Executables[key]); configured != "" {
+			if !filepath.IsAbs(configured) {
+				return "", fmt.Errorf("configured %s executable path is not absolute", key)
+			}
+			info, err := os.Stat(configured)
+			if err != nil {
+				return "", fmt.Errorf("configured %s executable: %w", key, err)
+			}
+			if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+				return "", fmt.Errorf("configured %s executable is not executable", key)
+			}
+			return configured, nil
+		}
+	}
+	return findExecutable(candidates...)
 }
 
 func findExecutable(candidates ...string) (string, error) {
