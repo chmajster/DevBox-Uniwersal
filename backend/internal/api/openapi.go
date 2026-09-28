@@ -99,6 +99,12 @@ var documentedRoutes = []documentedRoute{
 	{"GET", "/api/v1/jobs/{id}/logs", "Job logs", "viewer"},
 	{"GET", "/api/v1/jobs/{id}/logs/stream", "Job live log stream", "viewer"},
 	{"GET", "/api/v1/audit", "Audit events", "operator"},
+	{"GET", "/api/v1/system-backups", "List control-plane backups", "admin"},
+	{"POST", "/api/v1/system-backups", "Create control-plane backup", "admin"},
+	{"POST", "/api/v1/system-backups/import", "Import control-plane backup", "admin"},
+	{"GET", "/api/v1/system-backups/{id}/download", "Download control-plane backup", "admin"},
+	{"POST", "/api/v1/system-backups/{id}/restore", "Stage control-plane restore", "admin"},
+	{"DELETE", "/api/v1/system-backups/{id}", "Delete control-plane backup", "admin"},
 	{"GET", "/api/v1/openapi.json", "OpenAPI 3.1 contract", "viewer"},
 	{"GET", "/api/v1/docs", "Human-readable API index", "viewer"},
 }
