@@ -621,6 +621,7 @@ devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper validate-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper reload-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper start-update
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package docker-compose
+devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package postgresql
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-fpm
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-curl
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-mbstring
