@@ -91,10 +91,12 @@ func (r *Repository) ReleaseArchivedIdentity(ctx context.Context, name, slug str
 		if len(suffix) > 8 {
 			suffix = suffix[:8]
 		}
-		archivedName := item.name + " [archived " + suffix + "]"
-		if len(archivedName) > 120 {
-			archivedName = archivedName[:120]
+		nameSuffix := " [archived " + suffix + "]"
+		baseName := item.name
+		if maxBase := 120 - len(nameSuffix); len(baseName) > maxBase {
+			baseName = baseName[:maxBase]
 		}
+		archivedName := baseName + nameSuffix
 		archivedSlug := item.slug + "-archived-" + suffix
 		if _, err := r.db.ExecContext(ctx, `UPDATE projects SET name=?,slug=?,updated_at=? WHERE id=? AND archived_at IS NOT NULL`,
 			archivedName, archivedSlug, time.Now().UTC().Format(time.RFC3339Nano), item.id); err != nil {
