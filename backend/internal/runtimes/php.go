@@ -91,13 +91,13 @@ func (r *PHPRuntime) Validate(ctx context.Context, project ProjectContext) (Vali
 		result.Errors = append(result.Errors, err.Error())
 		return result, nil
 	}
-	php, err := findExecutable("php")
+	php, err := projectExecutable(project, "php", "php")
 	if err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, err.Error())
 		return result, nil
 	}
-	if _, err := findExecutable("php-fpm", "php-fpm8.4", "php-fpm8.3", "php-fpm8.2", "php-fpm8.1"); err != nil {
+	if _, err := projectExecutable(project, "php-fpm", "php-fpm", "php-fpm8.4", "php-fpm8.3", "php-fpm8.2", "php-fpm8.1"); err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, "PHP-FPM is required: "+err.Error())
 	}
@@ -109,9 +109,9 @@ func (r *PHPRuntime) Validate(ctx context.Context, project ProjectContext) (Vali
 		return result, nil
 	}
 	if manifest != nil {
-		if _, err := findExecutable("composer"); err != nil {
+		if _, _, err := composerInvocation(project); err != nil {
 			result.Valid = false
-			result.Errors = append(result.Errors, "Composer is required for composer.json projects")
+			result.Errors = append(result.Errors, "Composer is required for composer.json projects: "+err.Error())
 		}
 		availableExtensions, extensionErr := phpExtensions(ctx, php)
 		if extensionErr != nil {
@@ -136,22 +136,24 @@ func (r *PHPRuntime) InstallDependencies(ctx context.Context, project ProjectCon
 	if !fileExists(project.WorkDir, "composer.json") {
 		return nil
 	}
-	composer, err := findExecutable("composer")
+	command, prefix, err := composerInvocation(project)
 	if err != nil {
 		return err
 	}
-	return r.base.runner.Run(ctx, composer, []string{"install", "--no-interaction", "--prefer-dist"}, project.WorkDir, project.Environment)
+	args := append(prefix, "install", "--no-interaction", "--prefer-dist")
+	return r.base.runner.Run(ctx, command, args, project.WorkDir, project.Environment)
 }
 
 func (r *PHPRuntime) Build(ctx context.Context, project ProjectContext) error {
 	if !fileExists(project.WorkDir, "composer.json") {
 		return nil
 	}
-	composer, err := findExecutable("composer")
+	command, prefix, err := composerInvocation(project)
 	if err != nil {
 		return err
 	}
-	return r.base.runner.Run(ctx, composer, []string{"dump-autoload", "-o", "--no-interaction"}, project.WorkDir, project.Environment)
+	args := append(prefix, "dump-autoload", "-o", "--no-interaction")
+	return r.base.runner.Run(ctx, command, args, project.WorkDir, project.Environment)
 }
 
 func (r *PHPRuntime) Start(_ context.Context, project ProjectContext) error {
@@ -162,7 +164,7 @@ func (r *PHPRuntime) Start(_ context.Context, project ProjectContext) error {
 	if !ok {
 		return fmt.Errorf("runtime port is not configured")
 	}
-	fpm, err := findExecutable("php-fpm", "php-fpm8.4", "php-fpm8.3", "php-fpm8.2", "php-fpm8.1")
+	fpm, err := projectExecutable(project, "php-fpm", "php-fpm", "php-fpm8.4", "php-fpm8.3", "php-fpm8.2", "php-fpm8.1")
 	if err != nil {
 		return err
 	}
@@ -209,6 +211,19 @@ func (r *PHPRuntime) HealthCheck(ctx context.Context, project ProjectContext) (H
 		Message:   "PHP-FPM process state: " + status.State,
 		CheckedAt: time.Now().UTC(),
 	}, nil
+}
+
+
+func composerInvocation(project ProjectContext) (string, []string, error) {
+	composer, err := findExecutable("composer")
+	if err != nil {
+		return "", nil, err
+	}
+	php, err := projectExecutable(project, "php", "php")
+	if err != nil {
+		return "", nil, err
+	}
+	return php, []string{composer}, nil
 }
 
 func loadComposerManifest(workDir string) (*composerManifest, error) {
