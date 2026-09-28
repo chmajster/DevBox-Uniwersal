@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -90,5 +91,101 @@ func TestLoginMeAndHealth(t *testing.T) {
 	h.ServeHTTP(logout, logoutReq)
 	if logout.Code != http.StatusOK {
 		t.Fatalf("logout status=%d body=%s", logout.Code, logout.Body.String())
+	}
+}
+
+
+func TestAdminUserManagement(t *testing.T) {
+	tmp := t.TempDir()
+	db, err := database.Open(filepath.Join(tmp, "users.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	migrations := filepath.Join("..", "..", "..", "migrations")
+	if err := database.Migrate(context.Background(), db, migrations); err != nil {
+		t.Fatal(err)
+	}
+	users := repository.NewSQLiteUsers(db)
+	sessions := repository.NewSQLiteSessions(db)
+	authSvc := auth.NewService(users, sessions, time.Hour)
+	if err := authSvc.BootstrapAdmin(context.Background(), "admin", "foundation-test-password"); err != nil {
+		t.Fatal(err)
+	}
+	h := New(Dependencies{DB: db, Auth: authSvc, Audit: audit.NewService(repository.NewSQLiteAudit(db)), Jobs: repository.NewSQLiteJobs(db), Version: "test"})
+
+	login := httptest.NewRecorder()
+	h.ServeHTTP(login, httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin","password":"foundation-test-password"}`)))
+	if login.Code != http.StatusOK {
+		t.Fatalf("login status=%d body=%s", login.Code, login.Body.String())
+	}
+	var sessionCookie, csrfCookie *http.Cookie
+	for _, cookie := range login.Result().Cookies() {
+		if cookie.Name == sessionCookieName {
+			sessionCookie = cookie
+		}
+		if cookie.Name == csrfCookieName {
+			csrfCookie = cookie
+		}
+	}
+	if sessionCookie == nil || csrfCookie == nil {
+		t.Fatal("missing auth cookies")
+	}
+
+	request := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.AddCookie(sessionCookie)
+		if method != http.MethodGet {
+			req.AddCookie(csrfCookie)
+			req.Header.Set("X-CSRF-Token", csrfCookie.Value)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	created := request(http.MethodPost, "/api/v1/users", `{"username":"operator01","role":"operator","active":true,"generate_password":true}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create user status=%d body=%s", created.Code, created.Body.String())
+	}
+	var createEnvelope struct {
+		Data struct {
+			User domain.User `json:"user"`
+			Password string `json:"password"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &createEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	if createEnvelope.Data.User.Username != "operator01" || len(createEnvelope.Data.Password) < 12 {
+		t.Fatalf("unexpected create response: %s", created.Body.String())
+	}
+
+	listed := request(http.MethodGet, "/api/v1/users", "")
+	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), "operator01") {
+		t.Fatalf("list users status=%d body=%s", listed.Code, listed.Body.String())
+	}
+
+	userID := createEnvelope.Data.User.ID
+	updated := request(http.MethodPatch, "/api/v1/users/"+userID, `{"role":"viewer","active":true}`)
+	if updated.Code != http.StatusOK || !strings.Contains(updated.Body.String(), `"role":"viewer"`) {
+		t.Fatalf("update user status=%d body=%s", updated.Code, updated.Body.String())
+	}
+
+	changed := request(http.MethodPost, "/api/v1/users/"+userID+"/password", `{"password":"replacement-password-123","generate":false}`)
+	if changed.Code != http.StatusOK {
+		t.Fatalf("change password status=%d body=%s", changed.Code, changed.Body.String())
+	}
+
+	selfDemote := request(http.MethodPatch, "/api/v1/users/"+createEnvelope.Data.User.ID, `{"role":"viewer","active":false}`)
+	_ = selfDemote
+
+	admin, err := users.ByUsername(context.Background(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := request(http.MethodPatch, "/api/v1/users/"+admin.ID, `{"role":"viewer","active":true}`)
+	if blocked.Code != http.StatusBadRequest {
+		t.Fatalf("self demote status=%d body=%s", blocked.Code, blocked.Body.String())
 	}
 }
