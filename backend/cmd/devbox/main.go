@@ -31,6 +31,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/sourcecontrol"
 	devsystem "github.com/chmajster/DevBox-Uniwersal/backend/internal/system"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/webui"
 )
@@ -144,11 +145,46 @@ func serve() error {
 	credentialModule := credentials.NewModule(credentialService, auditService)
 
 	runtimeRegistry := runtimes.NewDefaultRegistry()
+	runtimeResolver := runtimes.NewSQLiteProjectResolver(db)
 	runtimeModule := runtimes.NewModule(
 		runtimeRegistry,
-		runtimes.NewSQLiteProjectResolver(db),
+		runtimeResolver,
 		secretStore,
 	)
+	runtimeVersionRepo := runtimes.NewVersionRepository(db)
+	runtimeVersionProviders, err := runtimes.NewRuntimeVersionProviders(cfg.RuntimeRoot, nil)
+	if err != nil {
+		logger.Error("runtime version providers initialization failed", "error", err)
+		os.Exit(1)
+	}
+	runtimeVersionService, err := runtimes.NewVersionService(runtimeVersionRepo, runtimeVersionProviders, jobRunner, cfg.RuntimeRoot, runtimeRegistry, runtimeResolver)
+	if err != nil {
+		logger.Error("runtime version service initialization failed", "error", err)
+		os.Exit(1)
+	}
+	for _, handler := range []jobs.Handler{
+		runtimes.NewRuntimeJobHandler(runtimes.JobRuntimeInstall, runtimeVersionService, jobRunner, auditService),
+		runtimes.NewRuntimeJobHandler(runtimes.JobRuntimeRemove, runtimeVersionService, jobRunner, auditService),
+	} {
+		if err := jobRunner.Register(handler); err != nil {
+			logger.Error("runtime job handler registration failed", "type", handler.Type(), "error", err)
+			os.Exit(1)
+		}
+	}
+	runtimeVersionModule := runtimes.NewVersionModule(runtimeVersionService, auditService)
+
+	sourceControlHTTPClient, err := sourcecontrol.NewHTTPClient(cfg.SourceControlCAFile)
+	if err != nil {
+		logger.Error("source-control TLS initialization failed", "error", err)
+		os.Exit(1)
+	}
+	sourceControlRepo := sourcecontrol.NewRepository(db)
+	sourceControlService := sourcecontrol.NewService(sourceControlRepo, credentialRepo, secretStore, sourceControlHTTPClient, jobRunner)
+	sourceControlModule := sourcecontrol.NewModule(sourceControlService, auditService)
+	if err := jobRunner.Register(sourcecontrol.NewSyncJobHandler(sourceControlService, jobRunner, auditService)); err != nil {
+		logger.Error("source-control sync job handler registration failed", "error", err)
+		os.Exit(1)
+	}
 
 	dockerProvider := dockermodule.NewCLIProvider()
 	dockerService := dockermodule.NewService(dockerProvider, auditService, cfg.ProjectsRoot)
@@ -198,15 +234,18 @@ func serve() error {
 	gitClient := projects.NewGitClient(secretStore)
 	projectRepo := projects.NewRepository(db)
 	projectService := projects.NewService(projectRepo, gitClient, jobRunner, secretStore, cfg.ProjectsRoot, cfg.DirectoryBrowseRoots...)
+	projectService.SetSourceControlIntegration(sourceControlService)
+	projectService.SetRuntimeDefaults(runtimeVersionService)
 	for _, jobHandler := range []jobs.Handler{
 		projects.NewGitJobHandler(projects.JobClone, projectRepo, gitClient, jobRunner),
 		projects.NewGitJobHandler(projects.JobFetch, projectRepo, gitClient, jobRunner),
 		projects.NewGitJobHandler(projects.JobPull, projectRepo, gitClient, jobRunner),
 		projects.NewGitJobHandler(projects.JobCheckout, projectRepo, gitClient, jobRunner),
 		projects.NewDeploymentHandler(projectRepo, gitClient, runtimeRegistry, jobRunner, projects.DeploymentIntegrations{
-			Ports:   portManager,
-			Routes:  networkService,
-			Compose: dockerProvider,
+			Ports:           portManager,
+			Routes:          networkService,
+			Compose:         dockerProvider,
+			RuntimeVersions: runtimeVersionService,
 		}),
 	} {
 		if err := jobRunner.Register(jobHandler); err != nil {
@@ -258,6 +297,8 @@ func serve() error {
 	modules := []api.Module{
 		credentialModule,
 		runtimeModule,
+		runtimeVersionModule,
+		sourceControlModule,
 		projectModule,
 		dockerModule,
 		databaseModule,
