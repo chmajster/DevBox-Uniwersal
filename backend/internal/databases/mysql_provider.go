@@ -423,17 +423,22 @@ func sanitizeMySQLError(raw string) string {
 		return ""
 	}
 	// mysql may echo connection parameters in some client errors. Never expose passwords.
-	for _, prefix := range []string{"password=", "--password="} {
-		for {
-			index := strings.Index(strings.ToLower(message), prefix)
-			if index < 0 {
+	for _, prefix := range []string{"--password=", "password="} {
+		lower := strings.ToLower(message)
+		searchFrom := 0
+		for searchFrom < len(message) {
+			relative := strings.Index(lower[searchFrom:], prefix)
+			if relative < 0 {
 				break
 			}
+			index := searchFrom + relative
 			end := index + len(prefix)
 			for end < len(message) && message[end] != ' ' && message[end] != '\n' && message[end] != '\r' {
 				end++
 			}
-			message = message[:index] + prefix + "***" + message[end:]
+			message = message[:index] + message[index:index+len(prefix)] + "***" + message[end:]
+			lower = strings.ToLower(message)
+			searchFrom = index + len(prefix) + 3
 		}
 	}
 	if len(message) > 600 {
