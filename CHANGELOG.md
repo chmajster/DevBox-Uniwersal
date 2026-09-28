@@ -11,6 +11,8 @@
 
 ### Managed runtime containers
 
+- Moved PHP module selection out of the global Plugins page into each project's Runtime configuration; the selector is shown only when PHP is selected and selected extensions are built into that project's managed PHP container.
+- Expanded the managed PHP container catalog with PostgreSQL, SQLite3, LDAP, GMP, Imagick, Redis, Memcached and Xdebug in addition to the existing PHP extensions; PECL-backed extensions are installed and enabled inside the image.
 - Removed native host runtime deployment for applications. PHP, Node.js, Python, Go and static projects now execute through Docker.
 - Added automatic managed image generation when an application does not provide its own Compose file or Dockerfile; project-owned container definitions take precedence.
 - Added per-application runtime version, container policy and allowlisted runtime module configuration with dedicated API and UI.

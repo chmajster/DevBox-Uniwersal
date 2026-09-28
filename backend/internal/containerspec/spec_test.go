@@ -29,6 +29,60 @@ func TestGenerateManagedPHPModules(t *testing.T) {
 	}
 }
 
+func TestPHPModuleCatalogIncludesContainerExtensions(t *testing.T) {
+	items, err := Catalog("php")
+	if err != nil {
+		t.Fatal(err)
+	}
+	available := make(map[string]bool, len(items))
+	for _, item := range items {
+		available[item.Name] = true
+	}
+	for _, expected := range []string{"pgsql", "sqlite3", "ldap", "gmp", "imagick", "redis", "memcached", "xdebug"} {
+		if !available[expected] {
+			t.Fatalf("PHP module catalog is missing %q", expected)
+		}
+	}
+}
+
+func TestGenerateManagedPHPInstallsSelectedContainerModules(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("<?php echo 'ok';"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := GenerateManaged("project-php-modules", dir, "php", "8.3", []Module{
+		{Name: "pgsql"},
+		{Name: "sqlite3"},
+		{Name: "ldap"},
+		{Name: "imagick"},
+		{Name: "redis"},
+		{Name: "memcached"},
+		{Name: "xdebug"},
+	}, "abc123", 18080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"libpq-dev",
+		"libsqlite3-dev",
+		"libldap2-dev",
+		"libmagickwand-dev",
+		"libmemcached-dev",
+		"docker-php-ext-install -j$(nproc)",
+		"pgsql pdo_pgsql",
+		"sqlite3 pdo_sqlite",
+		"docker-php-ext-configure ldap",
+		"pecl install imagick && docker-php-ext-enable imagick",
+		"pecl install redis && docker-php-ext-enable redis",
+		"pecl install memcached && docker-php-ext-enable memcached",
+		"pecl install xdebug && docker-php-ext-enable xdebug",
+	} {
+		if !strings.Contains(spec.Dockerfile, expected) {
+			t.Fatalf("Dockerfile does not contain %q:\n%s", expected, spec.Dockerfile)
+		}
+	}
+}
+
 func TestGenerateManagedAddsLiveSourceMounts(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("<?php echo 'ok';"), 0o600); err != nil {
