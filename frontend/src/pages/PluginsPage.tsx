@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { request } from '../api/client'
-import type { PHPExtension, PHPFPMStatus, PHPMyAdminStatus } from '../api/types'
+import type { DockerComposePluginStatus, PHPExtension, PHPFPMStatus, PHPMyAdminStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 
@@ -10,22 +10,25 @@ export function PluginsPage() {
   const { user } = useAuth()
   const canMutate = user?.role !== 'viewer'
   const canInstallSystemPackages = user?.role === 'admin'
+  const [dockerCompose, setDockerCompose] = useState<DockerComposePluginStatus | null>(null)
   const [phpFPM, setPHPFPM] = useState<PHPFPMStatus | null>(null)
   const [phpExtensions, setPHPExtensions] = useState<PHPExtension[]>([])
   const [selectedExtensions, setSelectedExtensions] = useState<string[]>([])
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'php-fpm-install' | 'php-extensions-install' | null>(null)
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'php-extensions-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
-    const [phpFPMStatus, extensionStatus, phpMyAdminStatus] = await Promise.all([
+    const [dockerComposeStatus, phpFPMStatus, extensionStatus, phpMyAdminStatus] = await Promise.all([
+      request<DockerComposePluginStatus>('/plugins/docker-compose/status'),
       request<PHPFPMStatus>('/plugins/php-fpm/status'),
       request<PHPExtension[]>('/plugins/php/extensions'),
       request<PHPMyAdminStatus>('/phpmyadmin/status'),
     ])
+    setDockerCompose(dockerComposeStatus)
     setPHPFPM(phpFPMStatus)
     setPHPExtensions(extensionStatus)
     setSelectedExtensions((current) => current.filter((id) => extensionStatus.some((extension) => extension.id === id && !extension.installed)))
@@ -35,6 +38,22 @@ export function PluginsPage() {
   useEffect(() => {
     load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Nie udało się pobrać statusu pluginów'))
   }, [load])
+
+  async function installDockerCompose() {
+    setBusyAction('docker-compose-install')
+    setError('')
+    setMessage('')
+    try {
+      const status = await request<DockerComposePluginStatus>('/plugins/docker-compose/install', { method: 'POST' })
+      setDockerCompose(status)
+      setMessage('Docker Compose został zainstalowany i jest gotowy do wdrażania projektów Compose.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Instalacja Docker Compose nie powiodła się')
+      await load().catch(() => undefined)
+    } finally {
+      setBusyAction(null)
+    }
+  }
 
   async function installPHPFPM() {
     setBusyAction('php-fpm-install')
@@ -149,6 +168,50 @@ export function PluginsPage() {
 
     {error && <div className="error-banner">{error}</div>}
     {message && <div className="success-banner">{message}</div>}
+
+    <section className="panel phpmyadmin-panel">
+      <div>
+        <div className="actions">
+          <Icon name="layers" size={24} />
+          <div>
+            <h2>Docker Compose</h2>
+            <p className="muted">Wymagany do wdrażania aplikacji zawierających <code>compose.yaml</code> lub <code>docker-compose.yml</code>.</p>
+          </div>
+        </div>
+        <p className="muted small">
+          {dockerCompose?.installed
+            ? 'Docker Compose został wykryty i może być używany przez deploymenty.'
+            : 'Docker Engine działa, ale Docker Compose nie jest dostępny. Deployment projektu z plikiem Compose zakończy się błędem przed uruchomieniem kontenerów.'}
+        </p>
+      </div>
+
+      <div className="phpmyadmin-status">
+        <div className="actions">
+          <span className="status-chip" data-ok={dockerCompose?.installed ? 'true' : 'false'}>
+            {dockerCompose?.installed ? 'Dostępny' : 'Wymagana instalacja'}
+          </span>
+          {dockerCompose?.mode && <span className="status-chip" data-ok="true">{dockerCompose.mode === 'plugin' ? 'Compose v2 plugin' : 'docker-compose'}</span>}
+        </div>
+
+        {dockerCompose?.version && <p className="muted small">Wersja: <code>{dockerCompose.version}</code></p>}
+        {dockerCompose?.path && <p className="muted small">Ścieżka: <code>{dockerCompose.path}</code></p>}
+        {dockerCompose?.message && <p className="muted small">{dockerCompose.message}</p>}
+
+        <div className="actions">
+          {!dockerCompose?.installed && canInstallSystemPackages && dockerCompose?.installable && (
+            <button type="button" onClick={installDockerCompose} disabled={busy}>
+              {busyAction === 'docker-compose-install' ? 'Instalowanie…' : 'Zainstaluj Docker Compose'}
+            </button>
+          )}
+          {!dockerCompose?.installed && !canInstallSystemPackages && (
+            <span className="muted small">Instalacja pakietu systemowego wymaga roli administratora.</span>
+          )}
+          {!dockerCompose?.installed && canInstallSystemPackages && dockerCompose && !dockerCompose.installable && (
+            <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
+          )}
+        </div>
+      </div>
+    </section>
 
     <section className="panel phpmyadmin-panel">
       <div>
