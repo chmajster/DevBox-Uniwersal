@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -40,6 +41,18 @@ func findExecutable(candidates ...string) (string, error) {
 		path, err := exec.LookPath(candidate)
 		if err == nil {
 			return path, nil
+		}
+
+		// systemd and service processes often have a reduced PATH that omits
+		// sbin directories. Runtime executables such as php-fpm are commonly
+		// installed there, so probe standard system locations as a fallback.
+		if !filepath.IsAbs(candidate) && !strings.ContainsAny(candidate, `/\\`) {
+			for _, dir := range []string{"/usr/local/sbin", "/usr/sbin", "/usr/local/bin", "/usr/bin", "/sbin", "/bin"} {
+				path, err = exec.LookPath(filepath.Join(dir, candidate))
+				if err == nil {
+					return path, nil
+				}
+			}
 		}
 	}
 	if len(candidates) == 0 {

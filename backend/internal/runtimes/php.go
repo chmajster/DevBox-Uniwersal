@@ -31,7 +31,7 @@ func (r *PHPRuntime) Name() string { return "php" }
 
 func (r *PHPRuntime) Inspect(ctx context.Context) RuntimeInfo {
 	php := inspectExecutable(ctx, "php", []string{"php"}, "--version")
-	fpm := inspectExecutable(ctx, "php-fpm", []string{"php-fpm", "php-fpm8.4", "php-fpm8.3", "php-fpm8.2", "php-fpm8.1"}, "--version")
+	fpm := inspectExecutable(ctx, "php-fpm", phpFPMCandidates(), "--version")
 	composer := inspectExecutable(ctx, "composer", []string{"composer"}, "--version")
 	return aggregateRuntimeInfo(r.Name(), php, []DependencyInfo{fpm}, []DependencyInfo{composer})
 }
@@ -97,7 +97,7 @@ func (r *PHPRuntime) Validate(ctx context.Context, project ProjectContext) (Vali
 		result.Errors = append(result.Errors, err.Error())
 		return result, nil
 	}
-	if _, err := findExecutable("php-fpm", "php-fpm8.4", "php-fpm8.3", "php-fpm8.2", "php-fpm8.1"); err != nil {
+	if _, err := findExecutable(phpFPMCandidates()...); err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, "PHP-FPM is required: "+err.Error())
 	}
@@ -162,7 +162,7 @@ func (r *PHPRuntime) Start(_ context.Context, project ProjectContext) error {
 	if !ok {
 		return fmt.Errorf("runtime port is not configured")
 	}
-	fpm, err := findExecutable("php-fpm", "php-fpm8.4", "php-fpm8.3", "php-fpm8.2", "php-fpm8.1")
+	fpm, err := findExecutable(phpFPMCandidates()...)
 	if err != nil {
 		return err
 	}
@@ -267,4 +267,50 @@ func phpDocumentRoot(workDir, framework string) string {
 		return "public"
 	}
 	return "."
+}
+
+
+func phpFPMCandidates() []string {
+	// Keep common executable names first for deterministic selection, then
+	// discover versioned binaries from standard system directories. This
+	// supports current and future PHP versions without requiring code changes.
+	candidates := []string{
+		"php-fpm",
+		"php-fpm8.6",
+		"php-fpm8.5",
+		"php-fpm8.4",
+		"php-fpm8.3",
+		"php-fpm8.2",
+		"php-fpm8.1",
+		"php-fpm8.0",
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		seen[candidate] = struct{}{}
+	}
+
+	var discovered []string
+	for _, pattern := range []string{
+		"/usr/local/sbin/php-fpm*",
+		"/usr/sbin/php-fpm*",
+		"/usr/local/bin/php-fpm*",
+		"/usr/bin/php-fpm*",
+	} {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		discovered = append(discovered, matches...)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(discovered)))
+
+	for _, candidate := range discovered {
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		candidates = append(candidates, candidate)
+	}
+	return candidates
 }
