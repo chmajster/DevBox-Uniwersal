@@ -18,6 +18,7 @@ type PHPMyAdminConfig struct {
 	HostPort     int
 	MySQLHost    string
 	MySQLPort    int
+	Network      string
 }
 
 type PHPMyAdminManager struct {
@@ -38,7 +39,10 @@ func NewPHPMyAdminManager(cfg PHPMyAdminConfig) *PHPMyAdminManager {
 		cfg.HostPort = 8081
 	}
 	if cfg.MySQLHost == "" {
-		cfg.MySQLHost = "127.0.0.1"
+		cfg.MySQLHost = DefaultManagedMySQLContainer
+	}
+	if cfg.Network == "" {
+		cfg.Network = DefaultManagedMySQLNetwork
 	}
 	if cfg.MySQLPort == 0 {
 		cfg.MySQLPort = 3306
