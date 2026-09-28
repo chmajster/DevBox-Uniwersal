@@ -21,6 +21,7 @@ import { ProjectsPage } from './pages/ProjectsPage'
 import { ROUTES } from './routes'
 import { ProjectRuntimePage } from './pages/ProjectRuntimePage'
 import { RuntimeManagerPage } from './pages/RuntimeManagerPage'
+import { IntegrationsPage } from './pages/IntegrationsPage'
 
 export function App() {
   return <BrowserRouter><Routes>
@@ -30,6 +31,7 @@ export function App() {
         <Route index element={<DashboardPage />} />
         <Route path={ROUTES.applications} element={<ProjectsPage />} />
         <Route path={ROUTES.credentials} element={<CredentialsPage />} />
+        <Route path={ROUTES.integrations} element={<IntegrationsPage />} />
         <Route path="/applications" element={<Navigate to={ROUTES.applications} replace />} />
         <Route path="apps/new" element={<ProjectWizardPage />} />
         <Route path="apps/:id" element={<ProjectDetailPage />} />
@@ -42,7 +44,7 @@ export function App() {
         <Route path="ports" element={<PortsPage />} />
         <Route path={ROUTES.plugins} element={<PluginsPage />} />
         <Route path="docker" element={<DockerPage />} />
-        <Route path="runtimes" element={<RuntimeManagerPage />} />
+        <Route path={ROUTES.runtimes} element={<RuntimeManagerPage />} />
         <Route path="projects/:projectId/runtime" element={<ProjectRuntimePage />} />
         <Route path={ROUTES.jobs} element={<JobsPage />} />
         <Route path={ROUTES.audit} element={<AuditPage />} />
