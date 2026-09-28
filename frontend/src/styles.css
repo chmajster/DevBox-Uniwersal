@@ -575,3 +575,45 @@ a.secondary-button:hover { background: var(--panel-alt); text-decoration: none; 
   .runtime-modules .section-heading input { width: 100%; }
   .runtime-module-list { grid-template-columns: 1fr; }
 }
+
+
+/* Live deployment state */
+.deployment-live { display: grid; gap: 16px; }
+.deployment-live-success { border-color: var(--success-border); }
+.deployment-live-failed { border-color: var(--error-border); }
+.deployment-live-progress { display: grid; gap: 8px; }
+.deployment-live-progress > div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.deployment-live-progress > div span { color: var(--muted); font-size: 12px; }
+.deployment-live-progress progress { width: 100%; height: 10px; }
+.deployment-stage-track {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(90px, 1fr));
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.deployment-stage-track > div {
+  min-width: 90px;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+}
+.deployment-stage-track > div > span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--panel);
+}
+.deployment-stage-track > div small { line-height: 1.25; }
+.deployment-stage-track > .is-done { color: var(--text); }
+.deployment-stage-track > .is-done > span { border-color: var(--success); background: var(--success); }
+.deployment-stage-track > .is-current { color: var(--text); font-weight: 700; }
+.deployment-stage-track > .is-current > span { border-color: var(--accent); background: var(--accent); }
+.deployment-stage-track > .is-failed { color: var(--error-text); font-weight: 700; }
+.deployment-stage-track > .is-failed > span { border-color: var(--error-text); background: var(--error-text); }
+@media (max-width: 720px) {
+  .deployment-stage-track { grid-template-columns: repeat(8, minmax(120px, 1fr)); }
+}
