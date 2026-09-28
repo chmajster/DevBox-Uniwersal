@@ -104,6 +104,23 @@ func (h *PrivilegedHelper) RestartService(ctx context.Context, service string) e
 }
 
 func (h *PrivilegedHelper) ValidateNginx(ctx context.Context) error {
+	nginxPath, err := h.runner.LookPath("nginx")
+	if err != nil {
+		return fmt.Errorf("find nginx: %w", err)
+	}
+
+	// devbox.service is intentionally sandboxed with ProtectSystem=strict.
+	// A sudo child keeps that mount namespace, so a direct "nginx -t" may fail
+	// while probing /run/nginx.pid even though the real nginx.service can use it.
+	// Run validation in a transient systemd unit so it executes in the manager's
+	// namespace instead of inheriting the DevBox filesystem sandbox.
+	if _, lookupErr := h.runner.LookPath("systemd-run"); lookupErr == nil {
+		if err := h.run(ctx, "systemd-run", "--quiet", "--wait", "--pipe", "--collect", nginxPath, "-t"); err != nil {
+			return fmt.Errorf("validate nginx config: %w", err)
+		}
+		return nil
+	}
+
 	if err := h.run(ctx, "nginx", "-t"); err != nil {
 		return fmt.Errorf("validate nginx config: %w", err)
 	}
