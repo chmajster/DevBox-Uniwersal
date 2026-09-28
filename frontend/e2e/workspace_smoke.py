@@ -27,12 +27,12 @@ class SPAHandler(SimpleHTTPRequestHandler):
 def project(identifier, name, runtime, status, domain):
     return dict(id=identifier, name=name, slug=identifier, description='Aplikacja testowa',
                 status=status, source_type='git', runtime=runtime, branch='main', port=8080,
-                domain=domain, deployment_mode='native', local_path='/test/app', working_directory='.',
+                domain=domain, runtime_version='', container_policy='auto', local_path='/test/app', working_directory='.',
                 build_command='', start_command='', healthcheck='', auto_start=False,
                 current_commit='a1b2c3d4e5', created_at='2026-09-28T08:00:00Z', updated_at='2026-09-28T08:00:00Z')
 
 def install_api(context, role='admin', authenticated=True):
-    state = dict(authenticated=authenticated, posts=[], calls=[], failures=set(), tick=0,
+    state = dict(authenticated=authenticated, posts=[], calls=[], failures=set(), tick=0, deployment_stage='PREPARING',
                  projects=[project('portal', 'Portal zespołu', 'PHP', 'running', 'portal.test'),
                            project('api', 'API projektu', 'Go', 'running', 'api.test'),
                            project('worker', 'Worker', 'Python', 'stopped', '')])
@@ -85,6 +85,13 @@ def install_api(context, role='admin', authenticated=True):
                         process=dict(host_process_count=148, pid=100, goroutines=18, heap_allocated_bytes=1024, runtime_reserved_bytes=2048, uptime_seconds=5000))
         elif endpoint == '/projects':
             data = state['projects']
+        elif method == 'GET' and endpoint == '/projects/portal':
+            data = state['projects'][0]
+        elif method == 'GET' and endpoint == '/projects/portal/deployments':
+            data = [dict(id='deployment-test', project_id='portal', job_id='job-test',
+                         status=state['deployment_stage'], stage=state['deployment_stage'],
+                         commit_before='a1b2c3d4e5', commit_after='', duration_ms=0,
+                         started_at='2026-09-28T08:00:00Z', created_at='2026-09-28T08:00:00Z')]
         elif endpoint == '/logs':
             source = parse_qs(parsed.query).get('source', ['all'])[0]
             data = [entry for entry in logs if source == 'all' or entry['source'] == source]
@@ -187,7 +194,83 @@ def main():
             page.get_by_role('button', name='Anuluj', exact=True).click()
             assert not state['posts']
             page.get_by_role('button', name='Wdróż Portal zespołu', exact=True).click()
-            expect(page.get_by_text('Wdrożenie „Portal zespołu” dodano do kolejki zadań.', exact=False)).to_be_visible()
+            expect(page).to_have_url(re.compile(r'/apps/portal\?tab=deployments
+            for width in (900, 390, 320):
+                page.set_viewport_size({'width': width, 'height': 844})
+                no_overflow(page)
+                page.get_by_role('button', name='Otwórz menu').click()
+                drawer = page.get_by_role('dialog', name='Menu DevBox')
+                expect(drawer).to_be_visible()
+                drawer.get_by_role('link', name='Przegląd', exact=True).click()
+                expect(drawer).not_to_be_visible()
+                expect(page.locator('.console-service')).to_have_count(4)
+                no_overflow(page)
+                page.screenshot(path=str(OUT / f'control-room-mobile-{width}.png'), full_page=True)
+                page.goto(BASE + '/apps')
+                expect(page.locator('.project-card')).to_have_count(3)
+            state['failures'].update(['/projects', '/monitoring/snapshot', '/docker/status'])
+            page.set_viewport_size({'width': 1440, 'height': 1086})
+            page.goto(BASE)
+            expect(page.locator('.console-kpi').first.locator('strong')).to_have_text('—')
+            expect(page.locator('.gauge-value')).to_have_count(0)
+            expect(page.get_by_text('Sprawdź usługi', exact=True)).to_be_visible()
+            expect(page.locator('.console-services').get_by_text('NIEZNANY', exact=True)).to_be_visible()
+            expect(page.get_by_text('Aplikacje: Test: API niedostępne', exact=True)).to_be_visible()
+            page.screenshot(path=str(OUT / 'control-room-api-errors.png'), full_page=True)
+            state['failures'].clear()
+            state['projects'] = None
+            page.goto(BASE + '/apps')
+            expect(page.get_by_role('heading', name='Miejsce na Twoją pierwszą aplikację')).to_be_visible()
+            context.close()
+
+            viewer = browser.new_context(viewport={'width': 1280, 'height': 900})
+            install_api(viewer, role='viewer')
+            viewer.add_init_script("Storage.prototype.getItem = () => { throw new Error('blocked') }; Storage.prototype.setItem = () => { throw new Error('blocked') };")
+            v = viewer.new_page()
+            v.on('pageerror', lambda error: errors.append(str(error)))
+            v.goto(BASE + '/apps')
+            expect(v.locator('.project-card')).to_have_count(3)
+            expect(v.get_by_role('link', name='Dodaj aplikację')).to_have_count(0)
+            expect(v.get_by_role('button', name='Wdróż Portal zespołu')).to_have_count(0)
+            expect(v.get_by_role('link', name='Kopie zapasowe', exact=True)).to_have_count(0)
+            expect(v.get_by_role('link', name='Audyt', exact=True)).to_have_count(0)
+            v.get_by_role('button', name='Włącz jasny motyw').click()
+            expect(v.locator('html')).to_have_attribute('data-theme', 'light')
+            v.keyboard.press('Control+k')
+            v.get_by_role('textbox', name='Szukaj w nawigacji').fill('Audyt')
+            expect(v.get_by_text('Brak pasujących widoków. Spróbuj innej nazwy.')).to_be_visible()
+            v.keyboard.press('Escape')
+            expect(v.get_by_role('dialog')).to_have_count(0)
+            viewer.close()
+
+            login = browser.new_context(viewport={'width': 1440, 'height': 960})
+            install_api(login, authenticated=False)
+            l = login.new_page()
+            l.on('pageerror', lambda error: errors.append(str(error)))
+            l.goto(BASE + '/login')
+            expect(l.get_by_role('heading', name='Zaloguj się do DevBox')).to_be_visible()
+            l.screenshot(path=str(OUT / 'login-dark.png'), full_page=True)
+            l.get_by_label('Nazwa użytkownika').fill('developer')
+            l.locator('input[autocomplete="current-password"]').fill('synthetic-password')
+            l.get_by_role('button', name='Pokaż hasło').click()
+            expect(l.locator('input[autocomplete="current-password"]')).to_have_attribute('type', 'text')
+            l.get_by_role('button', name='Zaloguj się', exact=True).click()
+            expect(l.get_by_role('heading', name='Przegląd', exact=True)).to_be_visible()
+            login.close()
+            browser.close()
+        assert not errors, errors
+        report = {'status': 'passed', 'fixtures': 'Synthetic API only; production bundle', 'checks': ['dark default/light persistence', 'real-source gauges', 'chart sample accumulation and metric/range switching', 'service failures', 'logs filters/deep link', 'job queue and details deep links', 'search', 'project CRUD UI and CSRF', '900/390/320px no overflow', 'API failures/null collections', 'viewer RBAC visibility', 'blocked storage', 'login']}
+        (OUT / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        print(json.dumps(report, ensure_ascii=False))
+    finally:
+        server.shutdown()
+        server.server_close()
+
+if __name__ == '__main__':
+    main()
+))
+            expect(page.get_by_text('AKTUALNY DEPLOYMENT', exact=True)).to_be_visible()
+            expect(page.get_by_role('heading', name='Przygotowanie', exact=True)).to_be_visible()
             assert state['posts'] == ['/projects/portal/deploy']
 
             for width in (900, 390, 320):
