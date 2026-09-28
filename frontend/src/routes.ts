@@ -5,6 +5,7 @@ export const ROUTES = {
   logs: '/logs',
   health: '/health',
   backups: '/backups',
+  plugins: '/plugins',
   jobs: '/jobs',
   audit: '/audit'
 } as const
