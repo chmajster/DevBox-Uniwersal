@@ -4,6 +4,8 @@
 
 ### Unified project database connectivity
 
+- Database status now exposes both the application-facing MySQL/MariaDB address (`devbox-mysql:3306` for managed mode) and the loopback administrative endpoint; the Databases UI shows the host, port, Docker network and ready-to-copy `DB_HOST` value.
+- Added an optional PostgreSQL system plugin with real status detection and admin-only installation through the allowlisted privileged helper; PostgreSQL is not installed automatically and does not replace the shared managed MySQL service.
 - Added migration `009_project_database_bindings.sql` with `none`, `managed`, `compose` and `external` project database modes plus backfill for existing per-project databases.
 - Split database administration and application endpoints so host control-plane operations can use loopback while containers use Docker DNS `devbox-mysql:3306`.
 - Added a persistent managed MySQL 8.4 container on `devbox-apps` with `devbox-mysql-data`, loopback-only admin publishing, SecretStore root credentials, restart reconciliation and durable lifecycle jobs.
