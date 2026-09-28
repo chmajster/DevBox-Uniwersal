@@ -12,6 +12,16 @@ type userContextKey struct{}
 
 func (a *API) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if a.authDisabled {
+			user, err := a.auth.PasswordlessAdmin(r.Context())
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "passwordless_admin_unavailable", "local admin account is unavailable", nil)
+				return
+			}
+			ctx := context.WithValue(r.Context(), userContextKey{}, user)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
 		cookie, err := r.Cookie(sessionCookieName)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required", nil)
