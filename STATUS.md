@@ -58,6 +58,7 @@ DevBox Universal is an integrated local development control plane.
 
 ## Databases
 
+- Project database mode selection uses a dedicated responsive four-option layout with consistent radio alignment on desktop and stacked fallbacks on narrow screens.
 - Per-project database bindings support `none`, DevBox-managed MySQL, project-owned Compose MySQL/MariaDB and external MySQL/MariaDB.
 - Managed MySQL runs as `devbox-mysql` on the shared `devbox-apps` network with persistent `devbox-mysql-data`, loopback-only admin publication and durable lifecycle jobs.
 - Admin and application endpoints are separate: control-plane operations use the loopback endpoint while application containers use `devbox-mysql:3306`.
