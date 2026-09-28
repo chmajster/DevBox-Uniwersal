@@ -338,10 +338,11 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 		composeDir = workDir
 		composeName = p.Slug
-		if databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
+		composeEnvironment := mergedComposeEnvironment(projectEnvironment, databaseRuntime)
+		if len(composeEnvironment) > 0 || databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
 			databaseProvider, ok := h.integrations.Compose.(providers.ComposeDatabaseProvider)
 			if !ok {
-				return nil, errors.New("provider unavailable: Compose database integration")
+				return nil, errors.New("provider unavailable: Compose environment/database integration")
 			}
 			if databaseRuntime.Connection.Mode == providers.DatabaseModeCompose {
 				services, err := databaseProvider.InspectComposeServices(ctx, composeDir, composeName)
@@ -354,7 +355,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			}
 			databaseCleanup, err = databaseProvider.ConfigureComposeDatabase(ctx, composeDir, composeName, providers.ComposeDatabaseConfig{
 				ApplicationService: databaseRuntime.ApplicationService,
-				Environment:        projectDatabaseEnvironment(databaseRuntime),
+				Environment:        composeEnvironment,
 				Network:            databaseRuntime.Network,
 			})
 			if err != nil {
@@ -803,6 +804,22 @@ func validDeploymentTransition(from, to string) bool {
 		DeploymentHealthcheck:    DeploymentSuccess,
 	}
 	return next[from] == to
+}
+
+func mergedComposeEnvironment(environment runtimes.ResolvedEnvironment, database providers.ProjectDatabaseRuntime) map[string]string {
+	result := make(map[string]string, len(environment.Plain)+len(environment.Sensitive)+10)
+	for key, value := range environment.Plain {
+		result[key] = value
+	}
+	for key, value := range environment.Sensitive {
+		result[key] = value
+	}
+	if database.Connection.Mode != providers.DatabaseModeNone {
+		for key, value := range projectDatabaseEnvironment(database) {
+			result[key] = value
+		}
+	}
+	return result
 }
 
 func mergeProjectEnvironment(spec *containerspec.DeploymentSpec, environment runtimes.ResolvedEnvironment) {
