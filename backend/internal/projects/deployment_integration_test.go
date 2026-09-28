@@ -20,7 +20,6 @@ func TestDeploymentIntegrationManagedAllocatesPortDetectsRuntimeBuildsAndRoutes(
 	repo, project, deploymentID := integrationProject(t, Project{
 		Runtime:         "",
 		ContainerPolicy: ContainerPolicyAuto,
-		DeploymentMode:  "docker",
 	})
 
 	runtimeProvider := &integrationRuntime{name: "static", healthy: true, state: "stopped"}
@@ -80,7 +79,6 @@ func TestDeploymentIntegrationManagedFailureReleasesPortAndPersistsFailure(t *te
 	repo, project, deploymentID := integrationProject(t, Project{
 		Runtime:         "static",
 		ContainerPolicy: ContainerPolicyAuto,
-		DeploymentMode:  "docker",
 	})
 
 	ports := &integrationPorts{port: 18124}
@@ -121,7 +119,6 @@ func TestDeploymentIntegrationManagedFailureReleasesPortAndPersistsFailure(t *te
 func TestDeploymentIntegrationDockerComposeHealthThenRoute(t *testing.T) {
 	repo, project, deploymentID := integrationProject(t, Project{
 		ContainerPolicy: ContainerPolicyAuto,
-		DeploymentMode:  "docker",
 		Healthcheck:     "http://127.0.0.1:19090/health",
 	})
 	if err := os.WriteFile(filepath.Join(project.LocalPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600); err != nil {
@@ -178,7 +175,6 @@ func integrationProject(t *testing.T, overrides Project) (*Repository, Project, 
 		Runtime:         overrides.Runtime,
 		RuntimeVersion:  overrides.RuntimeVersion,
 		ContainerPolicy: overrides.ContainerPolicy,
-		DeploymentMode:  "docker",
 		Healthcheck:     overrides.Healthcheck,
 		AutoStart:       overrides.AutoStart,
 		CreatedAt:       now,
