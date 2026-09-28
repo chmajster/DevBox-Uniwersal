@@ -303,6 +303,9 @@ func (s *Service) TestApplicationConnection(ctx context.Context, projectID strin
 		}
 		return s.compose.TestComposeDatabase(ctx, workDir, project.Slug, runtime.DatabaseService, runtime.Connection, runtime.Secret)
 	}
+	if tester, ok := s.compose.(providers.ContainerDatabaseTester); ok {
+		return tester.TestDatabaseConnection(ctx, runtime.Network, runtime.Connection, runtime.Secret)
+	}
 	engine, ok := s.engine.(endpointDatabaseEngine)
 	if !ok {
 		return errors.New("database connection testing is unavailable")
