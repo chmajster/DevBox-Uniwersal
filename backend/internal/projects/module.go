@@ -29,6 +29,7 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("GET /api/v1/projects", secure(domain.RoleViewer, m.list))
 	mux.Handle("POST /api/v1/projects", secure(domain.RoleOperator, m.create))
 	mux.Handle("POST /api/v1/projects/import", secure(domain.RoleOperator, m.importLocal))
+	mux.Handle("GET /api/v1/projects/directories", secure(domain.RoleOperator, m.browseDirectories))
 	mux.Handle("GET /api/v1/projects/{id}", secure(domain.RoleViewer, m.get))
 	mux.Handle("PATCH /api/v1/projects/{id}", secure(domain.RoleOperator, m.update))
 	mux.Handle("DELETE /api/v1/projects/{id}", secure(domain.RoleAdmin, m.delete))
@@ -48,6 +49,25 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeData(w, http.StatusOK, items)
+}
+
+func (m *Module) browseDirectories(w http.ResponseWriter, r *http.Request) {
+	requestedPath := r.URL.Query().Get("path")
+	listing, err := m.service.BrowseDirectories(requestedPath)
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	actor := actorID(r)
+	targetID := listing.Path
+	if targetID == "" {
+		targetID = "browse-roots"
+	}
+	if err := m.audit.Record(r.Context(), actor, "project.directory_browse", "directory", &targetID, map[string]any{"requested_path": requestedPath}, nil); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "audit_failed", "directory listing succeeded but audit persistence failed")
+		return
+	}
+	writeData(w, http.StatusOK, listing)
 }
 
 func (m *Module) create(w http.ResponseWriter, r *http.Request) {
@@ -221,6 +241,8 @@ func (m *Module) fail(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		writeAPIError(w, http.StatusNotFound, "not_found", "project not found")
+	case errors.Is(err, ErrDirectoryAccess):
+		writeAPIError(w, http.StatusForbidden, "directory_access_denied", err.Error())
 	case errors.Is(err, ErrInvalidInput):
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	case errors.Is(err, ErrProviderUnavailable), strings.Contains(err.Error(), "provider unavailable"):
