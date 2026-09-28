@@ -120,3 +120,22 @@ func TestCreateUserErrorDoesNotLeakPassword(t *testing.T) {
 		t.Fatalf("password leaked in error: %v", err)
 	}
 }
+
+
+func TestSanitizeMySQLErrorRedactsPasswordAndPreservesDiagnostic(t *testing.T) {
+	raw := "ERROR 1045 (28000): Access denied for user 'devbox_admin'@'localhost' password=super-secret"
+	got := sanitizeMySQLError(raw)
+	if strings.Contains(got, "super-secret") {
+		t.Fatalf("password leaked in MySQL error: %s", got)
+	}
+	if !strings.Contains(got, "ERROR 1045") || !strings.Contains(got, "Access denied") {
+		t.Fatalf("diagnostic details were lost: %s", got)
+	}
+}
+
+func TestSanitizeMySQLErrorTruncatesLongOutput(t *testing.T) {
+	got := sanitizeMySQLError(strings.Repeat("x", 800))
+	if len(got) > 604 {
+		t.Fatalf("expected bounded diagnostic, got %d bytes", len(got))
+	}
+}

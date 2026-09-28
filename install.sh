@@ -215,6 +215,92 @@ remove_env_key() {
   rm -f "$tmp"
 }
 
+get_env_value() {
+  local file="$1" key="$2"
+  [[ -r "$file" ]] || return 1
+  awk -v k="$key" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }' "$file"
+}
+
+mysql_service_start() {
+  if systemd_available; then
+    if systemctl list-unit-files mysql.service >/dev/null 2>&1; then
+      systemctl enable --now mysql.service >>"$LOG_FILE" 2>&1 || true
+    elif systemctl list-unit-files mariadb.service >/dev/null 2>&1; then
+      systemctl enable --now mariadb.service >>"$LOG_FILE" 2>&1 || true
+    fi
+  else
+    service mysql start >>"$LOG_FILE" 2>&1 || service mariadb start >>"$LOG_FILE" 2>&1 || true
+  fi
+}
+
+mysql_credentials_work() {
+  local user="$1" password="$2"
+  local defaults
+  defaults="$(mktemp)"
+  chmod 0600 "$defaults"
+  cat >"$defaults" <<EOF_MYSQL_CLIENT
+[client]
+host=127.0.0.1
+port=3306
+user=$user
+password=$password
+protocol=tcp
+EOF_MYSQL_CLIENT
+  if mysql --defaults-extra-file="$defaults" --batch --skip-column-names -e 'SELECT 1;' >/dev/null 2>&1; then
+    rm -f "$defaults"
+    return 0
+  fi
+  rm -f "$defaults"
+  return 1
+}
+
+configure_mysql_admin() {
+  command -v mysql >/dev/null 2>&1 || fail "Klient MySQL/MariaDB nie jest dostępny po instalacji pakietów."
+  mysql_service_start
+
+  local admin_user admin_password
+  admin_user="$(get_env_value "$ENV_FILE" DEVBOX_MYSQL_ADMIN_USER 2>/dev/null || true)"
+  admin_password="$(get_env_value "$ENV_FILE" DEVBOX_MYSQL_ADMIN_PASSWORD 2>/dev/null || true)"
+  [[ -n "$admin_user" ]] || admin_user="devbox_admin"
+
+  if [[ -n "$admin_password" ]] && mysql_credentials_work "$admin_user" "$admin_password"; then
+    emit " OK " "Połączenie administracyjne MySQL dla DevBox działa."
+    return 0
+  fi
+
+  admin_password="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+
+  local bootstrap_sql
+  bootstrap_sql="$(mktemp)"
+  chmod 0600 "$bootstrap_sql"
+  cat >"$bootstrap_sql" <<EOF_MYSQL_BOOTSTRAP
+CREATE USER IF NOT EXISTS '$admin_user'@'127.0.0.1' IDENTIFIED BY '$admin_password';
+ALTER USER '$admin_user'@'127.0.0.1' IDENTIFIED BY '$admin_password';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER, REFERENCES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER, EVENT ON *.* TO '$admin_user'@'127.0.0.1' WITH GRANT OPTION;
+GRANT CREATE USER ON *.* TO '$admin_user'@'127.0.0.1';
+FLUSH PRIVILEGES;
+EOF_MYSQL_BOOTSTRAP
+
+  if ! mysql --protocol=socket -uroot <"$bootstrap_sql" >>"$LOG_FILE" 2>&1; then
+    rm -f "$bootstrap_sql"
+    fail "Nie udało się utworzyć konta administracyjnego MySQL dla DevBox. Sprawdź lokalne uwierzytelnianie root MySQL oraz $LOG_FILE."
+  fi
+  rm -f "$bootstrap_sql"
+
+  upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_HOST "127.0.0.1"
+  upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_PORT "3306"
+  upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_ADMIN_USER "$admin_user"
+  upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_ADMIN_PASSWORD "$admin_password"
+  upsert_env_file "$ENV_FILE" DEVBOX_MYSQL_APP_HOST "%"
+  chown root:devbox "$ENV_FILE"
+  chmod 0640 "$ENV_FILE"
+
+  if ! mysql_credentials_work "$admin_user" "$admin_password"; then
+    fail "Konto MySQL zostało utworzone, ale test połączenia TCP jako $admin_user nie powiódł się."
+  fi
+  emit " OK " "Konto administracyjne MySQL dla DevBox zostało skonfigurowane i zweryfikowane."
+}
+
 select_mysql_package() {
   if apt-cache show default-mysql-server >/dev/null 2>&1; then
     printf 'default-mysql-server'
@@ -475,6 +561,7 @@ run_install() {
 
   stage 5 "Instalacja plików i konfiguracji"
   install_artifacts
+  configure_mysql_admin
   install_nginx_integration
   generate_bootstrap_credentials
 

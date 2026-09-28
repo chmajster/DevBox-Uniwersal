@@ -351,10 +351,15 @@ func (e *cliMySQLExecutor) runMySQL(ctx context.Context, statement string) (stri
 	cmd := exec.CommandContext(ctx, e.cfg.MySQLBinary, "--defaults-extra-file="+defaults, "--batch", "--skip-column-names", "--raw")
 	cmd.Stdin = strings.NewReader(statement)
 	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = io.Discard
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("mysql command failed: %w", err)
+		message := sanitizeMySQLError(stderr.String())
+		if message == "" {
+			return "", fmt.Errorf("mysql command failed: %w", err)
+		}
+		return "", fmt.Errorf("mysql command failed: %s: %w", message, err)
 	}
 	return stdout.String(), nil
 }
@@ -378,9 +383,14 @@ func (e *cliMySQLExecutor) Dump(ctx context.Context, database string, out io.Wri
 		database,
 	)
 	cmd.Stdout = out
-	cmd.Stderr = io.Discard
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("mysqldump command failed: %w", err)
+		message := sanitizeMySQLError(stderr.String())
+		if message == "" {
+			return fmt.Errorf("mysqldump command failed: %w", err)
+		}
+		return fmt.Errorf("mysqldump command failed: %s: %w", message, err)
 	}
 	return nil
 }
@@ -395,11 +405,46 @@ func (e *cliMySQLExecutor) Restore(ctx context.Context, in io.Reader) error {
 	cmd := exec.CommandContext(ctx, e.cfg.MySQLBinary, "--defaults-extra-file="+defaults)
 	cmd.Stdin = in
 	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("mysql restore command failed: %w", err)
+		message := sanitizeMySQLError(stderr.String())
+		if message == "" {
+			return fmt.Errorf("mysql restore command failed: %w", err)
+		}
+		return fmt.Errorf("mysql restore command failed: %s: %w", message, err)
 	}
 	return nil
+}
+
+func sanitizeMySQLError(raw string) string {
+	message := strings.TrimSpace(raw)
+	if message == "" {
+		return ""
+	}
+	// mysql may echo connection parameters in some client errors. Never expose passwords.
+	for _, prefix := range []string{"--password=", "password="} {
+		lower := strings.ToLower(message)
+		searchFrom := 0
+		for searchFrom < len(message) {
+			relative := strings.Index(lower[searchFrom:], prefix)
+			if relative < 0 {
+				break
+			}
+			index := searchFrom + relative
+			end := index + len(prefix)
+			for end < len(message) && message[end] != ' ' && message[end] != '\n' && message[end] != '\r' {
+				end++
+			}
+			message = message[:index] + message[index:index+len(prefix)] + "***" + message[end:]
+			lower = strings.ToLower(message)
+			searchFrom = index + len(prefix) + 3
+		}
+	}
+	if len(message) > 600 {
+		message = message[:600] + "…"
+	}
+	return message
 }
 
 func (e *cliMySQLExecutor) defaultsFile() (string, func(), error) {
