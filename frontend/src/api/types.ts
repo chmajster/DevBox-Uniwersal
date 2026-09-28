@@ -17,6 +17,7 @@ export interface CentralCredential {
 export interface UpdateStatus {
   current_version: string
   latest_version?: string
+  latest_commit_at?: string
   update_available: boolean
   repository: string
   ref: string
