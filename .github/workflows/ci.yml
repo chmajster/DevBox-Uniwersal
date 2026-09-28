@@ -64,8 +64,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Shell syntax and lint
         run: |
-          bash -n install.sh scripts/test-install.sh
-          shellcheck -x install.sh scripts/dev.sh scripts/test-install.sh
+          bash -n install.sh scripts/devbox-updater.sh scripts/test-install.sh
+          shellcheck -x install.sh scripts/dev.sh scripts/devbox-updater.sh scripts/test-install.sh
       - name: Shell installer tests
         run: ./scripts/test-install.sh
       - name: PowerShell syntax validation

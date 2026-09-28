@@ -38,6 +38,7 @@ var allowedEnvKeys = map[string]struct{}{
 	"DEVBOX_SUDO_BINARY":              {},
 	"DEVBOX_UPDATE_REPOSITORY":        {},
 	"DEVBOX_UPDATE_REF":               {},
+	"DEVBOX_UPDATE_PROGRESS_FILE":     {},
 }
 
 type PrivilegedHelper struct {

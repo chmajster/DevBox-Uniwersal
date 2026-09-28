@@ -35,6 +35,7 @@ var documentedRoutes = []documentedRoute{
 	{"PATCH", "/api/v1/credentials/{id}", "Update central credential", "operator"},
 	{"DELETE", "/api/v1/credentials/{id}", "Delete central credential", "operator"},
 	{"GET", "/api/v1/update/status", "Check DevBox Git update status", "admin"},
+	{"GET", "/api/v1/update/progress", "Read live DevBox update progress", "admin"},
 	{"POST", "/api/v1/update/apply", "Start DevBox Git update", "admin"},
 	{"GET", "/api/v1/script-apps", "List URL/script-installed applications", "viewer"},
 	{"POST", "/api/v1/script-apps", "Create and optionally install a URL/script application", "admin"},
