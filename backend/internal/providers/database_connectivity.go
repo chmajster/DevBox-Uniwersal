@@ -56,6 +56,10 @@ type ComposeDatabaseConfig struct {
 	Network            string
 }
 
+type ContainerDatabaseTester interface {
+	TestDatabaseConnection(ctx context.Context, network string, connection DatabaseConnection, password []byte) error
+}
+
 type ComposeDatabaseProvider interface {
 	ConfigureComposeDatabase(ctx context.Context, directory, projectName string, config ComposeDatabaseConfig) (func() error, error)
 	InspectComposeServices(ctx context.Context, directory, projectName string) ([]string, error)
