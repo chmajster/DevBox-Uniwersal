@@ -38,10 +38,22 @@ type Service struct {
 	jobs       jobs.JobRunner
 	audit      *audit.Service
 	phpMyAdmin *PHPMyAdminManager
+	managed    *ManagedMySQLManager
+	compose    providers.ComposeDatabaseProvider
 	backupDir  string
 }
 
-func NewService(repo *Repository, engine databaseEngine, secretStore secrets.SecretStore, runner jobs.JobRunner, auditService *audit.Service, phpMyAdmin *PHPMyAdminManager, backupDir string) (*Service, error) {
+type ServiceOption func(*Service)
+
+func WithManagedMySQL(manager *ManagedMySQLManager) ServiceOption {
+	return func(service *Service) { service.managed = manager }
+}
+
+func WithComposeDatabaseProvider(provider providers.ComposeDatabaseProvider) ServiceOption {
+	return func(service *Service) { service.compose = provider }
+}
+
+func NewService(repo *Repository, engine databaseEngine, secretStore secrets.SecretStore, runner jobs.JobRunner, auditService *audit.Service, phpMyAdmin *PHPMyAdminManager, backupDir string, options ...ServiceOption) (*Service, error) {
 	if repo == nil || engine == nil || runner == nil {
 		return nil, errors.New("database service dependencies are incomplete")
 	}
@@ -56,6 +68,11 @@ func NewService(repo *Repository, engine databaseEngine, secretStore secrets.Sec
 		audit:      auditService,
 		phpMyAdmin: phpMyAdmin,
 		backupDir:  backupDir,
+	}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
 	}
 	if err := runner.Register(NewBackupJobHandler(repo, engine, backupDir)); err != nil {
 		return nil, err
@@ -154,6 +171,14 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	if s.secrets == nil {
 		return ProvisionResult{}, ErrSecretsUnavailable
 	}
+	if binding, err := s.GetDatabaseBinding(ctx, projectID); err == nil && binding.Mode != DatabaseModeNone && binding.Mode != DatabaseModeManaged {
+		return ProvisionResult{}, fmt.Errorf("project database binding is already configured in %s mode", binding.Mode)
+	}
+	if s.managed != nil {
+		if err := s.ensureManagedReady(ctx); err != nil {
+			return ProvisionResult{}, err
+		}
+	}
 	if existing, err := s.repo.DatabaseByProject(ctx, projectID); err == nil {
 		return ProvisionResult{}, fmt.Errorf("project already has database %s", existing.Name)
 	} else if !errors.Is(err, ErrNotFound) {
@@ -246,10 +271,17 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	if err := s.repo.UpdateDatabaseStatus(ctx, database.ID, "ready"); err != nil {
 		return ProvisionResult{}, err
 	}
+	if _, err := s.UpdateDatabaseBinding(ctx, projectID, DatabaseBindingInput{Mode: DatabaseModeManaged, Engine: engine, Port: 3306}, actor, remote); err != nil {
+		return ProvisionResult{}, err
+	}
 	rollbackDatabase = false
 	database.Status = "ready"
 	database.Username = username
 	host, port := s.engine.Endpoint()
+	if endpointEngine, ok := s.engine.(endpointDatabaseEngine); ok {
+		endpoint := endpointEngine.ApplicationEndpoint()
+		host, port = endpoint.Host, endpoint.Port
+	}
 	s.recordAudit(ctx, actor, "database.provision", "project", &project.ID, map[string]any{"database_id": database.ID, "database": dbName, "username": username}, remote)
 	return ProvisionResult{
 		Database: database,
