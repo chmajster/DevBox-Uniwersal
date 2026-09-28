@@ -12,6 +12,7 @@ import { HealthPage } from './pages/HealthPage'
 import { LogsPage } from './pages/LogsPage'
 import { LoginPage } from './pages/LoginPage'
 import { PortsPage } from './pages/PortsPage'
+import { PluginsPage } from './pages/PluginsPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ProjectDetailsPage } from './pages/ProjectDetailsPage'
 import { ProjectWizardPage } from './pages/ProjectWizardPage'
@@ -37,6 +38,7 @@ export function App() {
         <Route path="databases" element={<DatabasesPage />} />
         <Route path="domains" element={<DomainsPage />} />
         <Route path="ports" element={<PortsPage />} />
+        <Route path={ROUTES.plugins} element={<PluginsPage />} />
         <Route path="docker" element={<DockerPage />} />
         <Route path="runtimes" element={<RuntimeManagerPage />} />
         <Route path="projects/:projectId/runtime" element={<ProjectRuntimePage />} />
