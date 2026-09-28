@@ -41,7 +41,7 @@ write_progress() {
 
   mkdir -p "$(dirname "$PROGRESS_FILE")" 2>/dev/null || true
   tmp="${PROGRESS_FILE}.tmp.$$"
-  {
+  if ! {
     printf 'STATE=%s\n' "$(safe_value "$state")"
     printf 'PERCENT=%s\n' "$percent"
     printf 'STAGE=%s\n' "$(safe_value "$stage")"
@@ -52,10 +52,17 @@ write_progress() {
     printf 'UPDATED_AT=%s\n' "$now"
     printf 'FINISHED_AT=%s\n' "$finished_at"
     printf 'ERROR=%s\n' "$(safe_value "$error_message")"
-  } >"$tmp" 2>/dev/null && chmod 0644 "$tmp" 2>/dev/null && mv -f "$tmp" "$PROGRESS_FILE" 2>/dev/null || {
+  } >"$tmp" 2>/dev/null; then
     rm -f "$tmp" 2>/dev/null || true
-    true
-  }
+    return 0
+  fi
+  if ! chmod 0644 "$tmp" 2>/dev/null; then
+    rm -f "$tmp" 2>/dev/null || true
+    return 0
+  fi
+  if ! mv -f "$tmp" "$PROGRESS_FILE" 2>/dev/null; then
+    rm -f "$tmp" 2>/dev/null || true
+  fi
 }
 
 cleanup() {
