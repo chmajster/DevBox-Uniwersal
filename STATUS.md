@@ -71,6 +71,7 @@ Validation:
 - Deployment jobs share the Runtime Engine registry instead of using a disconnected runtime registry.
 - CSRF protection is enabled for authenticated state-changing requests.
 - Agent 2 project UI is available under /apps alongside the Operations applications UI.
+- Local-directory onboarding includes an Operator-only filesystem browser constrained to configured roots. Symlink targets are canonicalized, escapes are rejected, listings are capped, and browse operations are audited.
 
 ## Windows / WSL / Installer
 
