@@ -731,7 +731,7 @@ func (m *Module) installMySQL(w http.ResponseWriter, r *http.Request) {
 	}
 	if m.audit != nil {
 		_ = m.audit.Record(r.Context(), actor, "plugin.mysql.install.enqueue", "plugin", nil, map[string]any{
-			"job_id": job.ID,
+			"job_id":  job.ID,
 			"purpose": "application_database",
 		}, nil)
 	}
@@ -759,7 +759,7 @@ func (m *Module) installPostgreSQL(w http.ResponseWriter, r *http.Request) {
 	}
 	if m.audit != nil {
 		_ = m.audit.Record(r.Context(), actor, "plugin.postgresql.install.enqueue", "plugin", nil, map[string]any{
-			"job_id": job.ID,
+			"job_id":  job.ID,
 			"purpose": "application_database",
 		}, nil)
 	}
