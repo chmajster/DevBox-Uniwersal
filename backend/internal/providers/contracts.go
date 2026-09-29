@@ -58,6 +58,7 @@ type ContainerSpec struct {
 	Command              []string
 	Environment          map[string]string
 	SensitiveEnvironment map[string]string
+	Labels               map[string]string
 	Ports                map[int]int
 	PortBindings         []ContainerPortBinding
 	Volumes              map[string]string
