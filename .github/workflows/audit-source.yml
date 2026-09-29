@@ -1,0 +1,22 @@
+name: Audit source snapshot
+on:
+  push:
+    branches: [agent/92-audit-completion]
+    paths: [.github/workflows/audit-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Export tracked source only
+        run: git archive --format=tar HEAD -o "$RUNNER_TEMP/devbox-source.tar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devbox-audit-source
+          path: ${{ runner.temp }}/devbox-source.tar
+          retention-days: 1
