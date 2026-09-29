@@ -113,6 +113,23 @@ func TestGenerateManagedAddsLiveSourceMounts(t *testing.T) {
 	}
 }
 
+func TestGenerateManagedDoesNotLeaveTrailingSeparatorWhenUUIDIsTruncated(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("ok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := GenerateManaged("12345678-1234-1234-1234-123456789abc", dir, "static", "", nil, "", 18080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(spec.Image, "devbox/runtime-12345678-1234-1234-1234:") {
+		t.Fatalf("UUID truncation produced an invalid Docker image reference: %q", spec.Image)
+	}
+	if strings.Contains(spec.Image, "-:") {
+		t.Fatalf("Docker repository component must not end in a separator: %q", spec.Image)
+	}
+}
+
 func TestGenerateManagedSanitizesLegacyProjectIDForDockerReference(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("ok"), 0o600); err != nil {
