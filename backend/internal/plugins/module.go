@@ -258,6 +258,11 @@ func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
 
 	if status.Running {
 		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany i aktywna usługa odpowiada na TCP 3306."
+	} else if owner, reserved := s.reservedHostPorts[3306]; reserved {
+		if owner == "" {
+			owner = "inna usługa DevBox"
+		}
+		status.Message = fmt.Sprintf("Hostowy MySQL/MariaDB jest zainstalowany, ale nie działa na TCP 3306, który jest zarezerwowany przez %s.", owner)
 	} else {
 		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany, ale hostowa usługa nie odpowiada na TCP 3306."
 	}
@@ -480,7 +485,6 @@ func hostMySQLDaemonRunning(ctx context.Context, engine string) bool {
 				return true
 			}
 		}
-		return false
 	}
 	if service, err := exec.LookPath("service"); err == nil {
 		for _, name := range services {
