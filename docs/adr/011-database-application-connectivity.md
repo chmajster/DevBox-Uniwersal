@@ -25,6 +25,18 @@ An external binding may additionally set `host_access_only`. In that variant the
 
 Migration `009_project_database_bindings.sql` is additive and backfills existing per-project databases as `managed` bindings without rotating users or passwords. Migration `010_project_database_host_access.sql` adds the access-only flag without changing the released mode constraint.
 
+### Host SQL services for applications
+
+The Plugins module may install/configure host MySQL/MariaDB and PostgreSQL specifically for application workloads. An administrator may enable either engine or both and choose independent ports. These services are not control-plane storage.
+
+When managed MySQL is enabled, its loopback admin publication may continue to own host port 3306. The host application MySQL plugin therefore selects a free, non-reserved port (normally 3307 in that topology) rather than colliding with `devbox-mysql`. PostgreSQL defaults to 5432 when available.
+
+The privileged helper accepts only an allowlisted engine and a validated numeric port. It writes fixed application-database configuration, restarts the matching system service and does not accept arbitrary shell fragments. Host SQL listeners are made reachable from Docker application containers; authentication remains enforced by the database engine. PostgreSQL uses SCRAM rules for private Docker/LAN ranges.
+
+Host database discovery marks an instance `application_ready` only when the service is running and its selected port listens beyond loopback. Project configuration lists only such instances and connects to them through `host.docker.internal:<port>`.
+
+An installation that predates managed MySQL may still use host MySQL as control-plane storage. In that topology the plugin marks that server as `control-plane`, refuses application reconfiguration, and omits it from the application-ready database pool. Migration to managed MySQL is required before a separate host MySQL can be configured for application workloads.
+
 ### Admin and application endpoints
 
 The MySQL provider exposes separate endpoint semantics:
