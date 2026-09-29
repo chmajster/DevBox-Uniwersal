@@ -1,0 +1,52 @@
+name: Apply verified audit implementation
+on:
+  push:
+    branches: [agent/92-audit-completion]
+    paths: [.github/workflows/audit-apply.yml]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/92-audit-completion
+          fetch-depth: 0
+      - name: Integrate merged main and verified patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git merge --no-edit f69cdc18bfa888cf2cbc2505a541ae2f9ad68828
+          archive="$RUNNER_TEMP/audit.patch.xz"
+          patch="$RUNNER_TEMP/audit.patch"
+          : > "$archive"
+          for sha in \
+            666b83a48f0636782691734f13c40d23f71a9a1f \
+            001d2bf8525e8f0a04ea26fd242bc2494bd5d5be \
+            2d2e91ca594b709fae85af3bf55983d25ebaca6e \
+            0b8e6377fa3603f38e850ca80e410eb767da0fd2 \
+            b6edddccb92bcd9357b033dcac4e1149a7292e88 \
+            c46bf2fa62d3876d67c5f08427f0515f07b155d8 \
+            9da4135b8fee448dfdf2cdb304e23ddadd5fae8b \
+            21533bf75e1e497c451cb836232bbe3844b88e19; do
+            gh api "repos/chmajster/DevBox-Uniwersal/git/blobs/$sha" --jq .content | base64 --decode >> "$archive"
+          done
+          echo "81e33258825c6757e81bd223809191ffabcfbf1d59b14e9925a315a4b0498d1b  $archive" | sha256sum --check --strict
+          xz --decompress --stdout "$archive" > "$patch"
+          echo "424cdc3018c20996df0c10b43299feba7a235a5ce8c1104bc314933bf09b30ec  $patch" | sha256sum --check --strict
+          git apply --check "$patch"
+          git apply "$patch"
+          git add -A
+          if git diff --cached --name-only | grep -q '^\.github/workflows/'; then
+            echo 'Unexpected workflow changes in implementation patch' >&2
+            exit 1
+          fi
+          git commit -m 'Complete audit B01-B06 F01-F09 D01-D05 with regression coverage'
+          git push origin HEAD:refs/heads/agent/92-audit-completion
+          git log -1 --format='%H %s'
