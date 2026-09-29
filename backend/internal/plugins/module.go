@@ -581,6 +581,18 @@ func detectHostMySQL(ctx context.Context) (HostDatabaseInstance, bool) {
 
 func detectMySQLPort(ctx context.Context, serverPath string) int {
 	const fallback = 3306
+	if raw, err := os.ReadFile("/etc/mysql/conf.d/99-devbox-application.cnf"); err == nil {
+		for _, line := range strings.Split(string(raw), "\n") {
+			key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+			if !ok || strings.TrimSpace(key) != "port" {
+				continue
+			}
+			port, parseErr := strconv.Atoi(strings.TrimSpace(value))
+			if parseErr == nil && port >= 1024 && port <= 65535 {
+				return port
+			}
+		}
+	}
 	out, err := exec.CommandContext(ctx, serverPath, "--print-defaults").CombinedOutput()
 	if err != nil {
 		return fallback
