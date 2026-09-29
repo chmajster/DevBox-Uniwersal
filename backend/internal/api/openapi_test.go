@@ -17,6 +17,9 @@ func TestOpenAPISpecContainsCoreAndModuleRoutes(t *testing.T) {
 		"/api/v1/projects",
 		"/api/v1/projects/{id}/ports/config",
 		"/api/v1/docker/containers",
+		"/api/v1/plugins/mysql/status",
+		"/api/v1/plugins/mysql/install",
+		"/api/v1/plugins/databases/host",
 		"/api/v1/health-checks",
 		"/api/v1/logs/export",
 	} {
@@ -40,5 +43,28 @@ func TestOpenAPIPortConfigurationMethodsAndRoles(t *testing.T) {
 	put, ok := item["put"].(map[string]any)
 	if !ok || put["x-devbox-min-role"] != "operator" {
 		t.Fatalf("PUT port configuration role = %#v", put["x-devbox-min-role"])
+	}
+}
+
+func TestOpenAPIHostMySQLPluginRoles(t *testing.T) {
+	spec := buildOpenAPISpec("test")
+	paths := spec["paths"].(map[string]any)
+
+	statusPath, ok := paths["/api/v1/plugins/mysql/status"].(map[string]any)
+	if !ok {
+		t.Fatal("host MySQL status path missing")
+	}
+	get, ok := statusPath["get"].(map[string]any)
+	if !ok || get["x-devbox-min-role"] != "viewer" {
+		t.Fatalf("GET host MySQL status role = %#v", get["x-devbox-min-role"])
+	}
+
+	installPath, ok := paths["/api/v1/plugins/mysql/install"].(map[string]any)
+	if !ok {
+		t.Fatal("host MySQL install path missing")
+	}
+	post, ok := installPath["post"].(map[string]any)
+	if !ok || post["x-devbox-min-role"] != "admin" {
+		t.Fatalf("POST host MySQL install role = %#v", post["x-devbox-min-role"])
 	}
 }
