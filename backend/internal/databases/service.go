@@ -630,14 +630,18 @@ func (s *Service) ChangeGrants(ctx context.Context, id, databaseID, action strin
 			}
 		}
 	case "revoke":
-		if err := provider.RevokePrivileges(ctx, database.Name, user.Username, privileges); err != nil {
-			return DatabaseUser{}, err
-		}
 		filtered := current[:0]
 		for _, existing := range current {
 			if !slices.Contains(privileges, existing) {
 				filtered = append(filtered, existing)
 			}
+		}
+		if len(filtered) == 0 && databaseAccountEngine(database.Engine) == "postgresql" {
+			if err := provider.Revoke(ctx, database.Name, user.Username); err != nil {
+				return DatabaseUser{}, err
+			}
+		} else if err := provider.RevokePrivileges(ctx, database.Name, user.Username, privileges); err != nil {
+			return DatabaseUser{}, err
 		}
 		current = filtered
 	default:
@@ -738,7 +742,11 @@ func (s *Service) RemoveUserDatabaseAccess(ctx context.Context, userID, database
 		return DatabaseUser{}, err
 	}
 	if len(grant.Privileges) > 0 {
-		if err := provider.RevokePrivileges(ctx, database.Name, user.Username, grant.Privileges); err != nil {
+		if databaseAccountEngine(database.Engine) == "postgresql" {
+			if err := provider.Revoke(ctx, database.Name, user.Username); err != nil {
+				return DatabaseUser{}, err
+			}
+		} else if err := provider.RevokePrivileges(ctx, database.Name, user.Username, grant.Privileges); err != nil {
 			return DatabaseUser{}, err
 		}
 	}
