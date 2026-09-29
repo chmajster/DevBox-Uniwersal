@@ -64,6 +64,8 @@ export function DatabaseEnginePage() {
   const [serverInstalled, setServerInstalled] = useState(false)
   const [serverRunning, setServerRunning] = useState(false)
   const [serverMessage, setServerMessage] = useState('')
+  const [serverContainer, setServerContainer] = useState('')
+  const [serverEndpoint, setServerEndpoint] = useState('')
   const [databaseName, setDatabaseName] = useState('')
   const [databaseId, setDatabaseId] = useState(searchParams.get('database') ?? '')
   const [selectedDatabase, setSelectedDatabase] = useState<DatabaseRecord | null>(null)
@@ -101,6 +103,8 @@ export function DatabaseEnginePage() {
     setServerInstalled(Boolean(status.installed))
     setServerRunning(Boolean(status.running))
     setServerMessage(status.message ?? '')
+    setServerContainer(status.container_name ?? '')
+    setServerEndpoint(status.container_host && status.port ? `${status.container_host}:${status.port}` : '')
     setDatabaseId((current) => current && engineDatabases.some((item) => item.id === current) ? current : '')
   }, [engine])
 
@@ -258,6 +262,7 @@ export function DatabaseEnginePage() {
       <div>
         <h1>{engineLabel}</h1>
         <p className="muted">Zarządzanie bazami, użytkownikami, hasłami, dostępami i backupami serwera {engineLabel}.</p>
+        {serverInstalled && <p className="muted small">Zarządzany plugin: <code>{serverContainer || (engine === 'mysql' ? 'devbox-mysql' : 'devbox-postgresql')}</code>{serverEndpoint && <> · adres dla aplikacji: <code>{serverEndpoint}</code></>}</p>}
       </div>
       <div className="actions">
         <span className="status-chip" data-ok={serverRunning ? 'true' : 'false'}>
