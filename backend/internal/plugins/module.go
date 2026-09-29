@@ -81,8 +81,8 @@ type dockerDatabaseServer interface {
 }
 
 type Service struct {
-	helperBinary      string
-	sudoBinary        string
+	helperBinary     string
+	sudoBinary       string
 	jobs             jobs.JobRunner
 	mysqlServer      dockerDatabaseServer
 	postgresqlServer dockerDatabaseServer
