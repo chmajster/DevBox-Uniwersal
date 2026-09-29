@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -61,6 +62,50 @@ func (r *helperRecordingRunner) CombinedOutput(_ context.Context, name string, a
 	call := append([]string{name}, args...)
 	r.calls = append(r.calls, call)
 	return nil, nil
+}
+
+func TestConfigureApplicationDatabaseUsesControlledSystemdRun(t *testing.T) {
+	runner := &helperRecordingRunner{paths: map[string]string{
+		"systemd-run": "/usr/bin/systemd-run",
+	}}
+	h := NewPrivilegedHelperWithRunner(runner)
+	if err := h.ConfigureApplicationDatabase(context.Background(), "mysql", 3307); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("calls = %#v, want one systemd-run invocation", runner.calls)
+	}
+	call := runner.calls[0]
+	if len(call) < 9 || call[0] != "/usr/bin/systemd-run" {
+		t.Fatalf("unexpected configure call: %#v", call)
+	}
+	script := call[len(call)-1]
+	if !strings.Contains(script, "port=3307") || !strings.Contains(script, "bind-address=0.0.0.0") {
+		t.Fatalf("MySQL application config missing from script: %s", script)
+	}
+}
+
+func TestConfigureApplicationDatabaseRejectsUnsafeInput(t *testing.T) {
+	h := NewPrivilegedHelperWithRunner(helperRecordingRunner{paths: map[string]string{"systemd-run": "/usr/bin/systemd-run"}})
+	if err := h.ConfigureApplicationDatabase(context.Background(), "mysql;rm", 3307); !errors.Is(err, ErrOperationNotAllowed) {
+		t.Fatalf("unsafe engine error = %v", err)
+	}
+	if err := h.ConfigureApplicationDatabase(context.Background(), "mysql", 22); !errors.Is(err, ErrOperationNotAllowed) {
+		t.Fatalf("unsafe port error = %v", err)
+	}
+	if _, err := ParseApplicationDatabasePort("3307;id"); !errors.Is(err, ErrOperationNotAllowed) {
+		t.Fatalf("unsafe port parse error = %v", err)
+	}
+}
+
+func TestPostgreSQLApplicationDatabaseScriptUsesSelectedPort(t *testing.T) {
+	script := postgreSQLApplicationDatabaseScript(5544)
+	if !strings.Contains(script, "set port 5544") || !strings.Contains(script, "listen_addresses '*'") {
+		t.Fatalf("PostgreSQL application config missing: %s", script)
+	}
+	if !strings.Contains(script, "scram-sha-256") {
+		t.Fatalf("PostgreSQL application HBA policy missing: %s", script)
+	}
 }
 
 func TestValidateNginxEscapesDevBoxSystemdSandbox(t *testing.T) {
