@@ -209,6 +209,32 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Pro
 		}
 		p.Branch = value
 	}
+	if input.LocalPath != nil {
+		value := strings.TrimSpace(*input.LocalPath)
+		if p.SourceType != SourceLocal {
+			if value != p.LocalPath {
+				return Project{}, fmt.Errorf("%w: local_path can only be changed for local sources", ErrInvalidInput)
+			}
+		} else {
+			path, err := ValidateExistingDirectory(value)
+			if err != nil {
+				return Project{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			}
+			p.LocalPath = path
+		}
+	}
+	if input.Runtime != nil {
+		value := containerspec.NormalizeRuntime(*input.Runtime)
+		if value != "" {
+			if err := containerspec.Validate(value, "", nil); err != nil {
+				return Project{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			}
+		}
+		if value != p.Runtime {
+			p.Runtime = value
+			p.RuntimeVersion = ""
+		}
+	}
 	if input.WorkingDirectory != nil {
 		p.WorkingDirectory = strings.TrimSpace(*input.WorkingDirectory)
 	}
