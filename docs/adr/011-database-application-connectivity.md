@@ -25,6 +25,16 @@ The released schema still contains the `host_access_only` compatibility flag fro
 
 Migration `009_project_database_bindings.sql` is additive and backfills existing per-project databases as `managed` bindings without rotating users or passwords. Migration `010_project_database_host_access.sql` remains part of the schema for backwards compatibility.
 
+### Shared DevBox database service selection
+
+A project can independently record access to the shared DevBox SQL services in `project_database_service_access`. The allowed choices are MySQL/MariaDB, PostgreSQL, or both. This record is intentionally credential-free: it contains only boolean service selections and a timestamp. It does not contain a database name, SQL account, password, SecretRef, or grant set.
+
+The project UI presents those services as non-editable infrastructure endpoints. MySQL/MariaDB resolves to `devbox-mysql:3306`; PostgreSQL resolves to `devbox-postgresql:5432`; both are on the shared `devbox-apps` network. Container names may still be supplied by the managed-server configuration, but users do not edit connection hosts or ports in the project form.
+
+Database creation, account lifecycle, password rotation and per-database privileges remain authoritative in the Databases module. Selecting a shared service does not provision a database or account and does not inject an arbitrary credential. Existing credential-bearing bindings remain supported for Compose/external compatibility, and previously persisted managed bindings remain readable until the user saves the new shared-service selection.
+
+Migration `012_project_database_service_access.sql` adds this state without modifying released binding migrations.
+
 ### Admin and application endpoints
 
 The MySQL provider exposes separate endpoint semantics:
