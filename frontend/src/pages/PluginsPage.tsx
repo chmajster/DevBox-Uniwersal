@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { request } from '../api/client'
-import type { DockerComposePluginStatus, Job, MySQLPluginStatus, PHPFPMStatus, PHPMyAdminStatus, PostgreSQLPluginStatus } from '../api/types'
+import type { DockerComposePluginStatus, Job, MySQLPluginStatus, PHPMyAdminStatus, PostgreSQLPluginStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 
@@ -12,27 +12,24 @@ export function PluginsPage() {
   const canMutate = user?.role !== 'viewer'
   const canInstallSystemPackages = user?.role === 'admin'
   const [dockerCompose, setDockerCompose] = useState<DockerComposePluginStatus | null>(null)
-  const [phpFPM, setPHPFPM] = useState<PHPFPMStatus | null>(null)
   const [mysql, setMySQL] = useState<MySQLPluginStatus | null>(null)
   const [postgresql, setPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
   const [selectedSQLEngines, setSelectedSQLEngines] = useState<SQLInstallEngine[]>([])
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'sql-install' | null>(null)
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'sql-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
-    const [dockerComposeStatus, phpFPMStatus, mySQLStatus, postgreSQLStatus, phpMyAdminStatus] = await Promise.all([
+    const [dockerComposeStatus, mySQLStatus, postgreSQLStatus, phpMyAdminStatus] = await Promise.all([
       request<DockerComposePluginStatus>('/plugins/docker-compose/status'),
-      request<PHPFPMStatus>('/plugins/php-fpm/status'),
       request<MySQLPluginStatus>('/plugins/mysql/status'),
       request<PostgreSQLPluginStatus>('/plugins/postgresql/status'),
       request<PHPMyAdminStatus>('/phpmyadmin/status'),
     ])
     setDockerCompose(dockerComposeStatus)
-    setPHPFPM(phpFPMStatus)
     setMySQL(mySQLStatus)
     setPostgreSQL(postgreSQLStatus)
     setPHPMyAdmin(phpMyAdminStatus)
@@ -52,22 +49,6 @@ export function PluginsPage() {
       setMessage('Docker Compose został zainstalowany i jest gotowy do wdrażania projektów Compose.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Instalacja Docker Compose nie powiodła się')
-      await load().catch(() => undefined)
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
-  async function installPHPFPM() {
-    setBusyAction('php-fpm-install')
-    setError('')
-    setMessage('')
-    try {
-      const status = await request<PHPFPMStatus>('/plugins/php-fpm/install', { method: 'POST' })
-      setPHPFPM(status)
-      setMessage('PHP-FPM został zainstalowany i jest gotowy do użycia.')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Instalacja PHP-FPM nie powiodła się')
       await load().catch(() => undefined)
     } finally {
       setBusyAction(null)
@@ -252,49 +233,6 @@ export function PluginsPage() {
             <span className="muted small">Instalacja pakietu systemowego wymaga roli administratora.</span>
           )}
           {!dockerCompose?.installed && canInstallSystemPackages && dockerCompose && !dockerCompose.installable && (
-            <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
-          )}
-        </div>
-      </div>
-    </section>
-
-    <section className="panel phpmyadmin-panel">
-      <div>
-        <div className="actions">
-          <Icon name="cpu" size={24} />
-          <div>
-            <h2>PHP-FPM na hoście</h2>
-            <p className="muted">Opcjonalny komponent systemowy hosta. Zarządzane aplikacje PHP DevBox uruchamiają własny runtime wewnątrz kontenera Docker.</p>
-          </div>
-        </div>
-        <p className="muted small">
-          {phpFPM?.installed
-            ? 'PHP-FPM został wykryty na hoście. Nie zmienia to konfiguracji PHP wewnątrz kontenerów aplikacji.'
-            : 'Brak hostowego PHP-FPM nie blokuje zarządzanych aplikacji PHP. Instaluj go tylko wtedy, gdy potrzebuje go inne narzędzie lub ręczna konfiguracja hosta.'}
-        </p>
-      </div>
-
-      <div className="phpmyadmin-status">
-        <div className="actions">
-          <span className="status-chip" data-ok={phpFPM?.installed ? 'true' : 'false'}>
-            {phpFPM?.installed ? 'Zainstalowany' : 'Wymagana instalacja'}
-          </span>
-          {phpFPM?.version && <span className="status-chip" data-ok="true">{phpFPM.version}</span>}
-        </div>
-
-        {phpFPM?.path && <p className="muted small">Ścieżka: <code>{phpFPM.path}</code></p>}
-        {phpFPM?.message && <p className="muted small">{phpFPM.message}</p>}
-
-        <div className="actions">
-          {!phpFPM?.installed && canInstallSystemPackages && phpFPM?.installable && (
-            <button type="button" onClick={installPHPFPM} disabled={busy}>
-              {busyAction === 'php-fpm-install' ? 'Instalowanie…' : 'Zainstaluj PHP-FPM'}
-            </button>
-          )}
-          {!phpFPM?.installed && !canInstallSystemPackages && (
-            <span className="muted small">Instalacja pakietu systemowego wymaga roli administratora.</span>
-          )}
-          {!phpFPM?.installed && canInstallSystemPackages && phpFPM && !phpFPM.installable && (
             <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
           )}
         </div>
