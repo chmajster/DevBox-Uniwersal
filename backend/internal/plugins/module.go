@@ -88,9 +88,10 @@ type HostDatabaseInstance struct {
 type Service struct {
 	helperBinary      string
 	sudoBinary        string
-	jobs              jobs.JobRunner
-	reservedHostPorts map[int]string
-	mysqlDetector     func(context.Context) (HostDatabaseInstance, bool)
+	jobs                  jobs.JobRunner
+	reservedHostPorts     map[int]string
+	mysqlDetector         func(context.Context) (HostDatabaseInstance, bool)
+	hostMySQLControlPlane bool
 }
 
 type ServiceOption func(*Service)
@@ -110,6 +111,12 @@ func WithReservedHostPort(port int, owner string) ServiceOption {
 			service.reservedHostPorts = make(map[int]string)
 		}
 		service.reservedHostPorts[port] = strings.TrimSpace(owner)
+	}
+}
+
+func WithHostMySQLControlPlane(enabled bool) ServiceOption {
+	return func(service *Service) {
+		service.hostMySQLControlPlane = enabled
 	}
 }
 
@@ -286,6 +293,23 @@ func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
 		detector = detectHostMySQL
 	}
 	instance, installed := detector(ctx)
+	if s.hostMySQLControlPlane {
+		status.Installable = false
+		status.Purpose = "control-plane"
+		if installed {
+			status.Installed = true
+			status.Running = instance.Running
+			status.Engine = instance.Engine
+			status.ServerPath = instance.Source
+			status.Version = instance.Version
+			status.Port = instance.Port
+			status.SuggestedPort = instance.Port
+			status.ContainerHost = instance.Host
+		}
+		status.ApplicationReady = false
+		status.Message = "Ten hostowy MySQL/MariaDB jest używany przez legacy control-plane DevBox i nie może być przeznaczony dla aplikacji. Najpierw przełącz DevBox na managed MySQL."
+		return status
+	}
 	if !installed {
 		if status.ClientPath != "" {
 			status.Message = "Wykryto klienta MySQL/MariaDB, ale serwer aplikacyjny na hoście nie jest zainstalowany."
@@ -322,6 +346,9 @@ func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
 }
 
 func (s *Service) mysqlInstallConflict(ctx context.Context, port int) string {
+	if s.hostMySQLControlPlane {
+		return "Hostowy MySQL/MariaDB jest używany przez control-plane DevBox i nie może zostać przekonfigurowany jako baza aplikacyjna."
+	}
 	if port < 1024 || port > 65535 {
 		return "Nieprawidłowy port MySQL/MariaDB. Dozwolone są porty 1024-65535."
 	}
@@ -504,8 +531,10 @@ func (s *Service) HostDatabases(ctx context.Context) []HostDatabaseInstance {
 	if detector == nil {
 		detector = detectHostMySQL
 	}
-	if mysql, ok := detector(ctx); ok {
-		instances = append(instances, mysql)
+	if !s.hostMySQLControlPlane {
+		if mysql, ok := detector(ctx); ok {
+			instances = append(instances, mysql)
+		}
 	}
 	instances = append(instances, detectHostPostgreSQL(ctx)...)
 	sort.Slice(instances, func(i, j int) bool {
