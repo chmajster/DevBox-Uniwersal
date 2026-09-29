@@ -4,7 +4,8 @@ import type { DockerComposePluginStatus, Job, MySQLPluginStatus, PHPMyAdminStatu
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 
-type PHPMyAdminAction = 'install' | 'start' | 'stop' | 'restart'
+type PHPMyAdminAction = 'install' | 'start' | 'stop' | 'restart' | 'uninstall'
+type DatabasePluginAction = 'start' | 'stop' | 'restart' | 'uninstall'
 
 export function PluginsPage() {
   const { user } = useAuth()
@@ -14,7 +15,7 @@ export function PluginsPage() {
   const [mysql, setMySQL] = useState<MySQLPluginStatus | null>(null)
   const [postgresql, setPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'mysql-install' | 'postgresql-install' | null>(null)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [mysqlInstallProgress, setMySQLInstallProgress] = useState<number | null>(null)
@@ -65,7 +66,7 @@ export function PluginsPage() {
       }
       await new Promise((resolve) => window.setTimeout(resolve, 1000))
     }
-    throw new Error('Instalacja serwera SQL nadal trwa. Sprawdź status zadania w zakładce Zadania.')
+    throw new Error('Operacja pluginu SQL nadal trwa. Sprawdź status zadania w zakładce Zadania.')
   }
 
   async function installMySQL() {
@@ -137,6 +138,42 @@ export function PluginsPage() {
     }
   }
 
+  async function databasePluginAction(plugin: 'mysql' | 'postgresql', action: DatabasePluginAction) {
+    const label = plugin === 'mysql' ? 'MySQL / MariaDB' : 'PostgreSQL'
+    if (action === 'uninstall' && !window.confirm(`Odinstalować ${label}? Kontener zostanie usunięty, ale trwały wolumen z danymi pozostanie zachowany.`)) {
+      return
+    }
+
+    const busyKey = `${plugin}-${action}`
+    setBusyAction(busyKey)
+    setError('')
+    setMessage('')
+    try {
+      const job = await request<Job>(`/plugins/${plugin}/${action}`, { method: 'POST' })
+      const queuedLabels: Record<DatabasePluginAction, string> = {
+        start: 'Uruchamianie',
+        stop: 'Zatrzymywanie',
+        restart: 'Restartowanie',
+        uninstall: 'Odinstalowywanie',
+      }
+      setMessage(`${queuedLabels[action]} ${label}: zadanie ${job.id.slice(0, 12)} zostało dodane do kolejki.`)
+      await waitForJob(job.id)
+      await load()
+      const doneLabels: Record<DatabasePluginAction, string> = {
+        start: `${label} został uruchomiony.`,
+        stop: `${label} został zatrzymany.`,
+        restart: `${label} został zrestartowany.`,
+        uninstall: `${label} został odinstalowany. Wolumen danych został zachowany.`,
+      }
+      setMessage(doneLabels[action])
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : `Operacja ${action} dla ${label} nie powiodła się`)
+      await load().catch(() => undefined)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   async function openPHPMyAdmin() {
     setBusyAction('start')
     setError('')
@@ -158,6 +195,10 @@ export function PluginsPage() {
   async function phpAction(action: PHPMyAdminAction) {
     let installTimer: number | undefined
     let installSucceeded = false
+
+    if (action === 'uninstall' && !window.confirm('Odinstalować phpMyAdmin? Kontener phpMyAdmin zostanie usunięty.')) {
+      return
+    }
 
     setBusyAction(action)
     setError('')
@@ -186,6 +227,7 @@ export function PluginsPage() {
         start: 'phpMyAdmin został uruchomiony.',
         stop: 'phpMyAdmin został zatrzymany.',
         restart: 'phpMyAdmin został zrestartowany.',
+        uninstall: 'phpMyAdmin został odinstalowany.',
       }
       setMessage(labels[action])
     } catch (cause) {
@@ -336,6 +378,26 @@ export function PluginsPage() {
               {busyAction === 'mysql-install' ? 'Instalowanie…' : 'Zainstaluj MySQL / MariaDB'}
             </button>
           )}
+          {mysql?.installed && canInstallSystemPackages && !mysql.running && (
+            <button type="button" onClick={() => void databasePluginAction('mysql', 'start')} disabled={busy}>
+              {busyAction === 'mysql-start' ? 'Uruchamianie…' : 'Uruchom'}
+            </button>
+          )}
+          {mysql?.installed && canInstallSystemPackages && mysql.running && (
+            <button type="button" className="secondary" onClick={() => void databasePluginAction('mysql', 'restart')} disabled={busy}>
+              {busyAction === 'mysql-restart' ? 'Restartowanie…' : 'Restart'}
+            </button>
+          )}
+          {mysql?.installed && canInstallSystemPackages && mysql.running && (
+            <button type="button" className="secondary" onClick={() => void databasePluginAction('mysql', 'stop')} disabled={busy}>
+              {busyAction === 'mysql-stop' ? 'Zatrzymywanie…' : 'Zatrzymaj'}
+            </button>
+          )}
+          {mysql?.installed && canInstallSystemPackages && (
+            <button type="button" className="danger" onClick={() => void databasePluginAction('mysql', 'uninstall')} disabled={busy}>
+              {busyAction === 'mysql-uninstall' ? 'Odinstalowywanie…' : 'Odinstaluj'}
+            </button>
+          )}
           {!mysql?.installed && !canInstallSystemPackages && (
             <span className="muted small">Instalacja serwera wymaga roli administratora DevBox.</span>
           )}
@@ -371,20 +433,42 @@ export function PluginsPage() {
           </span>}
         </div>
 
-        <div className="database-plugin-meta">
-          <div><span>Kontener</span><strong><code>{postgresql?.container_name ?? 'devbox-postgresql'}</code></strong></div>
-          <div><span>Obraz</span><strong><code>{postgresql?.image ?? 'postgres:17'}</code></strong></div>
-          <div><span>Adres dla aplikacji</span><strong><code>{postgresql?.container_host ?? 'devbox-postgresql'}:{postgresql?.port ?? 5432}</code></strong></div>
-          <div><span>Sieć Docker</span><strong><code>{postgresql?.network ?? 'devbox-apps'}</code></strong></div>
-          <div><span>Wolumen danych</span><strong><code>{postgresql?.volume ?? 'devbox-postgresql-data'}</code></strong></div>
-          <div><span>Bazy / aplikacje</span><strong>Wiele / wiele</strong></div>
-          <div><span>PHP</span><strong>pgsql / PDO PostgreSQL</strong></div>
-        </div>
+        {postgresql?.installed && (
+          <div className="database-plugin-meta">
+            <div><span>Kontener</span><strong><code>{postgresql.container_name ?? 'devbox-postgresql'}</code></strong></div>
+            <div><span>Obraz</span><strong><code>{postgresql.image ?? 'postgres:17'}</code></strong></div>
+            <div><span>Adres dla aplikacji</span><strong><code>{postgresql.container_host ?? 'devbox-postgresql'}:{postgresql.port ?? 5432}</code></strong></div>
+            <div><span>Sieć Docker</span><strong><code>{postgresql.network ?? 'devbox-apps'}</code></strong></div>
+            <div><span>Wolumen danych</span><strong><code>{postgresql.volume ?? 'devbox-postgresql-data'}</code></strong></div>
+            <div><span>Bazy / aplikacje</span><strong>Wiele / wiele</strong></div>
+            <div><span>PHP</span><strong>pgsql / PDO PostgreSQL</strong></div>
+          </div>
+        )}
 
         <div className="actions">
           {!postgresql?.installed && canInstallSystemPackages && postgresql?.installable && (
             <button type="button" onClick={() => void installPostgreSQL()} disabled={busy}>
               {busyAction === 'postgresql-install' ? 'Instalowanie…' : 'Zainstaluj PostgreSQL'}
+            </button>
+          )}
+          {postgresql?.installed && canInstallSystemPackages && !postgresql.running && (
+            <button type="button" onClick={() => void databasePluginAction('postgresql', 'start')} disabled={busy}>
+              {busyAction === 'postgresql-start' ? 'Uruchamianie…' : 'Uruchom'}
+            </button>
+          )}
+          {postgresql?.installed && canInstallSystemPackages && postgresql.running && (
+            <button type="button" className="secondary" onClick={() => void databasePluginAction('postgresql', 'restart')} disabled={busy}>
+              {busyAction === 'postgresql-restart' ? 'Restartowanie…' : 'Restart'}
+            </button>
+          )}
+          {postgresql?.installed && canInstallSystemPackages && postgresql.running && (
+            <button type="button" className="secondary" onClick={() => void databasePluginAction('postgresql', 'stop')} disabled={busy}>
+              {busyAction === 'postgresql-stop' ? 'Zatrzymywanie…' : 'Zatrzymaj'}
+            </button>
+          )}
+          {postgresql?.installed && canInstallSystemPackages && (
+            <button type="button" className="danger" onClick={() => void databasePluginAction('postgresql', 'uninstall')} disabled={busy}>
+              {busyAction === 'postgresql-uninstall' ? 'Odinstalowywanie…' : 'Odinstaluj'}
             </button>
           )}
           {!postgresql?.installed && !canInstallSystemPackages && (
@@ -469,6 +553,11 @@ export function PluginsPage() {
           {canMutate && phpMyAdmin?.running && (
             <button type="button" className="secondary" onClick={() => phpAction('stop')} disabled={busy}>
               {busyAction === 'stop' ? 'Zatrzymywanie…' : 'Zatrzymaj'}
+            </button>
+          )}
+          {canMutate && phpMyAdmin?.installed && (
+            <button type="button" className="danger" onClick={() => phpAction('uninstall')} disabled={busy}>
+              {busyAction === 'uninstall' ? 'Odinstalowywanie…' : 'Odinstaluj'}
             </button>
           )}
           {phpMyAdmin?.running && phpMyAdmin.url && (

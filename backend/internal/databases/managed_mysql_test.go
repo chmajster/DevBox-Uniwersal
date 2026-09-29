@@ -2,6 +2,7 @@ package databases
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -10,9 +11,10 @@ import (
 )
 
 type managedDockerFake struct {
-	calls []string
-	spec  providers.ContainerSpec
-	state string
+	calls  []string
+	spec   providers.ContainerSpec
+	state  string
+	exists bool
 }
 
 func (f *managedDockerFake) record(call string)              { f.calls = append(f.calls, call) }
@@ -24,6 +26,7 @@ func (f *managedDockerFake) PullImage(_ context.Context, image string) error {
 func (f *managedDockerFake) Create(_ context.Context, spec providers.ContainerSpec) (providers.ContainerInfo, error) {
 	f.record("create:" + spec.Name)
 	f.spec = spec
+	f.exists = true
 	return providers.ContainerInfo{ID: "mysql-id", Name: spec.Name, State: "created"}, nil
 }
 func (f *managedDockerFake) Start(_ context.Context, id string) error {
@@ -43,10 +46,15 @@ func (f *managedDockerFake) Restart(_ context.Context, id string) error {
 }
 func (f *managedDockerFake) Remove(_ context.Context, id string) error {
 	f.record("remove:" + id)
+	f.exists = false
+	f.state = ""
 	return nil
 }
 func (f *managedDockerFake) Inspect(_ context.Context, id string) (providers.ContainerInfo, error) {
 	f.record("inspect:" + id)
+	if !f.exists && f.state == "" {
+		return providers.ContainerInfo{}, errors.New("container not found")
+	}
 	return providers.ContainerInfo{ID: "mysql-id", Name: id, State: f.state}, nil
 }
 func (f *managedDockerFake) Logs(context.Context, string, int, bool) (io.ReadCloser, error) {
@@ -67,6 +75,7 @@ func (f *managedDockerFake) EnsureImage(_ context.Context, image string) error {
 func (f *managedDockerFake) EnsureContainer(_ context.Context, spec providers.ContainerSpec) (providers.ContainerInfo, error) {
 	f.record("ensure-container:" + spec.Name)
 	f.spec = spec
+	f.exists = true
 	if f.state == "" {
 		f.state = "running"
 	}
@@ -140,5 +149,32 @@ func TestManagedMySQLRestartKeepsPersistentVolumeAndSecret(t *testing.T) {
 	}
 	if !strings.Contains(joined, "restart:devbox-mysql") {
 		t.Fatalf("managed MySQL was not restarted: %s", joined)
+	}
+}
+
+func TestManagedMySQLUninstallRemovesContainerButKeepsPersistentVolume(t *testing.T) {
+	store := &fakeSecretStore{values: map[string][]byte{}}
+	docker := &managedDockerFake{state: "running", exists: true}
+	manager := NewManagedMySQLManager(docker, store, ManagedMySQLConfig{})
+
+	if err := manager.Action(context.Background(), "uninstall"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(docker.calls, "\n")
+	if !strings.Contains(joined, "stop:devbox-mysql") {
+		t.Fatalf("running MySQL container was not stopped before uninstall: %s", joined)
+	}
+	if !strings.Contains(joined, "remove:devbox-mysql") {
+		t.Fatalf("MySQL container was not removed: %s", joined)
+	}
+	if strings.Contains(joined, "ensure-volume:") {
+		t.Fatalf("uninstall must not recreate or delete the persistent volume: %s", joined)
+	}
+	installed, running, err := manager.ContainerState(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if installed || running {
+		t.Fatalf("unexpected state after uninstall: installed=%v running=%v", installed, running)
 	}
 }

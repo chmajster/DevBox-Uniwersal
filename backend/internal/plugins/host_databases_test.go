@@ -86,11 +86,14 @@ type fakeDockerDatabaseServer struct {
 }
 
 func (f *fakeDockerDatabaseServer) Action(_ context.Context, action string) error {
-	if action == "install" || action == "start" {
+	switch action {
+	case "install", "start", "restart":
 		f.installed = true
 		f.running = true
-	}
-	if action == "stop" {
+	case "stop":
+		f.running = false
+	case "uninstall":
+		f.installed = false
 		f.running = false
 	}
 	return nil
@@ -172,5 +175,67 @@ func TestHostMySQLDiscoveryRemainsAvailableForExternalBindings(t *testing.T) {
 	instance, ok := detectHostMySQL(context.Background())
 	if !ok || instance.Engine != "mysql" || instance.Source != server {
 		t.Fatalf("unexpected host MySQL discovery: ok=%v instance=%#v", ok, instance)
+	}
+}
+
+func TestQueueDockerDatabaseLifecycleActionsUseJobEngine(t *testing.T) {
+	runner := &recordingPluginJobRunner{}
+	mysqlServer := &fakeDockerDatabaseServer{
+		installed: true, running: true,
+		endpoint: providers.DatabaseEndpoint{Host: "devbox-mysql", Port: 3306},
+		network:  "devbox-apps", container: "devbox-mysql", image: "mysql:8.4", volume: "devbox-mysql-data",
+	}
+	postgresServer := &fakeDockerDatabaseServer{
+		installed: true, running: true,
+		endpoint: providers.DatabaseEndpoint{Host: "devbox-postgresql", Port: 5432},
+		network:  "devbox-apps", container: "devbox-postgresql", image: "postgres:17", volume: "devbox-postgresql-data",
+	}
+	service := NewService("", "", WithJobRunner(runner), WithMySQLDatabaseServer(mysqlServer), WithPostgreSQLDatabaseServer(postgresServer))
+	actor := "admin-user"
+
+	mysqlJob, err := service.QueueMySQLAction(context.Background(), "stop", &actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postgresJob, err := service.QueuePostgreSQLAction(context.Background(), "uninstall", &actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mysqlJob.Type != JobMySQLContainerAction || postgresJob.Type != JobPostgreSQLContainerAction {
+		t.Fatalf("unexpected lifecycle job types: %q %q", mysqlJob.Type, postgresJob.Type)
+	}
+	if runner.requests[0].Payload["action"] != "stop" || runner.requests[1].Payload["action"] != "uninstall" {
+		t.Fatalf("unexpected lifecycle payloads: %#v", runner.requests)
+	}
+}
+
+func TestDockerDatabaseLifecycleHandlersApplyActions(t *testing.T) {
+	mysqlServer := &fakeDockerDatabaseServer{
+		installed: true, running: true,
+		endpoint: providers.DatabaseEndpoint{Host: "devbox-mysql", Port: 3306},
+		network:  "devbox-apps", container: "devbox-mysql", image: "mysql:8.4", volume: "devbox-mysql-data",
+	}
+	service := NewService("", "", WithMySQLDatabaseServer(mysqlServer))
+
+	status, err := service.MySQLAction(context.Background(), "stop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Installed || status.Running {
+		t.Fatalf("unexpected status after stop: %#v", status)
+	}
+	status, err = service.MySQLAction(context.Background(), "restart")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Installed || !status.Running {
+		t.Fatalf("unexpected status after restart: %#v", status)
+	}
+	status, err = service.MySQLAction(context.Background(), "uninstall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Installed || status.Running {
+		t.Fatalf("unexpected status after uninstall: %#v", status)
 	}
 }

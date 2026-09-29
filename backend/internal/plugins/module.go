@@ -319,6 +319,40 @@ func (s *Service) InstallMySQL(ctx context.Context) (MySQLPluginStatus, error) {
 	return status, nil
 }
 
+func (s *Service) MySQLAction(ctx context.Context, action string) (MySQLPluginStatus, error) {
+	action = strings.ToLower(strings.TrimSpace(action))
+	if action == "install" {
+		return s.InstallMySQL(ctx)
+	}
+	if s.mysqlServer == nil {
+		return MySQLPluginStatus{}, errors.New("Docker MySQL/MariaDB server manager is not configured")
+	}
+	switch action {
+	case "start", "stop", "restart", "uninstall":
+	default:
+		return MySQLPluginStatus{}, fmt.Errorf("unsupported MySQL/MariaDB plugin action %q", action)
+	}
+	if err := s.mysqlServer.Action(ctx, action); err != nil {
+		return MySQLPluginStatus{}, fmt.Errorf("%s Docker MySQL/MariaDB: %w", action, err)
+	}
+	status := s.MySQLStatus(ctx)
+	switch action {
+	case "start", "restart":
+		if !status.Installed || !status.Running {
+			return status, errors.New("MySQL/MariaDB container is not running after lifecycle action")
+		}
+	case "stop":
+		if status.Running {
+			return status, errors.New("MySQL/MariaDB container is still running after stop")
+		}
+	case "uninstall":
+		if status.Installed {
+			return status, errors.New("MySQL/MariaDB container still exists after uninstall")
+		}
+	}
+	return status, nil
+}
+
 func (s *Service) PostgreSQLStatus(ctx context.Context) PostgreSQLStatus {
 	status := PostgreSQLStatus{Port: 5432}
 	if s.postgresqlServer == nil {
@@ -361,6 +395,40 @@ func (s *Service) InstallPostgreSQL(ctx context.Context) (PostgreSQLStatus, erro
 	status := s.PostgreSQLStatus(ctx)
 	if !status.Installed || !status.Running {
 		return status, errors.New("PostgreSQL container was created but is not running")
+	}
+	return status, nil
+}
+
+func (s *Service) PostgreSQLAction(ctx context.Context, action string) (PostgreSQLStatus, error) {
+	action = strings.ToLower(strings.TrimSpace(action))
+	if action == "install" {
+		return s.InstallPostgreSQL(ctx)
+	}
+	if s.postgresqlServer == nil {
+		return PostgreSQLStatus{}, errors.New("Docker PostgreSQL server manager is not configured")
+	}
+	switch action {
+	case "start", "stop", "restart", "uninstall":
+	default:
+		return PostgreSQLStatus{}, fmt.Errorf("unsupported PostgreSQL plugin action %q", action)
+	}
+	if err := s.postgresqlServer.Action(ctx, action); err != nil {
+		return PostgreSQLStatus{}, fmt.Errorf("%s Docker PostgreSQL: %w", action, err)
+	}
+	status := s.PostgreSQLStatus(ctx)
+	switch action {
+	case "start", "restart":
+		if !status.Installed || !status.Running {
+			return status, errors.New("PostgreSQL container is not running after lifecycle action")
+		}
+	case "stop":
+		if status.Running {
+			return status, errors.New("PostgreSQL container is still running after stop")
+		}
+	case "uninstall":
+		if status.Installed {
+			return status, errors.New("PostgreSQL container still exists after uninstall")
+		}
 	}
 	return status, nil
 }
@@ -684,8 +752,10 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/plugins/php-fpm/install", admin(m.installPHPFPM))
 	mux.Handle("GET /api/v1/plugins/mysql/status", viewer(m.mySQLStatus))
 	mux.Handle("POST /api/v1/plugins/mysql/install", admin(m.installMySQL))
+	mux.Handle("POST /api/v1/plugins/mysql/{action}", admin(m.mySQLAction))
 	mux.Handle("GET /api/v1/plugins/postgresql/status", viewer(m.postgreSQLStatus))
 	mux.Handle("POST /api/v1/plugins/postgresql/install", admin(m.installPostgreSQL))
+	mux.Handle("POST /api/v1/plugins/postgresql/{action}", admin(m.postgreSQLAction))
 	mux.Handle("GET /api/v1/plugins/databases/host", viewer(m.hostDatabases))
 	mux.Handle("GET /api/v1/plugins/php/extensions", viewer(m.phpExtensions))
 	mux.Handle("POST /api/v1/plugins/php/extensions/install", admin(m.installPHPExtensions))
@@ -736,6 +806,27 @@ func (m *Module) installMySQL(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusAccepted, job)
 }
 
+func (m *Module) mySQLAction(w http.ResponseWriter, r *http.Request) {
+	var actor *string
+	if user, ok := api.CurrentUser(r.Context()); ok {
+		id := user.ID
+		actor = &id
+	}
+	action := strings.ToLower(strings.TrimSpace(r.PathValue("action")))
+	job, err := m.service.QueueMySQLAction(r.Context(), action, actor)
+	if err != nil {
+		writeError(w, http.StatusConflict, "mysql_action_unavailable", err.Error())
+		return
+	}
+	if m.audit != nil {
+		_ = m.audit.Record(r.Context(), actor, "plugin.mysql."+action+".enqueue", "plugin", nil, map[string]any{
+			"job_id":  job.ID,
+			"purpose": "application_database",
+		}, nil)
+	}
+	writeData(w, http.StatusAccepted, job)
+}
+
 func (m *Module) hostDatabases(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, m.service.HostDatabases(r.Context()))
 }
@@ -757,6 +848,27 @@ func (m *Module) installPostgreSQL(w http.ResponseWriter, r *http.Request) {
 	}
 	if m.audit != nil {
 		_ = m.audit.Record(r.Context(), actor, "plugin.postgresql.install.enqueue", "plugin", nil, map[string]any{
+			"job_id":  job.ID,
+			"purpose": "application_database",
+		}, nil)
+	}
+	writeData(w, http.StatusAccepted, job)
+}
+
+func (m *Module) postgreSQLAction(w http.ResponseWriter, r *http.Request) {
+	var actor *string
+	if user, ok := api.CurrentUser(r.Context()); ok {
+		id := user.ID
+		actor = &id
+	}
+	action := strings.ToLower(strings.TrimSpace(r.PathValue("action")))
+	job, err := m.service.QueuePostgreSQLAction(r.Context(), action, actor)
+	if err != nil {
+		writeError(w, http.StatusConflict, "postgresql_action_unavailable", err.Error())
+		return
+	}
+	if m.audit != nil {
+		_ = m.audit.Record(r.Context(), actor, "plugin.postgresql."+action+".enqueue", "plugin", nil, map[string]any{
 			"job_id":  job.ID,
 			"purpose": "application_database",
 		}, nil)
