@@ -401,6 +401,7 @@ export interface HostDatabaseInstance {
   engine: 'mysql' | 'mariadb' | 'postgresql'
   label: string
   host: string
+  host_ips?: string[]
   port: number
   installed: boolean
   running: boolean
