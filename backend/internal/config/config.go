@@ -23,12 +23,16 @@ type Config struct {
 	MasterKeyBase64        string
 	AppVersion             string
 
-	ManagedMySQLEnabled   bool
-	ManagedMySQLAdminPort int
-	ManagedMySQLImage     string
-	ManagedMySQLContainer string
-	ManagedMySQLNetwork   string
-	ManagedMySQLVolume    string
+	ManagedMySQLEnabled      bool
+	ManagedMySQLAdminPort    int
+	ManagedMySQLImage        string
+	ManagedMySQLContainer    string
+	ManagedMySQLNetwork      string
+	ManagedMySQLVolume       string
+	SharedAppNetwork         string
+	ManagedPostgreSQLImage   string
+	ManagedPostgreSQLContainer string
+	ManagedPostgreSQLVolume  string
 
 	MySQLHost             string
 	MySQLPort             int
@@ -89,6 +93,7 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	sharedAppNetwork := getEnv("DEVBOX_APP_NETWORK", getEnv("DEVBOX_MYSQL_NETWORK", "devbox-apps"))
 	phpMyAdminPort, err := getEnvInt("DEVBOX_PHPMYADMIN_PORT", 8081)
 	if err != nil {
 		return Config{}, err
@@ -140,12 +145,16 @@ func Load() (Config, error) {
 		BootstrapAdminPassword:     os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_PASSWORD"),
 		MasterKeyBase64:            strings.TrimSpace(os.Getenv("DEVBOX_MASTER_KEY")),
 		AppVersion:                 getEnv("DEVBOX_VERSION", "dev"),
-		ManagedMySQLEnabled:        managedMySQL,
-		ManagedMySQLAdminPort:      managedMySQLAdminPort,
-		ManagedMySQLImage:          getEnv("DEVBOX_MYSQL_IMAGE", "mysql:8.4"),
-		ManagedMySQLContainer:      getEnv("DEVBOX_MYSQL_CONTAINER", "devbox-mysql"),
-		ManagedMySQLNetwork:        getEnv("DEVBOX_MYSQL_NETWORK", "devbox-apps"),
-		ManagedMySQLVolume:         getEnv("DEVBOX_MYSQL_VOLUME", "devbox-mysql-data"),
+		ManagedMySQLEnabled:          managedMySQL,
+		ManagedMySQLAdminPort:        managedMySQLAdminPort,
+		ManagedMySQLImage:            getEnv("DEVBOX_MYSQL_IMAGE", "mysql:8.4"),
+		ManagedMySQLContainer:        getEnv("DEVBOX_MYSQL_CONTAINER", "devbox-mysql"),
+		ManagedMySQLNetwork:          sharedAppNetwork,
+		ManagedMySQLVolume:           getEnv("DEVBOX_MYSQL_VOLUME", "devbox-mysql-data"),
+		SharedAppNetwork:             sharedAppNetwork,
+		ManagedPostgreSQLImage:       getEnv("DEVBOX_POSTGRESQL_IMAGE", "postgres:17"),
+		ManagedPostgreSQLContainer:   getEnv("DEVBOX_POSTGRESQL_CONTAINER", "devbox-postgresql"),
+		ManagedPostgreSQLVolume:      getEnv("DEVBOX_POSTGRESQL_VOLUME", "devbox-postgresql-data"),
 		MySQLHost:                  getEnv("DEVBOX_MYSQL_HOST", "127.0.0.1"),
 		MySQLPort:                  mysqlPort,
 		MySQLAdminUser:             getEnv("DEVBOX_MYSQL_ADMIN_USER", "devbox_admin"),
@@ -176,6 +185,9 @@ func Load() (Config, error) {
 
 	if cfg.HTTPAddr == "" || cfg.DatabasePath == "" || cfg.MigrationsDir == "" || cfg.ProjectsRoot == "" {
 		return Config{}, fmt.Errorf("HTTP address, database path, migrations directory and projects root are required")
+	}
+	if cfg.SharedAppNetwork == "" {
+		return Config{}, fmt.Errorf("DEVBOX_APP_NETWORK must not be empty")
 	}
 	if !cfg.AuthDisabled && (cfg.BootstrapAdminUsername == "") != (cfg.BootstrapAdminPassword == "") {
 		return Config{}, fmt.Errorf("bootstrap admin username and password must be configured together")

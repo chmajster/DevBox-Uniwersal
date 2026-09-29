@@ -421,8 +421,17 @@ func (s *Service) QueueManagedMySQLAction(ctx context.Context, action string, ac
 
 func (s *Service) ensureManagedReady(ctx context.Context) error {
 	if s.managed != nil {
-		if err := s.managed.Ensure(ctx); err != nil {
-			return fmt.Errorf("managed MySQL is unavailable: %w", err)
+		installed, running, err := s.managed.ContainerState(ctx)
+		if err != nil {
+			return fmt.Errorf("managed MySQL Docker server is unavailable: %w", err)
+		}
+		if !installed {
+			return errors.New("managed MySQL Docker server is not installed; install MySQL/MariaDB from Plugins first")
+		}
+		if !running {
+			if err := s.managed.Action(ctx, "start"); err != nil {
+				return fmt.Errorf("start managed MySQL Docker server: %w", err)
+			}
 		}
 	}
 	deadline := time.Now().Add(45 * time.Second)

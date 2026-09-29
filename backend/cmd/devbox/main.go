@@ -179,7 +179,7 @@ func serve() error {
 	var managedMySQL *databases.ManagedMySQLManager
 	phpMySQLHost := cfg.MySQLHost
 	phpMySQLPort := cfg.MySQLPort
-	phpMySQLNetwork := ""
+	phpMySQLNetwork := cfg.SharedAppNetwork
 	if cfg.ManagedMySQLEnabled {
 		managedMySQL = databases.NewManagedMySQLManager(dockerProvider, secretStore, databases.ManagedMySQLConfig{
 			Image:               cfg.ManagedMySQLImage,
@@ -204,13 +204,13 @@ func serve() error {
 		phpMySQLHost = applicationEndpoint.Host
 		phpMySQLPort = applicationEndpoint.Port
 		phpMySQLNetwork = managedMySQL.Network()
-
-		reconcileCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		if err := managedMySQL.Ensure(reconcileCtx); err != nil {
-			logger.Warn("managed MySQL reconciliation failed; database operations will retry on demand", "error", err)
-		}
-		cancel()
 	}
+	managedPostgreSQL := databases.NewManagedPostgreSQLManager(dockerProvider, secretStore, databases.ManagedPostgreSQLConfig{
+		Image:     cfg.ManagedPostgreSQLImage,
+		Container: cfg.ManagedPostgreSQLContainer,
+		Network:   cfg.SharedAppNetwork,
+		Volume:    cfg.ManagedPostgreSQLVolume,
+	})
 	mysqlProvider := databases.NewMySQLProvider(mysqlConfig, secretStore)
 	phpMyAdmin := databases.NewPHPMyAdminManager(databases.PHPMyAdminConfig{
 		DockerBinary: cfg.PHPMyAdminDockerBinary,
@@ -262,12 +262,14 @@ func serve() error {
 		projects.NewGitJobHandler(projects.JobPull, projectRepo, gitClient, jobRunner),
 		projects.NewGitJobHandler(projects.JobCheckout, projectRepo, gitClient, jobRunner),
 		projects.NewDeploymentHandler(projectRepo, gitClient, runtimeRegistry, jobRunner, projects.DeploymentIntegrations{
-			Ports:       portManager,
-			Routes:      networkService,
-			Compose:     dockerProvider,
-			Managed:     dockerProvider,
-			Database:    databaseService,
-			Environment: runtimeEnvironmentResolver,
+			Ports:         portManager,
+			Routes:        networkService,
+			Compose:       dockerProvider,
+			Managed:       dockerProvider,
+			Database:      databaseService,
+			Environment:   runtimeEnvironmentResolver,
+			Networks:      dockerProvider,
+			SharedNetwork: cfg.SharedAppNetwork,
 		}),
 	} {
 		if err := jobRunner.Register(jobHandler); err != nil {
@@ -275,12 +277,12 @@ func serve() error {
 			os.Exit(1)
 		}
 	}
-	pluginOptions := []plugins.ServiceOption{plugins.WithJobRunner(jobRunner)}
-	if cfg.ManagedMySQLEnabled {
-		pluginOptions = append(pluginOptions, plugins.WithReservedHostPort(
-			cfg.ManagedMySQLAdminPort,
-			fmt.Sprintf("administracyjny port zarządzanego MySQL DevBox (%s)", cfg.ManagedMySQLContainer),
-		))
+	pluginOptions := []plugins.ServiceOption{
+		plugins.WithJobRunner(jobRunner),
+		plugins.WithPostgreSQLDatabaseServer(managedPostgreSQL),
+	}
+	if managedMySQL != nil {
+		pluginOptions = append(pluginOptions, plugins.WithMySQLDatabaseServer(managedMySQL))
 	}
 	pluginService := plugins.NewService(cfg.NginxHelperBinary, cfg.SudoBinary, pluginOptions...)
 	for _, handler := range pluginService.Handlers() {

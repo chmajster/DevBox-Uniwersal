@@ -21,6 +21,12 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ManagedMySQLAdminPort != 13306 {
 		t.Fatalf("unexpected managed MySQL admin port: %d", cfg.ManagedMySQLAdminPort)
 	}
+	if cfg.SharedAppNetwork != "devbox-apps" {
+		t.Fatalf("unexpected shared app network: %s", cfg.SharedAppNetwork)
+	}
+	if cfg.ManagedPostgreSQLContainer != "devbox-postgresql" || cfg.ManagedPostgreSQLImage != "postgres:17" {
+		t.Fatalf("unexpected PostgreSQL Docker defaults: %s %s", cfg.ManagedPostgreSQLContainer, cfg.ManagedPostgreSQLImage)
+	}
 }
 
 func TestLoadAllowsPasswordlessBootstrapAdminByDefault(t *testing.T) {

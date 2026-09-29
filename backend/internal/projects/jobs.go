@@ -129,13 +129,20 @@ type ManagedContainerDeployer interface {
 	ReplaceManaged(ctx context.Context, spec containerspec.DeploymentSpec) error
 }
 
+type SharedNetworkDeployer interface {
+	EnsureNetwork(ctx context.Context, name string) error
+	ConnectComposeProjectNetwork(ctx context.Context, directory, projectName, network string) error
+}
+
 type DeploymentIntegrations struct {
-	Ports       providers.PortAllocator
-	Routes      ProjectRouteManager
-	Compose     ComposeDeployer
-	Managed     ManagedContainerDeployer
-	Database    providers.ProjectDatabaseResolver
-	Environment runtimes.EnvironmentResolver
+	Ports         providers.PortAllocator
+	Routes        ProjectRouteManager
+	Compose       ComposeDeployer
+	Managed       ManagedContainerDeployer
+	Database      providers.ProjectDatabaseResolver
+	Environment   runtimes.EnvironmentResolver
+	Networks      SharedNetworkDeployer
+	SharedNetwork string
 }
 
 type DeploymentHandler struct {
@@ -458,6 +465,14 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		if err := h.integrations.Compose.ComposeUp(ctx, composeDir, composeName, "", legacyBinding); err != nil {
 			return nil, fmt.Errorf("docker compose up: %w", err)
 		}
+		if h.integrations.SharedNetwork != "" {
+			if h.integrations.Networks == nil {
+				return nil, errors.New("provider unavailable: shared Docker application network")
+			}
+			if err := h.integrations.Networks.ConnectComposeProjectNetwork(ctx, composeDir, composeName, h.integrations.SharedNetwork); err != nil {
+				return nil, fmt.Errorf("connect Compose project to shared application network: %w", err)
+			}
+		}
 		if err := setStage(DeploymentHealthcheck); err != nil {
 			return nil, err
 		}
@@ -581,6 +596,17 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	}
 
 	mergeProjectEnvironment(&spec, projectEnvironment)
+	if h.integrations.SharedNetwork != "" {
+		if h.integrations.Networks == nil {
+			return nil, errors.New("provider unavailable: shared Docker application network")
+		}
+		if err := h.integrations.Networks.EnsureNetwork(ctx, h.integrations.SharedNetwork); err != nil {
+			return nil, fmt.Errorf("ensure shared Docker application network: %w", err)
+		}
+		if !containsString(spec.Networks, h.integrations.SharedNetwork) {
+			spec.Networks = append(spec.Networks, h.integrations.SharedNetwork)
+		}
+	}
 	if databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
 		if !databaseRuntime.HostAccessOnly {
 			mergeDatabaseEnvironment(&spec, projectDatabaseEnvironment(databaseRuntime))
