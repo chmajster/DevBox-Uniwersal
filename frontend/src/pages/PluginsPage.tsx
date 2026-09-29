@@ -17,6 +17,8 @@ export function PluginsPage() {
   const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'mysql-install' | 'postgresql-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
+  const [mysqlInstallProgress, setMySQLInstallProgress] = useState<number | null>(null)
+  const [mysqlInstallPhase, setMySQLInstallPhase] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
@@ -67,20 +69,53 @@ export function PluginsPage() {
   }
 
   async function installMySQL() {
+    let progressTimer: number | undefined
+    let installSucceeded = false
+
     setBusyAction('mysql-install')
     setError('')
     setMessage('')
+    setMySQLInstallProgress(5)
+    setMySQLInstallPhase('Dodawanie zadania instalacji do kolejki…')
+
+    progressTimer = window.setInterval(() => {
+      setMySQLInstallProgress((current) => {
+        const value = current ?? 5
+        const next = Math.min(value + (value < 35 ? 8 : value < 70 ? 5 : 2), 94)
+        if (next < 20) setMySQLInstallPhase('Przygotowywanie instalacji…')
+        else if (next < 40) setMySQLInstallPhase('Przygotowywanie sieci i wolumenu Docker…')
+        else if (next < 72) setMySQLInstallPhase('Pobieranie obrazu MySQL i tworzenie kontenera…')
+        else setMySQLInstallPhase('Uruchamianie i weryfikacja serwera MySQL/MariaDB…')
+        return next
+      })
+    }, 700)
+
     try {
       const job = await request<Job>('/plugins/mysql/install', { method: 'POST' })
+      setMySQLInstallProgress((current) => Math.max(current ?? 5, 12))
+      setMySQLInstallPhase(`Zadanie ${job.id.slice(0, 12)} oczekuje na wykonanie…`)
       setMessage(`Instalacja serwera MySQL/MariaDB w Dockerze została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
       await waitForJob(job.id)
+      setMySQLInstallProgress(97)
+      setMySQLInstallPhase('Odświeżanie statusu kontenera…')
       await load()
+      installSucceeded = true
+      setMySQLInstallProgress(100)
+      setMySQLInstallPhase('Instalacja zakończona. Serwer MySQL/MariaDB działa.')
       setMessage('Serwer MySQL/MariaDB działa w Dockerze i jest dostępny dla kontenerów aplikacji.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Instalacja MySQL/MariaDB nie powiodła się')
+      setMySQLInstallPhase('Instalacja zakończyła się błędem.')
       await load().catch(() => undefined)
     } finally {
+      if (progressTimer !== undefined) window.clearInterval(progressTimer)
       setBusyAction(null)
+      if (installSucceeded) {
+        window.setTimeout(() => {
+          setMySQLInstallProgress(null)
+          setMySQLInstallPhase('')
+        }, 1800)
+      }
     }
   }
 
@@ -252,6 +287,28 @@ export function PluginsPage() {
       </div>
 
       <div className="phpmyadmin-status database-plugin-status">
+        {mysqlInstallProgress !== null && (
+          <div className="phpmyadmin-install-progress" role="status" aria-live="polite">
+            <div className="phpmyadmin-install-progress-header">
+              <div>
+                <strong>{mysqlInstallProgress < 100 ? 'Instalowanie MySQL / MariaDB' : 'Instalacja zakończona'}</strong>
+                <span>{mysqlInstallPhase}</span>
+              </div>
+              <strong className="phpmyadmin-install-percent">{mysqlInstallProgress}%</strong>
+            </div>
+            <div
+              className="phpmyadmin-progress-track"
+              role="progressbar"
+              aria-label="Postęp instalacji MySQL / MariaDB"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={mysqlInstallProgress}
+            >
+              <div className="phpmyadmin-progress-value" style={{ width: `${mysqlInstallProgress}%` }} />
+            </div>
+          </div>
+        )}
+
         <div className="actions">
           <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
             {mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
