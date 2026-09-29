@@ -1,7 +1,87 @@
 .path-picker-field { display: grid; gap: 6px; }
 .path-picker-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.path-picker-row.is-disabled { grid-template-columns: minmax(0, 1fr); }
 .path-picker-row input { margin-top: 0; }
-.path-picker-row button { white-space: nowrap; }
+.path-picker-row > button { white-space: nowrap; }
+.path-input-shell { position: relative; min-width: 0; }
+.path-input-shell > input { width: 100%; }
+.path-suggestions {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .18);
+}
+.path-suggestion {
+  display: grid;
+  width: 100%;
+  gap: 3px;
+  margin: 0;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  box-shadow: none;
+}
+.path-suggestion + .path-suggestion { border-top: 1px solid var(--border-soft); }
+.path-suggestion:hover,
+.path-suggestion.is-active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+.path-suggestion-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 600;
+}
+.path-suggestion code {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.path-suggestion-folder {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 11px;
+  margin-top: 2px;
+  border: 1px solid #d7aa12;
+  border-radius: 2px;
+  background: linear-gradient(#ffda45, #f3c52b);
+}
+.path-suggestion-folder::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: -4px;
+  width: 7px;
+  height: 4px;
+  border: 1px solid #d7aa12;
+  border-bottom: 0;
+  border-radius: 2px 2px 0 0;
+  background: #f7ca30;
+}
+.path-suggestion-status {
+  padding: 10px 11px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.path-validation-error {
+  color: var(--error-text);
+  font-size: 12px;
+}
 
 .directory-picker {
   display: grid;
