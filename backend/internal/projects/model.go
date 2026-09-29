@@ -98,6 +98,8 @@ type UpdateInput struct {
 	Description      *string `json:"description"`
 	RepositoryURL    *string `json:"repository_url"`
 	Branch           *string `json:"branch"`
+	LocalPath        *string `json:"local_path"`
+	Runtime          *string `json:"runtime"`
 	WorkingDirectory *string `json:"working_directory"`
 	BuildCommand     *string `json:"build_command"`
 	StartCommand     *string `json:"start_command"`
