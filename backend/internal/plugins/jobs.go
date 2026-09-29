@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	JobInstallMySQLContainer       = "plugin.mysql.install"
-	JobInstallPostgreSQLContainer  = "plugin.postgresql.install"
-	JobMySQLContainerAction        = "plugin.mysql.action"
-	JobPostgreSQLContainerAction   = "plugin.postgresql.action"
+	JobInstallMySQLContainer      = "plugin.mysql.install"
+	JobInstallPostgreSQLContainer = "plugin.postgresql.install"
+	JobMySQLContainerAction       = "plugin.mysql.action"
+	JobPostgreSQLContainerAction  = "plugin.postgresql.action"
 )
 
 type MySQLInstallJobHandler struct {
