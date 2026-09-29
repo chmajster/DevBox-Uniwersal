@@ -17,45 +17,93 @@ interface FieldsProps {
 }
 
 export function PortSettingsFields({ settings, disabled, onChange }: FieldsProps) {
-  return <fieldset disabled={disabled} aria-label="Mapowanie portów Docker" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-    <div className="form-grid">
-      <label>Port wewnętrzny HTTP (Docker)
-        <input type="number" min={1} max={65535} step={1} value={settings.container_port || ''}
-          placeholder="Automatycznie — EXPOSE lub runtime"
-          onChange={(event) => onChange({ container_port: Number(event.target.value) })} />
-        <small className="muted">Puste pole: wykryj port. Przy własnym Dockerfile aplikacja musi na nim już nasłuchiwać.</small>
-      </label>
-      <label>Port zewnętrzny HTTP (host)
-        <input type="number" required min={1} max={65535} step={1} value={settings.host_port || ''}
-          onChange={(event) => onChange({ host_port: Number(event.target.value) })} />
-        <small className="muted">Domyślnie 8080. Gdy zajęty, DevBox wybierze 8081, 8082 itd. Przydzielony port zostanie zachowany.</small>
-      </label>
-      <label className="span-2" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <input type="checkbox" checked={settings.https_enabled}
-          onChange={(event) => onChange({ https_enabled: event.target.checked })} />
-        Włącz dodatkowe mapowanie HTTPS
-      </label>
-      <label>Port wewnętrzny HTTPS (Docker)
-        <input type="number" required min={1} max={65535} step={1} disabled={!settings.https_enabled}
-          value={settings.https_container_port || ''}
-          onChange={(event) => onChange({ https_container_port: Number(event.target.value) })} />
-      </label>
-      <label>Port zewnętrzny HTTPS (host)
-        <input type="number" required min={1} max={65535} step={1} disabled={!settings.https_enabled}
-          value={settings.https_host_port || ''}
-          onChange={(event) => onChange({ https_host_port: Number(event.target.value) })} />
-        <small className="muted">Domyślnie 8443; przy kolizji kolejny wolny port, zwiększany o 1.</small>
-      </label>
-      <p className="muted span-2">HTTPS jest przekazywane do kontenera, nie tworzy certyfikatu ani serwera TLS. Wymagany własny Dockerfile lub Compose z działającym HTTPS. Obrazy generowane przez DevBox udostępniają HTTP.</p>
-      <label className="span-2">Usługa Compose (opcjonalnie)
-        <input value={settings.compose_service} maxLength={128} placeholder="np. web — puste: wykryj jednoznacznie usługę web"
+  const httpsAction = settings.https_enabled
+    ? { label: 'Usuń HTTPS', change: { https_enabled: false } }
+    : { label: '+ Dodaj HTTPS', change: { https_enabled: true } }
+
+  return <fieldset disabled={disabled} aria-label="Mapowanie portów Docker" className="port-settings-fields">
+    <div className="port-mapping-editor">
+      <div className="port-mapping-toolbar">
+        <div>
+          <strong>Mapowania portów</strong>
+          <small className="muted">Port hosta jest publikowany na zewnątrz, a port kontenera wskazuje port aplikacji wewnątrz Dockera.</small>
+        </div>
+        <button type="button" className="secondary-button port-mapping-toggle"
+          onClick={() => onChange(httpsAction.change)}>
+          {httpsAction.label}
+        </button>
+      </div>
+
+      <div className="port-mapping-table-wrap">
+        <table className="port-mapping-table">
+          <thead>
+            <tr>
+              <th>Port hosta</th>
+              <th>Port kontenera</th>
+              <th>Typ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <div className="port-mapping-cell">
+                  <span className="port-map-kind">HTTP</span>
+                  <input type="number" required min={1} max={65535} step={1}
+                    aria-label="Port hosta HTTP" value={settings.host_port || ''}
+                    onChange={(event) => onChange({ host_port: Number(event.target.value) })} />
+                </div>
+              </td>
+              <td>
+                <input type="number" min={1} max={65535} step={1}
+                  aria-label="Port kontenera HTTP" value={settings.container_port || ''}
+                  placeholder="Auto"
+                  onChange={(event) => onChange({ container_port: Number(event.target.value) })} />
+              </td>
+              <td>
+                <select aria-label="Typ protokołu HTTP" value="tcp" onChange={() => undefined}>
+                  <option value="tcp">TCP</option>
+                </select>
+              </td>
+            </tr>
+            {settings.https_enabled && <tr>
+              <td>
+                <div className="port-mapping-cell">
+                  <span className="port-map-kind">HTTPS</span>
+                  <input type="number" required min={1} max={65535} step={1}
+                    aria-label="Port hosta HTTPS" value={settings.https_host_port || ''}
+                    onChange={(event) => onChange({ https_host_port: Number(event.target.value) })} />
+                </div>
+              </td>
+              <td>
+                <input type="number" required min={1} max={65535} step={1}
+                  aria-label="Port kontenera HTTPS" value={settings.https_container_port || ''}
+                  onChange={(event) => onChange({ https_container_port: Number(event.target.value) })} />
+              </td>
+              <td>
+                <select aria-label="Typ protokołu HTTPS" value="tcp" onChange={() => undefined}>
+                  <option value="tcp">TCP</option>
+                </select>
+              </td>
+            </tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="port-mapping-help">
+        <span><strong>HTTP:</strong> puste pole portu kontenera oznacza Auto — DevBox wykryje EXPOSE lub port runtime.</span>
+        <span><strong>Host:</strong> od wskazanego portu DevBox szuka kolejnego wolnego numeru, np. 8080, 8081, 8082.</span>
+        {settings.https_enabled && <span><strong>HTTPS:</strong> to passthrough TCP. DevBox nie tworzy certyfikatu ani serwera TLS.</span>}
+      </div>
+
+      <label className="port-compose-setting">Usługa Compose <span className="muted">(opcjonalnie)</span>
+        <input value={settings.compose_service} maxLength={128}
+          placeholder="np. web — puste: wykryj jednoznacznie usługę web"
           onChange={(event) => onChange({ compose_service: event.target.value })} />
-        <small className="muted">Dla Compose zapis włącza zarządzanie publikowanymi portami wybranej usługi. Wymaga Docker Compose 2.24.4+. Inne usługi oraz pliki źródłowe projektu pozostają bez zmian.</small>
+        <small className="muted">Dla Compose zapis włącza zarządzanie publikowanymi portami wybranej usługi. Wymaga Docker Compose 2.24.4+. Pliki źródłowe projektu pozostają bez zmian.</small>
       </label>
     </div>
   </fieldset>
 }
-
 export function ProjectPortsSection({ projectId }: { projectId: string }) {
   const { user } = useAuth()
   const [settings, setSettings] = useState<PortSettings>({ ...defaultPortSettings })
@@ -149,7 +197,7 @@ export function ProjectPortsSection({ projectId }: { projectId: string }) {
   return <section className="runtime-section panel" aria-label="Konfiguracja portów Docker">
     <div className="section-heading"><div>
       <h2>Porty Docker i dostęp do aplikacji</h2>
-      <p className="muted">Osobno wybierz port aplikacji w kontenerze i port dostępny na hoście. Rezerwacje innych projektów oraz zajęte gniazda są sprawdzane przy wdrożeniu.</p>
+      <p className="muted">Zarządzaj mapowaniami host → kontener w jednej tabeli. Rezerwacje innych projektów oraz zajęte gniazda są sprawdzane przy wdrożeniu.</p>
     </div></div>
     {error && <div className="error-banner" role="alert">{error}</div>}
     {message && <div className="validation-box" role="status">{message}</div>}
@@ -166,12 +214,25 @@ export function ProjectPortsSection({ projectId }: { projectId: string }) {
     {config?.applied ? <>
       <h3>Ostatnio zastosowane mapowanie</h3>
       {pending && <p className="muted">Zapisane ustawienia różnią się od działającego mapowania. Wdróż projekt, aby je zastosować.</p>}
-      <dl className="runtime-summary">
-        <div><dt>HTTP: host → kontener</dt><dd><a target="_blank" rel="noopener noreferrer"
-          href={publishedApplicationURL(baseURL, config.applied.http.host_port, false)}>{config.applied.http.host_port} → {config.applied.http.container_port}</a></dd></div>
-        {config.applied.https && <div><dt>HTTPS: host → kontener</dt><dd><a target="_blank" rel="noopener noreferrer"
-          href={publishedApplicationURL(baseURL, config.applied.https.host_port, true)}>{config.applied.https.host_port} → {config.applied.https.container_port}</a></dd></div>}
-      </dl>
+      <div className="port-mapping-table-wrap port-mapping-applied">
+        <table className="port-mapping-table">
+          <thead><tr><th>Port hosta</th><th>Port kontenera</th><th>Typ</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div className="port-mapping-cell"><span className="port-map-kind">HTTP</span><a target="_blank" rel="noopener noreferrer"
+                href={publishedApplicationURL(baseURL, config.applied.http.host_port, false)}>{config.applied.http.host_port}</a></div></td>
+              <td>{config.applied.http.container_port}</td>
+              <td>TCP</td>
+            </tr>
+            {config.applied.https && <tr>
+              <td><div className="port-mapping-cell"><span className="port-map-kind">HTTPS</span><a target="_blank" rel="noopener noreferrer"
+                href={publishedApplicationURL(baseURL, config.applied.https.host_port, true)}>{config.applied.https.host_port}</a></div></td>
+              <td>{config.applied.https.container_port}</td>
+              <td>TCP</td>
+            </tr>}
+          </tbody>
+        </table>
+      </div>
     </> : <p className="muted">Przydzielone mapowanie pojawi się po udanym wdrożeniu.</p>}
     <p className="muted">Porty są publikowane zgodnie z domyślnym nasłuchiwaniem Dockera, zwykle na wszystkich interfejsach hosta. Dostęp z Internetu wymaga odpowiednich reguł firewalla, a przy NAT/WSL także przekierowania ruchu. DevBox nie otwiera automatycznie portów na routerze.</p>
   </section>
