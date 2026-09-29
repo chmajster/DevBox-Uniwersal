@@ -209,6 +209,47 @@ input:disabled { opacity: .65; cursor: not-allowed; }
 .runtime-detail-grid label { display: block; color: var(--muted); font-size: 12px; margin: 12px 0 6px; text-transform: uppercase; }
 .command-block { display: block; padding: 10px 12px; border-radius: 7px; background: var(--panel-alt); border: 1px solid var(--border-soft); overflow-wrap: anywhere; }
 .validation-box { border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; }
+
+.database-host-help {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-alt);
+}
+.database-host-help p { margin: 4px 0 0; line-height: 1.55; }
+.database-host-help-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.database-host-help-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.database-host-help pre {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  white-space: pre;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.database-host-warning {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+@media (max-width: 760px) {
+  .database-host-help-grid { grid-template-columns: 1fr; }
+}
 .validation-ok { background: #17351f; border: 1px solid #2f6f3e; color: #a7f3b5; }
 .validation-fail { background: #3a171b; border: 1px solid #77343c; color: #ffb8c1; }
 .docker-status { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; border: 1px solid var(--border); border-left-width: 4px; background: var(--panel); border-radius: 10px; padding: 14px 16px; margin: 18px 0; }
