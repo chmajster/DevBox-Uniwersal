@@ -62,8 +62,8 @@ DevBox Universal is an integrated local development control plane.
 
 ## Databases
 
-- Project database mode selection now exposes four application-oriented choices: no database, DevBox-managed MySQL/MariaDB, a database service from the project's Compose definition, or an external credentialed MySQL/MariaDB server. The obsolete dedicated host-database discovery/access card is no longer exposed.
-- The managed project mode is Docker-native: the SQL server is the persistent `devbox-mysql` container, applications use `devbox-mysql:3306` over `devbox-apps`, and the project UI shows the actual container endpoint/network instead of host IP addresses or host SQL service details.
+- Project database mode selection keeps no-database, shared DevBox services, project Compose and external-server workflows. In the shared DevBox mode the application can select MySQL/MariaDB, PostgreSQL or both; the project screen shows only non-editable Docker DNS/port/network/status data and does not expose database/user/password/grant forms.
+- Shared-service choices are persisted independently in `project_database_service_access`. MySQL/MariaDB uses `devbox-mysql:3306`, PostgreSQL uses `devbox-postgresql:5432`, and both use `devbox-apps`. Database creation, SQL accounts, passwords and per-database grants remain managed in the Databases module.
 - The backend still accepts previously persisted `host_access_only` bindings and explicit external loopback targets for compatibility, but new project UI configuration does not create host-access-only bindings or auto-discover SQL packages/services on the host.
 - External and Compose bindings can explicitly represent an empty database password in SecretStore; omitting the password continues to preserve an existing secret instead of silently replacing it.
 - MySQL/MariaDB and PostgreSQL are installed from Plugins as persistent Docker database servers. MySQL uses `devbox-mysql` + `devbox-mysql-data`; PostgreSQL uses `devbox-postgresql` + `devbox-postgresql-data`. Both join the shared `devbox-apps` network and use `unless-stopped` restart policy.
