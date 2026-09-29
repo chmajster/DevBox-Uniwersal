@@ -888,24 +888,82 @@ input[type="checkbox"] { width: auto; margin: 0; }
   display: grid;
   gap: 12px;
 }
-.update-failure-box > div {
+.update-failure-heading {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
 }
-.update-failure-box > div span { color: var(--error-text); }
+.update-failure-heading span { color: var(--error-text); }
+.update-failure-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.update-failure-meta > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--error-border) 65%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 42%, transparent);
+}
+.update-failure-meta span,
+.update-failure-error > span {
+  color: var(--error-text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.update-failure-meta strong,
+.update-failure-meta code {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 11px;
+}
+.update-failure-error {
+  display: grid;
+  gap: 6px;
+}
 .update-failure-box pre {
   margin: 0;
-  max-height: 220px;
+  max-height: 260px;
   overflow: auto;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--error-border) 65%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--error-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
+  line-height: 1.45;
 }
-.update-failure-box button { justify-self: start; }
+.update-failure-log {
+  min-width: 0;
+  border-top: 1px solid color-mix(in srgb, var(--error-border) 55%, transparent);
+  padding-top: 9px;
+}
+.update-failure-log summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+.update-failure-log pre {
+  margin-top: 8px;
+  max-height: 340px;
+  color: var(--text);
+}
+.update-failure-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.update-failure-actions button { justify-self: start; }
 
 .update-environment-grid {
   display: grid;
@@ -1042,6 +1100,7 @@ input[type="checkbox"] { width: auto; margin: 0; }
   .update-architecture-arrow { display: none; }
 }
 @media (max-width: 760px) {
+  .update-failure-meta { grid-template-columns: 1fr; }
   .update-release-header,
   .update-mini-heading,
   .update-progress-heading { display: grid; }

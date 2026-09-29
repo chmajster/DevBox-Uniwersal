@@ -31,7 +31,7 @@ sudo ./install.sh --uninstall --purge
 
 The installer supports Ubuntu and Debian. It installs only a fixed package list, builds the Go backend and React frontend, installs the `devbox` systemd service and exposes the combined GUI/API on `http://localhost:8787/`.
 
-`devbox status` reports platform and component state. `devbox doctor` performs operational diagnostics without exposing a generic root shell. Git-based systemd updates persist their live state in `/var/lib/devbox/update-status`; the API exposes it at `GET /api/v1/update/progress`, including percentage, stage, timestamps and failure state. The file is updated atomically and remains available across the intentional `devbox.service` restart.
+`devbox status` reports platform and component state. `devbox doctor` performs operational diagnostics without exposing a generic root shell. Git-based systemd updates persist their live state in `/var/lib/devbox/update-status`; the API exposes it at `GET /api/v1/update/progress`, including percentage, stage, timestamps and failure state. Failed runs also expose the exit code and a bounded, sanitized tail of `/var/log/devbox-update.log` to authenticated administrators so the exact failing command output can be diagnosed from the UI. Common password/token/authorization patterns are redacted before log lines are returned. The file is updated atomically and remains available across the intentional `devbox.service` restart.
 
 ## Privileged helper
 

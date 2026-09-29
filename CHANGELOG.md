@@ -47,6 +47,8 @@
 - The updater now records source checks, clone/validation, all eight installer stages, final restart, success/no-update and failure states in `/var/lib/devbox/update-status`.
 - The Updates UI polls only the lightweight local progress endpoint during execution, survives the expected API restart, renders a 0–100% progress bar and marks every real updater stage as pending/current/completed/failed/skipped.
 - Installer stage reporting remains a no-op outside updater-driven `--update` runs, so normal install/repair/status behavior is unchanged.
+- Failed updater runs now preserve the latest installer stage/percentage, store the process exit code, and return a bounded sanitized tail of `/var/log/devbox-update.log` through the admin-only progress API.
+- The Updates failure panel now shows the technical stage, exit code, log path, exact relevant failure line and an expanded recent-log console instead of only telling the operator to inspect the log file manually.
 
 ### Control-plane user management
 

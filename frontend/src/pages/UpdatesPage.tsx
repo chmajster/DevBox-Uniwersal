@@ -384,13 +384,34 @@ export function UpdatesPage() {
           <div><span>Ostatnia zmiana</span><strong>{formatDate(progress?.updated_at)}</strong></div>
         </div>
 
-        {progress?.error && <div className="update-failure-box">
-          <div>
+        {progressFailed && <div className="update-failure-box">
+          <div className="update-failure-heading">
             <strong>Aktualizacja nie powiodła się</strong>
             <span>{currentStageLabel} · {progressPercent}%</span>
           </div>
-          <pre>{progress.error}</pre>
-          <button type="button" onClick={apply} disabled={busy || progressActive}>Spróbuj ponownie</button>
+
+          <div className="update-failure-meta">
+            <div><span>Etap techniczny</span><code>{progress?.stage || '—'}</code></div>
+            <div><span>Kod wyjścia</span><strong>{progress?.exit_code ?? '—'}</strong></div>
+            <div><span>Log updatera</span><code>{progress?.log_path || '/var/log/devbox-update.log'}</code></div>
+            <div><span>Zakończono</span><strong>{formatDate(progress?.finished_at || progress?.updated_at)}</strong></div>
+          </div>
+
+          <div className="update-failure-error">
+            <span>Dokładny błąd</span>
+            <pre>{progress?.failure_detail || progress?.error || 'Updater zakończył się błędem bez dodatkowego komunikatu.'}</pre>
+            {progress?.failure_detail && progress?.error && progress.failure_detail !== progress.error &&
+              <small className="muted">Updater: {progress.error}</small>}
+          </div>
+
+          {progress?.log_tail && progress.log_tail.length > 0 && <details className="update-failure-log" open>
+            <summary>Ostatnie wpisy z logu ({progress.log_tail.length})</summary>
+            <pre>{progress.log_tail.join('\n')}</pre>
+          </details>}
+
+          <div className="update-failure-actions">
+            <button type="button" onClick={apply} disabled={busy || progressActive}>Spróbuj ponownie</button>
+          </div>
         </div>}
       </section>}
     </>}

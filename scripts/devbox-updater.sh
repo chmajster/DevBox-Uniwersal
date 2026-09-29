@@ -30,6 +30,7 @@ write_progress() {
   local stage="$3"
   local message="$4"
   local error_message="${5:-}"
+  local exit_code="${6:-}"
   local now finished_at="" tmp
 
   PROGRESS_PERCENT="$percent"
@@ -52,6 +53,7 @@ write_progress() {
     printf 'UPDATED_AT=%s\n' "$now"
     printf 'FINISHED_AT=%s\n' "$finished_at"
     printf 'ERROR=%s\n' "$(safe_value "$error_message")"
+    printf 'EXIT_CODE=%s\n' "$(safe_value "$exit_code")"
   } >"$tmp" 2>/dev/null; then
     rm -f "$tmp" 2>/dev/null || true
     return 0
@@ -69,19 +71,36 @@ cleanup() {
   [[ -z "$TMP_DIR" ]] || rm -rf "$TMP_DIR"
 }
 
+sync_progress_from_file() {
+  [[ -r "$PROGRESS_FILE" ]] || return 0
+
+  local saved_percent saved_stage
+  saved_percent="$(awk -F= '$1 == "PERCENT" { sub(/^[^=]*=/, ""); print; exit }' "$PROGRESS_FILE" 2>/dev/null || true)"
+  saved_stage="$(awk -F= '$1 == "STAGE" { sub(/^[^=]*=/, ""); print; exit }' "$PROGRESS_FILE" 2>/dev/null || true)"
+
+  if [[ "$saved_percent" =~ ^[0-9]+$ ]]; then
+    PROGRESS_PERCENT="$saved_percent"
+  fi
+  if [[ -n "$saved_stage" ]]; then
+    PROGRESS_STAGE="$saved_stage"
+  fi
+}
+
 on_error() {
   local rc="$1"
   trap - ERR
+  sync_progress_from_file
   local message="Aktualizacja nie powiodła się na etapie: $PROGRESS_STAGE."
-  log "$message"
-  write_progress "failed" "$PROGRESS_PERCENT" "$PROGRESS_STAGE" "$message" "Sprawdź $LOG_FILE."
+  local error_message="Proces zakończył się kodem wyjścia $rc. Ostatnie wpisy z logu aktualizacji są dostępne w panelu."
+  log "$message Kod wyjścia: $rc."
+  write_progress "failed" "$PROGRESS_PERCENT" "$PROGRESS_STAGE" "$message" "$error_message" "$rc"
   exit "$rc"
 }
 
 fail_update() {
   local message="$1"
   log "$message"
-  write_progress "failed" "$PROGRESS_PERCENT" "$PROGRESS_STAGE" "$message" "$message"
+  write_progress "failed" "$PROGRESS_PERCENT" "$PROGRESS_STAGE" "$message" "$message" "1"
   exit 1
 }
 
