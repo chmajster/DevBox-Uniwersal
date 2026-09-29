@@ -36,6 +36,9 @@ export interface UpdateProgress {
   updated_at?: string
   finished_at?: string
   error?: string
+  exit_code?: number
+  log_path?: string
+  log_tail?: string[]
 }
 
 export interface User {
