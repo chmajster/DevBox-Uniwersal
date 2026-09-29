@@ -32,6 +32,7 @@ type ProjectDatabaseRuntime struct {
 	Network            string
 	ApplicationService string
 	DatabaseService    string
+	HostGateway        bool
 }
 
 type ProjectDatabaseResolver interface {
@@ -54,6 +55,7 @@ type ComposeDatabaseConfig struct {
 	ApplicationService string
 	Environment        map[string]string
 	Network            string
+	HostGateway        bool
 }
 
 type ContainerDatabaseTester interface {

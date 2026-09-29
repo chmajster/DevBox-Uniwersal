@@ -139,6 +139,12 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 			args = append(args, "--network", network)
 		}
 	}
+	extraHostArgs, err := managedExtraHostArgs(spec)
+	if err != nil {
+		rollback()
+		return err
+	}
+	args = append(args, extraHostArgs...)
 	args = append(args, publishArgs...)
 	if spec.ReadOnly {
 		args = append(args, "--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=64m")
@@ -214,6 +220,23 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 		_, _, _ = p.runner.Run(ctx, "container", "rm", "-f", "-v", backupName)
 	}
 	return nil
+}
+
+func managedExtraHostArgs(spec containerspec.DeploymentSpec) ([]string, error) {
+	keys := make([]string, 0, len(spec.ExtraHosts))
+	for host := range spec.ExtraHosts {
+		keys = append(keys, host)
+	}
+	sort.Strings(keys)
+	args := make([]string, 0, len(keys)*2)
+	for _, host := range keys {
+		target := strings.TrimSpace(spec.ExtraHosts[host])
+		if !strings.EqualFold(strings.TrimSpace(host), "host.docker.internal") || target != "host-gateway" {
+			return nil, fmt.Errorf("%w: unsupported managed container host mapping", ErrInvalidInput)
+		}
+		args = append(args, "--add-host", "host.docker.internal:host-gateway")
+	}
+	return args, nil
 }
 
 func managedMountArgs(spec containerspec.DeploymentSpec) ([]string, error) {

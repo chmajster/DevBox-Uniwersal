@@ -353,6 +353,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 				ApplicationService: databaseRuntime.ApplicationService,
 				Environment:        composeEnvironment,
 				Network:            databaseRuntime.Network,
+				HostGateway:        databaseRuntime.HostGateway,
 			})
 			if err != nil {
 				return nil, err
@@ -571,6 +572,12 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		mergeDatabaseEnvironment(&spec, projectDatabaseEnvironment(databaseRuntime))
 		if databaseRuntime.Network != "" {
 			spec.Networks = append(spec.Networks, databaseRuntime.Network)
+		}
+		if databaseRuntime.HostGateway {
+			if spec.ExtraHosts == nil {
+				spec.ExtraHosts = make(map[string]string)
+			}
+			spec.ExtraHosts["host.docker.internal"] = "host-gateway"
 		}
 	}
 

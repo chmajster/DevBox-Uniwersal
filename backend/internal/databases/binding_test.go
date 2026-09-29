@@ -114,6 +114,115 @@ func TestManagedDatabaseResolverUsesContainerDNS(t *testing.T) {
 	}
 }
 
+func TestApplicationDatabaseHostNormalizesAcceptedLoopbacks(t *testing.T) {
+	for _, host := range []string{
+		"localhost",
+		"LOCALHOST",
+		"127.0.0.1",
+		"127.0.0.2",
+		"::1",
+		"[::1]",
+		"0:0:0:0:0:0:0:1",
+	} {
+		if got := applicationDatabaseHost(host); got != dockerHostInternal {
+			t.Fatalf("applicationDatabaseHost(%q) = %q, want %q", host, got, dockerHostInternal)
+		}
+	}
+	if got := applicationDatabaseHost("192.0.2.10"); got != "192.0.2.10" {
+		t.Fatalf("non-loopback host changed unexpectedly: %q", got)
+	}
+}
+
+func TestExternalBracketedIPv6LoopbackUsesDockerHostGateway(t *testing.T) {
+	ctx := context.Background()
+	service, _, _, _ := databaseBindingTestService(t)
+	if _, err := service.UpdateDatabaseBinding(ctx, "project-1", DatabaseBindingInput{
+		Mode: DatabaseModeExternal, Engine: "mysql", Host: "[::1]", Port: 3306,
+		Database: "wordpress", Username: "wordpress", Password: "host-test-secret",
+	}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := service.ResolveRuntimeDatabase(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(runtime.Secret)
+	if runtime.Connection.Host != dockerHostInternal || !runtime.HostGateway {
+		t.Fatalf("expected bracketed IPv6 loopback to use Docker host gateway, got %+v", runtime)
+	}
+}
+
+func TestExternalLoopbackDatabaseUsesDockerHostGateway(t *testing.T) {
+	ctx := context.Background()
+	service, _, _, _ := databaseBindingTestService(t)
+	if _, err := service.UpdateDatabaseBinding(ctx, "project-1", DatabaseBindingInput{
+		Mode: DatabaseModeExternal, Engine: "mysql", Host: "127.0.0.1", Port: 3306,
+		Database: "wordpress", Username: "wordpress", Password: "host-test-secret",
+	}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	connection, err := service.ResolveApplicationConnection(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connection.Host != "host.docker.internal" || connection.Port != 3306 {
+		t.Fatalf("expected Docker host gateway endpoint, got %+v", connection)
+	}
+	runtime, err := service.ResolveRuntimeDatabase(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(runtime.Secret)
+	if !runtime.HostGateway {
+		t.Fatal("expected host gateway mapping for host.docker.internal")
+	}
+}
+
+func TestExternalDockerHostNameRequestsHostGateway(t *testing.T) {
+	ctx := context.Background()
+	service, _, _, _ := databaseBindingTestService(t)
+	if _, err := service.UpdateDatabaseBinding(ctx, "project-1", DatabaseBindingInput{
+		Mode: DatabaseModeExternal, Engine: "mysql", Host: "host.docker.internal", Port: 3306,
+		Database: "wordpress", Username: "wordpress", Password: "host-test-secret",
+	}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := service.ResolveRuntimeDatabase(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(runtime.Secret)
+	if runtime.Connection.Host != "host.docker.internal" || !runtime.HostGateway {
+		t.Fatalf("unexpected host runtime: %+v", runtime)
+	}
+}
+
+func TestExternalDatabaseBindingAllowsExplicitEmptyPassword(t *testing.T) {
+	ctx := context.Background()
+	service, repo, store, _ := databaseBindingTestService(t)
+	item, err := service.UpdateDatabaseBinding(ctx, "project-1", DatabaseBindingInput{
+		Mode: DatabaseModeExternal, Engine: "mysql", Host: "host.docker.internal", Port: 3306,
+		Database: "wordpress", Username: "wordpress", PasswordProvided: true,
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !item.HasSecret {
+		t.Fatal("expected empty password to be represented by a SecretStore reference")
+	}
+	persisted, err := repo.DatabaseBindingByProject(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, ok := store.values[bindingSecretScope("project-1")+"/"+persisted.SecretRef]
+	if !ok {
+		t.Fatal("empty password secret was not stored")
+	}
+	if len(value) != 0 {
+		t.Fatalf("expected empty password secret, got %q", value)
+	}
+}
+
 func TestExternalDatabaseBindingKeepsPasswordOnlyInSecretStore(t *testing.T) {
 	ctx := context.Background()
 	service, repo, store, _ := databaseBindingTestService(t)

@@ -273,6 +273,7 @@ export interface DatabaseBindingInput {
   database?: string
   username?: string
   password?: string
+  password_provided?: boolean
 }
 
 export interface DatabaseRecord {

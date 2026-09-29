@@ -20,7 +20,7 @@ describe('project database mode field contract', () => {
 
   it('renders external endpoint and credential fields', () => {
     expect(databaseModeFields('external')).toEqual([
-      'host', 'port', 'database', 'username', 'password', 'application_host', 'application_port',
+      'application_service', 'host', 'port', 'database', 'username', 'password', 'application_host', 'application_port',
     ])
   })
 })
