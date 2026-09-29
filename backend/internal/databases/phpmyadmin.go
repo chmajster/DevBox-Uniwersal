@@ -61,6 +61,22 @@ func (m *PHPMyAdminManager) databaseTarget() (string, int, bool) {
 	return host, m.cfg.MySQLPort, hostGateway
 }
 
+func (m *PHPMyAdminManager) resolvedDatabaseTarget(ctx context.Context) (string, int, bool, bool, error) {
+	host, port, hostGateway := m.databaseTarget()
+	if m.cfg.ManagedMySQL == nil {
+		return host, port, hostGateway, false, nil
+	}
+	installed, _, err := m.cfg.ManagedMySQL.ContainerState(ctx)
+	if err != nil {
+		return "", 0, false, false, fmt.Errorf("detect managed MySQL for phpMyAdmin: %w", err)
+	}
+	if !installed {
+		return host, port, hostGateway, false, nil
+	}
+	endpoint := m.cfg.ManagedMySQL.ApplicationEndpoint()
+	return endpoint.Host, endpoint.Port, false, true, nil
+}
+
 func (m *PHPMyAdminManager) Install(ctx context.Context) (PHPMyAdminStatus, error) {
 	status, err := m.Status(ctx)
 	if err != nil {
@@ -140,8 +156,11 @@ func (m *PHPMyAdminManager) matchesConfiguration(ctx context.Context, expectedEn
 			}
 		}
 	}
-	_, _, hostGateway := m.databaseTarget()
+	hostGateway := expectedEnvironment["PMA_HOST"] == "host.docker.internal"
 	if hostGateway && !containsExact(raw[0].HostConfig.ExtraHosts, "host.docker.internal:host-gateway") {
+		return false, nil
+	}
+	if !hostGateway && containsExact(raw[0].HostConfig.ExtraHosts, "host.docker.internal:host-gateway") {
 		return false, nil
 	}
 	if m.cfg.Network != "" {
@@ -228,8 +247,7 @@ func (m *PHPMyAdminManager) createArgs(environment map[string]string) []string {
 	}
 	args = append(args, "-p", "127.0.0.1:"+strconv.Itoa(m.cfg.HostPort)+":80")
 
-	_, _, hostGateway := m.databaseTarget()
-	if hostGateway {
+	if environment["PMA_HOST"] == "host.docker.internal" {
 		args = append(args, "--add-host", "host.docker.internal:host-gateway")
 	}
 
@@ -246,21 +264,17 @@ func (m *PHPMyAdminManager) createArgs(environment map[string]string) []string {
 }
 
 func (m *PHPMyAdminManager) requiredEnvironment(ctx context.Context) (map[string]string, error) {
-	host, port, _ := m.databaseTarget()
+	host, port, _, managed, err := m.resolvedDatabaseTarget(ctx)
+	if err != nil {
+		return nil, err
+	}
 	environment := map[string]string{
 		"PMA_ARBITRARY": "1",
 		"PMA_HOST":      host,
 		"PMA_PORT":      strconv.Itoa(port),
 		"PMA_VERBOSE":   "DevBox MySQL/MariaDB",
 	}
-	if m.cfg.ManagedMySQL == nil {
-		return environment, nil
-	}
-	installed, _, err := m.cfg.ManagedMySQL.ContainerState(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("detect managed MySQL for phpMyAdmin auto-login: %w", err)
-	}
-	if !installed {
+	if !managed {
 		return environment, nil
 	}
 	environment["PMA_ARBITRARY"] = "0"
@@ -315,7 +329,10 @@ func containsExact(values []string, expected string) bool {
 
 func (m *PHPMyAdminManager) Status(ctx context.Context) (PHPMyAdminStatus, error) {
 	url := "http://127.0.0.1:" + strconv.Itoa(m.cfg.HostPort)
-	host, port, _ := m.databaseTarget()
+	host, port, _, _, targetErr := m.resolvedDatabaseTarget(ctx)
+	if targetErr != nil {
+		return PHPMyAdminStatus{}, targetErr
+	}
 	base := PHPMyAdminStatus{
 		URL:          url,
 		DatabaseHost: host,
