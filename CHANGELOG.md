@@ -25,6 +25,9 @@
 
 ### Unified project database connectivity
 
+- Plugins now expose one `Bazy danych dla aplikacji` selector where an administrator may choose MySQL/MariaDB, PostgreSQL or both, select independent host ports, and install/configure them through durable Job Engine jobs. These host SQL services are explicitly application-only and are not used by the DevBox control-plane.
+- Application MySQL defaults to a free host port (normally 3307 when managed `devbox-mysql` owns 3306), while PostgreSQL defaults to 5432 when free. The privileged helper writes controlled service configuration, enables container-reachable listeners, restarts the selected database service, and verifies application readiness before the plugin is advertised to projects.
+- Project host-database selection now lists only application-ready SQL services from Plugins. Legacy installations where host MySQL still backs the DevBox control-plane are excluded from the application pool until DevBox is migrated to managed MySQL.
 - Added the optional host MySQL/MariaDB plugin with status discovery and durable Job Engine installation. The installer sudoers policy now explicitly allows only `devbox-helper install-package mysql`, and the plugin refuses installation when TCP 3306 is reserved by managed `devbox-mysql` or another listener.
 - phpMyAdmin now reconciles host-gateway access and can expose both managed MySQL and host MySQL/MariaDB targets; the plugin routes are included in OpenAPI discovery.
 - Fixed database-user connection details so newly created or rotated credentials include the actual application-facing `DB_HOST`, `DB_PORT`, database and username; loopback control-plane MySQL endpoints are normalized to `host.docker.internal` for application containers.
