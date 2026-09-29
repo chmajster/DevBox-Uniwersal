@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,6 +33,43 @@ func TestEnsureNetworkCreatesOnceAndIsIdempotent(t *testing.T) {
 	}
 	if creates != 1 {
 		t.Fatalf("expected one network create, got %d calls: %#v", creates, runner.calls)
+	}
+}
+
+
+func TestCommandErrorClassifiesDockerNetworkNotFoundVariant(t *testing.T) {
+	err := commandError("docker", "Error response from daemon: network devbox-apps not found", errors.New("exit status 1"))
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("network not-found variant must map to ErrNotFound, got %v", err)
+	}
+}
+
+func TestConnectNetworkRecreatesMissingNetworkAndRetries(t *testing.T) {
+	runner := &stubRunner{responses: []runnerResponse{
+		{
+			stderr: "Error response from daemon: network devbox-apps not found",
+			err:    fmt.Errorf("%w: network devbox-apps not found", ErrNotFound),
+		},
+		{err: fmt.Errorf("%w: missing", ErrNotFound)},
+		{stdout: "network-id\n"},
+		{},
+	}}
+	provider := newCLIProviderWithRunner(runner)
+	if err := provider.ConnectNetwork(context.Background(), "abc123", "devbox-apps"); err != nil {
+		t.Fatal(err)
+	}
+
+	var creates, connects int
+	for _, call := range runner.calls {
+		switch strings.Join(call, "|") {
+		case "network|create|devbox-apps":
+			creates++
+		case "network|connect|devbox-apps|abc123":
+			connects++
+		}
+	}
+	if creates != 1 || connects != 2 {
+		t.Fatalf("expected one recreate and two connect attempts, got creates=%d connects=%d calls=%#v", creates, connects, runner.calls)
 	}
 }
 
