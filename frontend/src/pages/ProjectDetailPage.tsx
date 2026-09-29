@@ -4,7 +4,7 @@ import { apiURL, request } from '../api/client'
 import { listLogs, logQuery } from '../api/operations'
 import type { Deployment, GitState, Job, LogEntry, Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
-import { DirectoryPicker } from '../components/DirectoryPicker'
+import { DirectoryPathField } from '../components/DirectoryPathField'
 import { ProjectRuntimeSection } from '../runtime/ProjectRuntimeSection'
 import { ProjectDatabaseSection } from '../runtime/ProjectDatabaseSection'
 import { ProjectPortsSection } from '../runtime/ProjectPortsSection'
@@ -82,7 +82,6 @@ export function ProjectDetailPage() {
   const [tab, setTab] = useState<Tab>(() => tabFromParam(searchParams.get('tab')))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
-  const [directoryBrowserOpen, setDirectoryBrowserOpen] = useState(false)
   const [config, setConfig] = useState({ local_path: '', runtime: '', working_directory: '', build_command: '', start_command: '', healthcheck: '', auto_start: false })
 
   function syncConfig(item: Project) {
@@ -259,7 +258,6 @@ export function ProjectDetailPage() {
       const updated = await request<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(config) })
       setProject(updated)
       syncConfig(updated)
-      setDirectoryBrowserOpen(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Save failed')
     } finally {
@@ -407,33 +405,17 @@ export function ProjectDetailPage() {
           <span className="muted small">Zmiana technologii zeruje wersję runtime i usuwa moduły należące do poprzedniej technologii. Szczegółową konfigurację ustawisz w zakładce Runtime.</span>
         </label>
 
-        <div className="span-2 path-picker-field">
-          <label htmlFor="project-local-path">Ścieżka do aplikacji</label>
-          <div className="path-picker-row">
-            <input
-              id="project-local-path"
-              disabled={user?.role === 'viewer' || project.source_type !== 'local'}
-              value={config.local_path}
-              onChange={(e) => setConfig({ ...config, local_path: e.target.value })}
-              required={project.source_type === 'local'}
-            />
-            {project.source_type === 'local' && user?.role !== 'viewer' && <button type="button" className="secondary" onClick={() => setDirectoryBrowserOpen((open) => !open)}>
-              {directoryBrowserOpen ? 'Ukryj drzewko' : 'Przeglądaj…'}
-            </button>}
-          </div>
-          <span className="muted small">
-            {project.source_type === 'local'
-              ? 'Podaj istniejący katalog aplikacji. Ścieżka jest walidowana i zapisywana po stronie backendu.'
-              : 'Dla źródeł Git i pustych projektów katalog jest zarządzany przez DevBox i nie można go zmienić ręcznie.'}
-          </span>
-        </div>
-        {project.source_type === 'local' && directoryBrowserOpen && <div className="span-2">
-          <DirectoryPicker
-            value={config.local_path}
-            onSelect={(path) => setConfig({ ...config, local_path: path })}
-            onClose={() => setDirectoryBrowserOpen(false)}
-          />
-        </div>}
+        <DirectoryPathField
+          id="project-local-path"
+          label="Ścieżka do aplikacji"
+          disabled={user?.role === 'viewer' || project.source_type !== 'local'}
+          value={config.local_path}
+          onChange={(path) => setConfig({ ...config, local_path: path })}
+          required={project.source_type === 'local'}
+          helpText={project.source_type === 'local'
+            ? 'Podaj istniejący katalog aplikacji. Ścieżka jest walidowana po stronie backendu, a drzewo i pole pozostają zsynchronizowane.'
+            : 'Dla źródeł Git i pustych projektów katalog jest zarządzany przez DevBox i nie można go zmienić ręcznie.'}
+        />
 
         <label className="span-2">Working directory<input disabled={user?.role === 'viewer'} value={config.working_directory} onChange={(e) => setConfig({ ...config, working_directory: e.target.value })} /></label>
         <label className="span-2">Build command (własny Docker/Compose)<input disabled={user?.role === 'viewer'} value={config.build_command} onChange={(e) => setConfig({ ...config, build_command: e.target.value })} /></label>

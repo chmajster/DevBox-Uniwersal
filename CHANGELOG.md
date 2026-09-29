@@ -15,6 +15,13 @@
 
 ## Unreleased
 
+### Synchronized application path picker
+
+- Unified the application path input and directory tree into one synchronized component used by both project creation and application Settings.
+- Opening the tree now validates the current path, lazily expands every existing directory segment, selects the target directory and scrolls it into view.
+- Added backend-powered path autocomplete with a 250 ms debounce, keyboard navigation and a 20-directory result cap without recursive filesystem scans.
+- Path suggestions and tree expansion reuse the configured browse roots, reject parent traversal and do not expose symlink escapes outside allowlisted roots.
+
 ### Application technology and source path editing
 
 - Added application Settings controls for changing the selected runtime/technology and, for local-source projects, the application source directory.

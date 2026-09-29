@@ -58,6 +58,20 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) browseDirectories(w http.ResponseWriter, r *http.Request) {
+	if values, ok := r.URL.Query()["suggest"]; ok {
+		requestedPath := ""
+		if len(values) > 0 {
+			requestedPath = values[0]
+		}
+		suggestions, err := m.service.SuggestDirectories(requestedPath)
+		if err != nil {
+			m.fail(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, suggestions)
+		return
+	}
+
 	requestedPath := r.URL.Query().Get("path")
 	listing, err := m.service.BrowseDirectories(requestedPath)
 	if err != nil {
