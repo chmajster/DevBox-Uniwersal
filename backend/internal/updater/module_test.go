@@ -81,7 +81,6 @@ func TestUpdateServiceStateRunning(t *testing.T) {
 	}
 }
 
-
 func TestReadUpdateLogTailLimitsAndRedacts(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "devbox-update.log")
 	raw := "old line\npassword=hunter2\nAuthorization: Bearer abc.def.ghi\nnpm ERR! build failed\n"
@@ -112,7 +111,6 @@ func TestSanitizeUpdateLogLineRedactsMySQLPassword(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
-
 
 func TestFailureDetailFromLogTailSkipsUpdaterSummary(t *testing.T) {
 	lines := []string{
