@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -103,6 +104,88 @@ func (h *PrivilegedHelper) RestartService(ctx context.Context, service string) e
 		return fmt.Errorf("%w: service %q", ErrOperationNotAllowed, service)
 	}
 	return h.run(ctx, "systemctl", "restart", unit)
+}
+
+func (h *PrivilegedHelper) ConfigureApplicationDatabase(ctx context.Context, engine string, port int) error {
+	if port < 1024 || port > 65535 {
+		return fmt.Errorf("%w: invalid application database port %d", ErrOperationNotAllowed, port)
+	}
+	engine = strings.ToLower(strings.TrimSpace(engine))
+	var script string
+	switch engine {
+	case "mysql", "mariadb":
+		script = mysqlApplicationDatabaseScript(port)
+	case "postgresql", "postgres":
+		script = postgreSQLApplicationDatabaseScript(port)
+	default:
+		return fmt.Errorf("%w: application database engine %q", ErrOperationNotAllowed, engine)
+	}
+
+	if _, err := h.runner.LookPath("systemd-run"); err == nil {
+		return h.run(ctx, "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "/bin/sh", "-c", script)
+	}
+	return h.run(ctx, "sh", "-c", script)
+}
+
+func mysqlApplicationDatabaseScript(port int) string {
+	return fmt.Sprintf(`set -eu
+install -d -m 0755 /etc/mysql/conf.d
+cat > /etc/mysql/conf.d/99-devbox-application.cnf <<'EOF'
+# Managed by DevBox Universal.
+# This host database is reserved for application workloads; DevBox control-plane data does not use it.
+[mysqld]
+port=%d
+bind-address=0.0.0.0
+EOF
+chmod 0644 /etc/mysql/conf.d/99-devbox-application.cnf
+if command -v systemctl >/dev/null 2>&1; then
+  if systemctl cat mysql.service >/dev/null 2>&1; then
+    systemctl enable --now mysql.service
+    systemctl restart mysql.service
+  elif systemctl cat mariadb.service >/dev/null 2>&1; then
+    systemctl enable --now mariadb.service
+    systemctl restart mariadb.service
+  fi
+fi
+`, port)
+}
+
+func postgreSQLApplicationDatabaseScript(port int) string {
+	return fmt.Sprintf(`set -eu
+command -v pg_lsclusters >/dev/null 2>&1
+command -v pg_conftool >/dev/null 2>&1
+set -- $(pg_lsclusters --no-header | awk 'NR==1 {print $1, $2; exit}')
+[ "$#" -eq 2 ]
+version="$1"
+cluster="$2"
+pg_conftool "$version" "$cluster" set port %d
+pg_conftool "$version" "$cluster" set listen_addresses '*'
+hba="/etc/postgresql/$version/$cluster/pg_hba.conf"
+marker="# DevBox application containers"
+if ! grep -Fq "$marker" "$hba"; then
+  cat >> "$hba" <<'EOF'
+
+# DevBox application containers
+host all all 172.16.0.0/12 scram-sha-256
+host all all 10.0.0.0/8 scram-sha-256
+host all all 192.168.0.0/16 scram-sha-256
+EOF
+fi
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl enable --now postgresql.service
+  systemctl restart postgresql.service
+else
+  pg_ctlcluster "$version" "$cluster" restart
+fi
+`, port)
+}
+
+func ParseApplicationDatabasePort(value string) (int, error) {
+	port, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || port < 1024 || port > 65535 {
+		return 0, fmt.Errorf("%w: invalid application database port", ErrOperationNotAllowed)
+	}
+	return port, nil
 }
 
 func (h *PrivilegedHelper) ValidateNginx(ctx context.Context) error {
