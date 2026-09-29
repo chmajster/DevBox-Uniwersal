@@ -7,6 +7,7 @@ import { effectiveRuntimeName, preparePHPModuleConfig, updatePHPModuleSelection 
 
 interface Props {
   projectId: string
+  showPorts?: boolean
 }
 
 const runtimeOptions = [
@@ -26,7 +27,7 @@ const emptyConfig: RuntimeContainerConfig = {
   modules: [],
 }
 
-export function ProjectRuntimeSection({ projectId }: Props) {
+export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
   const { user } = useAuth()
   const [runtime, setRuntime] = useState<ProjectRuntimeInfo | null>(null)
   const [config, setConfig] = useState<RuntimeContainerConfig>({ ...emptyConfig, project_id: projectId })
@@ -191,5 +192,5 @@ export function ProjectRuntimeSection({ projectId }: Props) {
         {filteredCatalog.length === 0 && <p className="muted">Brak modułów PHP pasujących do wyszukiwania.</p>}
       </div>
     </div>}
-  </section><ProjectPortsSection key={projectId} projectId={projectId} /></>
+  </section>{showPorts && <ProjectPortsSection key={projectId} projectId={projectId} />}</>
 }
