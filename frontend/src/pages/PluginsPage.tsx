@@ -296,7 +296,7 @@ export function PluginsPage() {
         {mysql?.host && mysql?.port && <p className="muted small">Adres hosta: <code>{mysql.host}:{mysql.port}</code></p>}
         {mysql?.container_host && mysql?.port && <p className="muted small">Adres z kontenera: <code>{mysql.container_host}:{mysql.port}</code></p>}
         {mysql?.message && <p className="muted small">{mysql.message}</p>}
-        <p className="muted small">Instalacja hostowa nie zastępuje zarządzanego MySQL DevBox (<code>devbox-mysql</code>). Dla dostępu z kontenera wybierz w projekcie „Połącz z MySQL na hoście”.</p>
+        <p className="muted small">Instalacja hostowa nie zastępuje zarządzanego MySQL DevBox (<code>devbox-mysql</code>). Dla dostępu z kontenera wybierz w projekcie „Połącz z MySQL na hoście”. Instalator nie otwiera MySQL na wszystkie interfejsy i nie zmienia grantów użytkowników — <code>bind-address</code> oraz uprawnienia skonfiguruj świadomie po stronie serwera.</p>
 
         <div className="actions">
           {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
