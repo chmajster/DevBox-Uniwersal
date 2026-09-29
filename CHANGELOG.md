@@ -15,6 +15,15 @@
 
 ## Unreleased
 
+### Docker container organization
+
+- changed the Docker Containers tab from one flat table to expandable application cards,
+- Compose containers are grouped by the real `com.docker.compose.project` label and managed DevBox containers by `io.devbox.project`, avoiding unreliable name-prefix guessing,
+- DevBox-owned infrastructure containers are grouped separately and unassigned containers remain visible in a fallback card,
+- each card summarizes running/stopped counts while preserving Logs/Start/Stop/Restart for every individual container,
+- added backend parsing and frontend grouping regressions for Compose projects, managed applications, infrastructure and independent containers.
+
+
 ### Directory picker parser fix
 
 - Removed accidental escape characters from JSX/TypeScript template literals in `DirectoryPicker.tsx`, restoring ESLint parsing and frontend compilation after the tree-view UI merge.
