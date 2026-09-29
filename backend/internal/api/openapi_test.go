@@ -19,6 +19,8 @@ func TestOpenAPISpecContainsCoreAndModuleRoutes(t *testing.T) {
 		"/api/v1/docker/containers",
 		"/api/v1/plugins/mysql/status",
 		"/api/v1/plugins/mysql/install",
+		"/api/v1/plugins/postgresql/status",
+		"/api/v1/plugins/postgresql/install",
 		"/api/v1/plugins/databases/host",
 		"/api/v1/health-checks",
 		"/api/v1/logs/export",
@@ -66,5 +68,28 @@ func TestOpenAPIHostMySQLPluginRoles(t *testing.T) {
 	post, ok := installPath["post"].(map[string]any)
 	if !ok || post["x-devbox-min-role"] != "admin" {
 		t.Fatalf("POST host MySQL install role = %#v", post["x-devbox-min-role"])
+	}
+}
+
+func TestOpenAPIPostgreSQLPluginRoles(t *testing.T) {
+	spec := buildOpenAPISpec("test")
+	paths := spec["paths"].(map[string]any)
+
+	statusPath, ok := paths["/api/v1/plugins/postgresql/status"].(map[string]any)
+	if !ok {
+		t.Fatal("PostgreSQL plugin status path missing")
+	}
+	get, ok := statusPath["get"].(map[string]any)
+	if !ok || get["x-devbox-min-role"] != "viewer" {
+		t.Fatalf("GET PostgreSQL plugin status role = %#v", get["x-devbox-min-role"])
+	}
+
+	installPath, ok := paths["/api/v1/plugins/postgresql/install"].(map[string]any)
+	if !ok {
+		t.Fatal("PostgreSQL plugin install path missing")
+	}
+	post, ok := installPath["post"].(map[string]any)
+	if !ok || post["x-devbox-min-role"] != "admin" {
+		t.Fatalf("POST PostgreSQL plugin install role = %#v", post["x-devbox-min-role"])
 	}
 }
