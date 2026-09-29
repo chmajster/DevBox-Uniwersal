@@ -116,3 +116,87 @@ func TestBrowseDirectoriesDoesNotExposeSymlinkEscape(t *testing.T) {
 		}
 	}
 }
+
+
+func TestSuggestDirectoriesFiltersRealChildDirectories(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"Documents", "Downloads", "Other"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "Document.txt"), []byte("ignored"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	suggestions, err := suggestDirectories(filepath.Join(root, "Doc"), []string{root}, 20)
+	if err != nil {
+		t.Fatalf("suggestDirectories() error = %v", err)
+	}
+	if len(suggestions.Items) != 1 {
+		t.Fatalf("suggestions = %#v, want exactly one directory", suggestions.Items)
+	}
+	if suggestions.Items[0].Name != "Documents" || suggestions.Items[0].Path != filepath.Join(root, "Documents") {
+		t.Fatalf("unexpected suggestion: %#v", suggestions.Items[0])
+	}
+}
+
+func TestSuggestDirectoriesListsChildrenAfterTrailingSeparator(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"alpha", "beta"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	suggestions, err := suggestDirectories(root+string(filepath.Separator), []string{root}, 20)
+	if err != nil {
+		t.Fatalf("suggestDirectories() error = %v", err)
+	}
+	if len(suggestions.Items) != 2 {
+		t.Fatalf("suggestions = %#v, want two directories", suggestions.Items)
+	}
+}
+
+func TestSuggestDirectoriesCanCompleteConfiguredRootWithoutScanningItsParent(t *testing.T) {
+	root := t.TempDir()
+	if len(root) < 2 {
+		t.Skip("temporary path is unexpectedly short")
+	}
+	query := root[:len(root)-1]
+
+	suggestions, err := suggestDirectories(query, []string{root}, 20)
+	if err != nil {
+		t.Fatalf("suggestDirectories() error = %v", err)
+	}
+	if len(suggestions.Items) != 1 || suggestions.Items[0].Path != root {
+		t.Fatalf("unexpected root suggestions: %#v", suggestions.Items)
+	}
+}
+
+func TestSuggestDirectoriesRejectsParentTraversal(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "child") + string(filepath.Separator) + ".." + string(filepath.Separator)
+	if _, err := suggestDirectories(path, []string{root}, 20); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestSuggestDirectoriesDoesNotExposeSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation can require additional privileges on Windows")
+	}
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+
+	suggestions, err := suggestDirectories(filepath.Join(root, "esc"), []string{root}, 20)
+	if err != nil {
+		t.Fatalf("suggestDirectories() error = %v", err)
+	}
+	if len(suggestions.Items) != 0 {
+		t.Fatalf("symlink escaping configured root must not be suggested: %#v", suggestions.Items)
+	}
+}
