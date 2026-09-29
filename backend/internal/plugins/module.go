@@ -5,15 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
@@ -73,19 +70,6 @@ type PostgreSQLStatus struct {
 	Message       string `json:"message,omitempty"`
 }
 
-type HostDatabaseInstance struct {
-	ID        string   `json:"id"`
-	Engine    string   `json:"engine"`
-	Label     string   `json:"label"`
-	Host      string   `json:"host"`
-	HostIPs   []string `json:"host_ips,omitempty"`
-	Port      int      `json:"port"`
-	Installed bool     `json:"installed"`
-	Running   bool     `json:"running"`
-	Version   string   `json:"version,omitempty"`
-	Source    string   `json:"source,omitempty"`
-}
-
 type dockerDatabaseServer interface {
 	Action(context.Context, string) error
 	ContainerState(context.Context) (bool, bool, error)
@@ -97,13 +81,11 @@ type dockerDatabaseServer interface {
 }
 
 type Service struct {
-	helperBinary      string
-	sudoBinary        string
-	jobs              jobs.JobRunner
-	reservedHostPorts map[int]string
-	mysqlDetector     func(context.Context) (HostDatabaseInstance, bool)
-	mysqlServer       dockerDatabaseServer
-	postgresqlServer  dockerDatabaseServer
+	helperBinary     string
+	sudoBinary       string
+	jobs             jobs.JobRunner
+	mysqlServer      dockerDatabaseServer
+	postgresqlServer dockerDatabaseServer
 }
 
 type ServiceOption func(*Service)
@@ -126,30 +108,10 @@ func WithPostgreSQLDatabaseServer(server dockerDatabaseServer) ServiceOption {
 	}
 }
 
-func WithReservedHostPort(port int, owner string) ServiceOption {
-	return func(service *Service) {
-		if port < 1 || port > 65535 {
-			return
-		}
-		if service.reservedHostPorts == nil {
-			service.reservedHostPorts = make(map[int]string)
-		}
-		service.reservedHostPorts[port] = strings.TrimSpace(owner)
-	}
-}
-
-func withMySQLDetector(detector func(context.Context) (HostDatabaseInstance, bool)) ServiceOption {
-	return func(service *Service) {
-		service.mysqlDetector = detector
-	}
-}
-
 func NewService(helperBinary, sudoBinary string, options ...ServiceOption) *Service {
 	service := &Service{
-		helperBinary:      strings.TrimSpace(helperBinary),
-		sudoBinary:        strings.TrimSpace(sudoBinary),
-		reservedHostPorts: make(map[int]string),
-		mysqlDetector:     detectHostMySQL,
+		helperBinary: strings.TrimSpace(helperBinary),
+		sudoBinary:   strings.TrimSpace(sudoBinary),
 	}
 	for _, option := range options {
 		if option != nil {
@@ -237,23 +199,6 @@ func (s *Service) installSystemPackage(ctx context.Context, component string) er
 		sudo = "sudo"
 	}
 	cmd := exec.CommandContext(ctx, sudo, s.helperBinary, "install-package", component)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		message := strings.TrimSpace(string(out))
-		if message == "" {
-			message = err.Error()
-		}
-		return errors.New(message)
-	}
-	return nil
-}
-
-func (s *Service) restartSystemService(ctx context.Context, component string) error {
-	sudo := s.sudoBinary
-	if sudo == "" {
-		sudo = "sudo"
-	}
-	cmd := exec.CommandContext(ctx, sudo, s.helperBinary, "restart-service", component)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(out))
@@ -433,245 +378,6 @@ func (s *Service) PostgreSQLAction(ctx context.Context, action string) (PostgreS
 	return status, nil
 }
 
-func (s *Service) HostDatabases(ctx context.Context) []HostDatabaseInstance {
-	instances := make([]HostDatabaseInstance, 0, 4)
-	if mysql, ok := detectHostMySQL(ctx); ok {
-		instances = append(instances, mysql)
-	}
-	instances = append(instances, detectHostPostgreSQL(ctx)...)
-	hostIPs := hostInterfaceIPs()
-	for i := range instances {
-		instances[i].HostIPs = append([]string(nil), hostIPs...)
-	}
-	sort.Slice(instances, func(i, j int) bool {
-		if instances[i].Engine == instances[j].Engine {
-			return instances[i].Port < instances[j].Port
-		}
-		return instances[i].Engine < instances[j].Engine
-	})
-	return instances
-}
-
-func hostInterfaceIPs() []string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return nil
-	}
-	return normalizeHostIPs(addrs)
-}
-
-func normalizeHostIPs(addrs []net.Addr) []string {
-	seen := make(map[string]struct{})
-	result := make([]string, 0, len(addrs))
-	for _, addr := range addrs {
-		if addr == nil {
-			continue
-		}
-		value := strings.TrimSpace(addr.String())
-		if value == "" {
-			continue
-		}
-		if ip, _, err := net.ParseCIDR(value); err == nil {
-			value = ip.String()
-		}
-		ip := net.ParseIP(strings.Trim(value, "[]"))
-		if ip == nil || !ip.IsGlobalUnicast() || ip.IsLoopback() || ip.IsUnspecified() {
-			continue
-		}
-		normalized := ip.String()
-		if _, exists := seen[normalized]; exists {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		result = append(result, normalized)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		left4 := net.ParseIP(result[i]).To4() != nil
-		right4 := net.ParseIP(result[j]).To4() != nil
-		if left4 != right4 {
-			return left4
-		}
-		return result[i] < result[j]
-	})
-	return result
-}
-
-func detectHostMySQL(ctx context.Context) (HostDatabaseInstance, bool) {
-	path, err := findMySQLServer()
-	if err != nil {
-		return HostDatabaseInstance{}, false
-	}
-	version := ""
-	if out, versionErr := exec.CommandContext(ctx, path, "--version").CombinedOutput(); versionErr == nil {
-		version = firstLine(string(out))
-	}
-	engine := "mysql"
-	label := "MySQL"
-	lower := strings.ToLower(path + " " + version)
-	if strings.Contains(lower, "mariadb") {
-		engine = "mariadb"
-		label = "MariaDB"
-	}
-	const port = 3306
-	return HostDatabaseInstance{
-		ID:        engine + ":host:" + strconv.Itoa(port),
-		Engine:    engine,
-		Label:     label,
-		Host:      "host.docker.internal",
-		Port:      port,
-		Installed: true,
-		Running:   hostMySQLDaemonRunning(ctx, engine) && hostTCPPortOpen(port),
-		Version:   version,
-		Source:    path,
-	}, true
-}
-
-func detectHostPostgreSQL(ctx context.Context) []HostDatabaseInstance {
-	psql, err := exec.LookPath("psql")
-	if err != nil {
-		return nil
-	}
-	if _, serverErr := findPostgreSQLServer(); serverErr != nil {
-		return nil
-	}
-	version := ""
-	if out, versionErr := exec.CommandContext(ctx, psql, "--version").CombinedOutput(); versionErr == nil {
-		version = firstLine(string(out))
-	}
-	if pgClusters, clustersErr := exec.LookPath("pg_lsclusters"); clustersErr == nil {
-		if out, runErr := exec.CommandContext(ctx, pgClusters, "--no-header").CombinedOutput(); runErr == nil {
-			if clusters := parsePostgreSQLClusters(string(out), version); len(clusters) > 0 {
-				return clusters
-			}
-		}
-	}
-	const port = 5432
-	return []HostDatabaseInstance{{
-		ID:        "postgresql:host:" + strconv.Itoa(port),
-		Engine:    "postgresql",
-		Label:     "PostgreSQL",
-		Host:      "host.docker.internal",
-		Port:      port,
-		Installed: true,
-		Running:   hostTCPPortOpen(port),
-		Version:   version,
-		Source:    psql,
-	}}
-}
-
-func parsePostgreSQLClusters(raw, version string) []HostDatabaseInstance {
-	var result []HostDatabaseInstance
-	for _, line := range strings.Split(raw, "\n") {
-		fields := strings.Fields(strings.TrimSpace(line))
-		if len(fields) < 4 {
-			continue
-		}
-		port, err := strconv.Atoi(fields[2])
-		if err != nil || port < 1 || port > 65535 {
-			continue
-		}
-		clusterVersion := fields[0]
-		clusterName := fields[1]
-		status := strings.ToLower(fields[3])
-		label := "PostgreSQL " + clusterVersion
-		if clusterName != "" {
-			label += " / " + clusterName
-		}
-		result = append(result, HostDatabaseInstance{
-			ID:        "postgresql:" + clusterVersion + ":" + clusterName + ":" + strconv.Itoa(port),
-			Engine:    "postgresql",
-			Label:     label,
-			Host:      "host.docker.internal",
-			Port:      port,
-			Installed: true,
-			Running:   status == "online",
-			Version:   version,
-			Source:    "pg_lsclusters",
-		})
-	}
-	return result
-}
-
-func findMySQLServer() (string, error) {
-	for _, candidate := range []string{"mysqld", "mariadbd"} {
-		if path, err := exec.LookPath(candidate); err == nil {
-			return path, nil
-		}
-	}
-	for _, candidate := range []string{
-		"/usr/sbin/mysqld",
-		"/usr/sbin/mariadbd",
-		"/usr/local/mysql/bin/mysqld",
-		"/usr/local/sbin/mysqld",
-	} {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-			return candidate, nil
-		}
-	}
-	return "", errors.New("mysql server executable not found")
-}
-
-func hostMySQLDaemonRunning(ctx context.Context, engine string) bool {
-	units := []string{"mysql.service", "mariadb.service"}
-	services := []string{"mysql", "mariadb"}
-	if strings.EqualFold(engine, "mariadb") {
-		units = []string{"mariadb.service", "mysql.service"}
-		services = []string{"mariadb", "mysql"}
-	}
-	if systemctl, err := exec.LookPath("systemctl"); err == nil {
-		for _, unit := range units {
-			if exec.CommandContext(ctx, systemctl, "is-active", "--quiet", unit).Run() == nil {
-				return true
-			}
-		}
-	}
-	if service, err := exec.LookPath("service"); err == nil {
-		for _, name := range services {
-			if exec.CommandContext(ctx, service, name, "status").Run() == nil {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func hostTCPPortOpen(port int) bool {
-	if port < 1 || port > 65535 {
-		return false
-	}
-	connection, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 250*time.Millisecond)
-	if err != nil {
-		return false
-	}
-	_ = connection.Close()
-	return true
-}
-
-func findPostgreSQLServer() (string, error) {
-	if pgConfig, err := exec.LookPath("pg_config"); err == nil {
-		if out, runErr := exec.Command(pgConfig, "--bindir").CombinedOutput(); runErr == nil {
-			path := filepath.Join(strings.TrimSpace(string(out)), "postgres")
-			if info, statErr := os.Stat(path); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-				return path, nil
-			}
-		}
-	}
-	var discovered []string
-	for _, pattern := range []string{"/usr/lib/postgresql/*/bin/postgres", "/usr/local/pgsql/bin/postgres"} {
-		matches, _ := filepath.Glob(pattern)
-		for _, match := range matches {
-			if info, err := os.Stat(match); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-				discovered = append(discovered, match)
-			}
-		}
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(discovered)))
-	if len(discovered) > 0 {
-		return discovered[0], nil
-	}
-	return "", errors.New("postgres server executable not found")
-}
-
 func (s *Service) InstallPHPFPM(ctx context.Context) (PHPFPMStatus, error) {
 	if status := s.PHPFPMStatus(ctx); status.Installed {
 		return status, nil
@@ -756,7 +462,6 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("GET /api/v1/plugins/postgresql/status", viewer(m.postgreSQLStatus))
 	mux.Handle("POST /api/v1/plugins/postgresql/install", admin(m.installPostgreSQL))
 	mux.Handle("POST /api/v1/plugins/postgresql/{action}", admin(m.postgreSQLAction))
-	mux.Handle("GET /api/v1/plugins/databases/host", viewer(m.hostDatabases))
 	mux.Handle("GET /api/v1/plugins/php/extensions", viewer(m.phpExtensions))
 	mux.Handle("POST /api/v1/plugins/php/extensions/install", admin(m.installPHPExtensions))
 }
@@ -825,10 +530,6 @@ func (m *Module) mySQLAction(w http.ResponseWriter, r *http.Request) {
 		}, nil)
 	}
 	writeData(w, http.StatusAccepted, job)
-}
-
-func (m *Module) hostDatabases(w http.ResponseWriter, r *http.Request) {
-	writeData(w, http.StatusOK, m.service.HostDatabases(r.Context()))
 }
 
 func (m *Module) postgreSQLStatus(w http.ResponseWriter, r *http.Request) {

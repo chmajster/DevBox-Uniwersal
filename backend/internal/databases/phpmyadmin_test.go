@@ -12,7 +12,7 @@ func TestDockerMySQLTarget(t *testing.T) {
 		{name: "ipv4 loopback", input: "127.0.0.1", wantHost: "host.docker.internal", wantGateway: true},
 		{name: "localhost", input: "localhost", wantHost: "host.docker.internal", wantGateway: true},
 		{name: "ipv6 loopback", input: "::1", wantHost: "host.docker.internal", wantGateway: true},
-		{name: "remote mysql", input: "mysql.internal", wantHost: "mysql.internal", wantGateway: false},
+		{name: "managed mysql", input: "devbox-mysql", wantHost: "devbox-mysql", wantGateway: false},
 	}
 
 	for _, tt := range tests {
@@ -25,7 +25,7 @@ func TestDockerMySQLTarget(t *testing.T) {
 	}
 }
 
-func TestPHPMyAdminRuntimeIncludesManagedAndHostMySQL(t *testing.T) {
+func TestPHPMyAdminRuntimeUsesManagedMySQLContainer(t *testing.T) {
 	manager := NewPHPMyAdminManager(PHPMyAdminConfig{
 		MySQLHost: "devbox-mysql",
 		MySQLPort: 3306,
@@ -35,36 +35,34 @@ func TestPHPMyAdminRuntimeIncludesManagedAndHostMySQL(t *testing.T) {
 	if environment["PMA_ARBITRARY"] != "1" {
 		t.Fatalf("PMA_ARBITRARY = %q, want 1", environment["PMA_ARBITRARY"])
 	}
-	if environment["PMA_HOSTS"] != "devbox-mysql,host.docker.internal" {
-		t.Fatalf("PMA_HOSTS = %q", environment["PMA_HOSTS"])
+	if environment["PMA_HOST"] != "devbox-mysql" || environment["PMA_PORT"] != "3306" {
+		t.Fatalf("unexpected managed MySQL target: %#v", environment)
 	}
-	if environment["PMA_PORTS"] != "3306,3306" {
-		t.Fatalf("PMA_PORTS = %q", environment["PMA_PORTS"])
+	if _, exists := environment["PMA_HOSTS"]; exists {
+		t.Fatalf("managed runtime must not inject legacy host database targets: %#v", environment)
 	}
 
 	args := manager.createArgs()
-	if !containsAdjacent(args, "--add-host", "host.docker.internal:host-gateway") {
-		t.Fatalf("phpMyAdmin create args do not expose Docker host gateway: %#v", args)
+	if containsAdjacent(args, "--add-host", "host.docker.internal:host-gateway") {
+		t.Fatalf("managed phpMyAdmin must not require the Docker host gateway: %#v", args)
 	}
 	if !containsAdjacent(args, "--network", "devbox-apps") {
 		t.Fatalf("phpMyAdmin create args lost managed MySQL network: %#v", args)
 	}
 }
 
-func TestPHPMyAdminRuntimeHostMySQLDoesNotDuplicateTarget(t *testing.T) {
+func TestPHPMyAdminLegacyLoopbackTargetAddsGatewayOnlyWhenNeeded(t *testing.T) {
 	manager := NewPHPMyAdminManager(PHPMyAdminConfig{
 		MySQLHost: "127.0.0.1",
 		MySQLPort: 3306,
 	})
 	environment := manager.requiredEnvironment()
 	if environment["PMA_HOST"] != "host.docker.internal" || environment["PMA_PORT"] != "3306" {
-		t.Fatalf("unexpected direct host environment: %#v", environment)
+		t.Fatalf("unexpected legacy host target: %#v", environment)
 	}
-	if _, exists := environment["PMA_HOSTS"]; exists {
-		t.Fatalf("host target must not be duplicated: %#v", environment)
-	}
-	if environment["PMA_ARBITRARY"] != "1" {
-		t.Fatalf("arbitrary server login must remain enabled: %#v", environment)
+	args := manager.createArgs()
+	if !containsAdjacent(args, "--add-host", "host.docker.internal:host-gateway") {
+		t.Fatalf("loopback compatibility target requires host-gateway mapping: %#v", args)
 	}
 }
 

@@ -89,7 +89,6 @@ var documentedRoutes = []documentedRoute{
 	{"GET", "/api/v1/plugins/postgresql/status", "Docker PostgreSQL plugin status", "viewer"},
 	{"POST", "/api/v1/plugins/postgresql/install", "Queue Docker PostgreSQL installation", "admin"},
 	{"POST", "/api/v1/plugins/postgresql/{action}", "Start, stop, restart or uninstall Docker PostgreSQL", "admin"},
-	{"GET", "/api/v1/plugins/databases/host", "Discover host database instances", "viewer"},
 	{"GET", "/api/v1/mysql/status", "MySQL status", "viewer"},
 	{"POST", "/api/v1/mysql/{action}", "Install, start, stop or restart managed MySQL", "operator"},
 	{"GET", "/api/v1/databases", "List databases", "viewer"},
