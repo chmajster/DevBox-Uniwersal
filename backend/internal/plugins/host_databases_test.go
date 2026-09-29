@@ -35,7 +35,6 @@ func TestParsePostgreSQLClustersRejectsInvalidPort(t *testing.T) {
 	}
 }
 
-
 type recordingPluginJobRunner struct {
 	requests []jobs.Request
 }
