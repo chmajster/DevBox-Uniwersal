@@ -34,20 +34,20 @@ The MySQL provider exposes separate endpoint semantics:
 
 Provisioning, users, grants, backup/restore and health administration use the admin endpoint. Runtime injection uses the application endpoint. Code must not infer application connectivity from the admin endpoint.
 
-### Managed MySQL lifecycle
+### Managed database server lifecycle
 
-New managed installations use:
+Database servers installed from Plugins are Docker-native:
 
-- container: `devbox-mysql`;
-- image: `mysql:8.4` by default;
-- external Docker network: `devbox-apps`;
-- persistent volume: `devbox-mysql-data`;
+- MySQL container: `devbox-mysql`, image `mysql:8.4` by default, persistent volume `devbox-mysql-data`, application endpoint `devbox-mysql:3306`;
+- PostgreSQL container: `devbox-postgresql`, image `postgres:17` by default, persistent volume `devbox-postgresql-data`, application endpoint `devbox-postgresql:5432`;
+- shared external Docker network: `devbox-apps` (configurable with `DEVBOX_APP_NETWORK`);
 - restart policy: `unless-stopped`;
-- admin publication bound to `127.0.0.1` only, on a dedicated configurable host port (default `13306`) so a host MySQL/MariaDB application service can use the conventional `3306` port independently.
+- MySQL control-plane administration remains loopback-only on a dedicated configurable host port (default `13306`);
+- PostgreSQL has no host port publication by default.
 
-Network, volume, image and container reconciliation are idempotent. The managed container carries DevBox-owned reconciliation labels; a configuration change such as the admin host-port split recreates only the container while retaining the named `devbox-mysql-data` volume and stored root secret. Standard restart never removes the persistent volume. The managed root credential is stored in SecretStore and is supplied to Docker through a mode-0600 temporary environment file rather than a command argument or image layer.
+Network, volume, image and container reconciliation are idempotent. Database administrative credentials are stored in SecretStore and supplied to Docker through protected temporary environment files rather than command arguments or image layers. Standard restart never removes persistent database volumes.
 
-Managed lifecycle mutations use the durable Job Engine. A clean installer uses managed MySQL and installs only a MySQL client on the host. Existing installations that predate this ADR and contain the old host-MySQL admin credential remain in legacy host mode on repair/update unless `DEVBOX_MYSQL_MANAGED=true` is explicitly selected; DevBox does not silently stop an existing host database server.
+Plugin install actions run through the durable Job Engine and perform Docker image/network/volume/container reconciliation. They do not install MySQL/MariaDB or PostgreSQL server packages on the host. Legacy host databases remain supported as external/host-access targets.
 
 ### Runtime environment and precedence
 
@@ -76,7 +76,7 @@ The user's Compose file remains authoritative and is never rewritten. DevBox sto
 3. deterministic application-service heuristics;
 4. otherwise an explicit UI selection is required.
 
-For Compose database mode the application receives the selected service DNS, e.g. `DB_HOST=db`. For managed mode the selected application service is additionally attached to the external `devbox-apps` network and receives `DB_HOST=devbox-mysql`.
+For Compose database mode the application receives the selected service DNS, e.g. `DB_HOST=db`. Independently of binding mode, every running service in a DevBox project-owned Compose deployment is attached to the external `devbox-apps` network after `compose up`. Managed and custom-Dockerfile application containers join the same network before start. Plugin database servers are therefore reachable from DevBox application containers by stable Docker DNS.
 
 Existing Docker Compose v2 / legacy `docker-compose` fallback remains intact. Commands use compatible `-p` / `-f` options and do not use the previously incompatible `--project-directory` or `--project-name` invocation.
 
