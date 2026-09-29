@@ -372,7 +372,7 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	database.Username = username
 	provider, err := s.engineFor(database.Engine)
 	if err != nil {
-		return ConnectionConfig{}, err
+		return ProvisionResult{}, err
 	}
 	host, port := provider.Endpoint()
 	if endpointEngine, ok := provider.(endpointDatabaseEngine); ok {
