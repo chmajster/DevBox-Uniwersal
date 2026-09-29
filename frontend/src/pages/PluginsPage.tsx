@@ -312,8 +312,8 @@ export function PluginsPage() {
       </div>
     </section>
 
-    <section className="panel phpmyadmin-panel">
-      <div>
+    <section className="panel database-plugin-panel">
+      <div className="database-plugin-copy">
         <div className="actions">
           <Icon name="database" size={24} />
           <div>
@@ -327,7 +327,7 @@ export function PluginsPage() {
         {mysql?.message && <p className="muted small">{mysql.message}</p>}
       </div>
 
-      <div className="phpmyadmin-status database-plugin-status">
+      <div className="database-plugin-center">
         {mysqlInstallProgress !== null && (
           <div className="phpmyadmin-install-progress" role="status" aria-live="polite">
             <div className="phpmyadmin-install-progress-header">
@@ -350,15 +350,6 @@ export function PluginsPage() {
           </div>
         )}
 
-        <div className="actions">
-          <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
-            {mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
-          </span>
-          {mysql?.installed && <span className="status-chip" data-ok={mysql.running ? 'true' : 'false'}>
-            {mysql.running ? 'Działa' : 'Nie odpowiada'}
-          </span>}
-        </div>
-
         {mysql?.installed && (
           <div className="database-plugin-meta">
             <div><span>Kontener</span><strong><code>{mysql.container_name ?? 'devbox-mysql'}</code></strong></div>
@@ -370,6 +361,17 @@ export function PluginsPage() {
             <div><span>PHP</span><strong>mysqli / PDO MySQL</strong></div>
           </div>
         )}
+      </div>
+
+      <div className="database-plugin-controls">
+        <div className="actions">
+          <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
+            {mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
+          </span>
+          {mysql?.installed && <span className="status-chip" data-ok={mysql.running ? 'true' : 'false'}>
+            {mysql.running ? 'Działa' : 'Nie odpowiada'}
+          </span>}
+        </div>
 
         <div className="actions">
           {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
@@ -407,8 +409,8 @@ export function PluginsPage() {
       </div>
     </section>
 
-    <section className="panel phpmyadmin-panel">
-      <div>
+    <section className="panel database-plugin-panel">
+      <div className="database-plugin-copy">
         <div className="actions">
           <Icon name="database" size={24} />
           <div>
@@ -422,16 +424,7 @@ export function PluginsPage() {
         {postgresql?.message && <p className="muted small">{postgresql.message}</p>}
       </div>
 
-      <div className="phpmyadmin-status database-plugin-status">
-        <div className="actions">
-          <span className="status-chip" data-ok={postgresql?.installed ? 'true' : 'false'}>
-            {postgresql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
-          </span>
-          {postgresql?.installed && <span className="status-chip" data-ok={postgresql.running ? 'true' : 'false'}>
-            {postgresql.running ? 'Działa' : 'Nie odpowiada'}
-          </span>}
-        </div>
-
+      <div className="database-plugin-center">
         {postgresql?.installed && (
           <div className="database-plugin-meta">
             <div><span>Kontener</span><strong><code>{postgresql.container_name ?? 'devbox-postgresql'}</code></strong></div>
@@ -443,6 +436,17 @@ export function PluginsPage() {
             <div><span>PHP</span><strong>pgsql / PDO PostgreSQL</strong></div>
           </div>
         )}
+      </div>
+
+      <div className="database-plugin-controls">
+        <div className="actions">
+          <span className="status-chip" data-ok={postgresql?.installed ? 'true' : 'false'}>
+            {postgresql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
+          </span>
+          {postgresql?.installed && <span className="status-chip" data-ok={postgresql.running ? 'true' : 'false'}>
+            {postgresql.running ? 'Działa' : 'Nie odpowiada'}
+          </span>}
+        </div>
 
         <div className="actions">
           {!postgresql?.installed && canInstallSystemPackages && postgresql?.installable && (

@@ -365,13 +365,29 @@ input:disabled { opacity: .65; cursor: not-allowed; }
 .phpmyadmin-panel p { margin: 6px 0 0; }
 .phpmyadmin-status { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
 
-.database-plugin-status {
-  min-width: min(620px, 100%);
-  max-width: 720px;
+.database-plugin-panel {
   display: grid;
-  justify-items: end;
+  grid-template-columns: minmax(300px, 1.2fr) minmax(360px, 520px) minmax(230px, auto);
+  gap: 24px;
+  align-items: center;
+}
+.database-plugin-copy { min-width: 0; }
+.database-plugin-center {
+  width: 100%;
+  max-width: 520px;
+  justify-self: center;
+  display: grid;
   gap: 10px;
 }
+.database-plugin-controls {
+  min-width: 230px;
+  align-self: stretch;
+  display: grid;
+  align-content: space-between;
+  justify-items: end;
+  gap: 14px;
+}
+.database-plugin-controls > .actions { justify-content: flex-end; }
 .database-plugin-meta {
   width: 100%;
   display: grid;
@@ -386,12 +402,27 @@ input:disabled { opacity: .65; cursor: not-allowed; }
 .database-plugin-meta span { color: var(--muted); font-size: 12px; }
 .database-plugin-meta strong { overflow-wrap: anywhere; }
 
+@media (max-width: 1100px) {
+  .database-plugin-panel {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+  .database-plugin-center {
+    max-width: none;
+    justify-self: stretch;
+  }
+  .database-plugin-controls {
+    min-width: 0;
+    align-self: auto;
+    justify-items: start;
+  }
+  .database-plugin-controls > .actions { justify-content: flex-start; }
+}
 @media (max-width: 900px) {
   .database-forms { grid-template-columns: 1fr; }
   .credential-card { grid-template-columns: 1fr; }
   .phpmyadmin-panel { align-items: flex-start; flex-direction: column; }
   .phpmyadmin-status { justify-content: flex-start; }
-  .database-plugin-status { min-width: 0; max-width: none; width: 100%; justify-items: start; }
 }
 @media (max-width: 560px) {
   .database-plugin-meta { grid-template-columns: 1fr; }
