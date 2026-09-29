@@ -77,8 +77,8 @@ func NewService(repo *Repository, engine databaseEngine, secretStore secrets.Sec
 		backupDir = "./data/backups/mysql"
 	}
 	service := &Service{
-		repo:       repo,
-		engine:     engine,
+		repo:   repo,
+		engine: engine,
 		engines: map[string]databaseEngine{
 			"mysql":   engine,
 			"mariadb": engine,
