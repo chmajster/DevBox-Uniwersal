@@ -188,6 +188,20 @@ func (m *PHPMyAdminManager) Restart(ctx context.Context) (PHPMyAdminStatus, erro
 	return m.Status(ctx)
 }
 
+func (m *PHPMyAdminManager) Uninstall(ctx context.Context) (PHPMyAdminStatus, error) {
+	status, err := m.Status(ctx)
+	if err != nil {
+		return PHPMyAdminStatus{}, err
+	}
+	if !status.Installed {
+		return status, nil
+	}
+	if err := m.run(ctx, "rm", "-f", m.cfg.Container); err != nil {
+		return PHPMyAdminStatus{}, fmt.Errorf("uninstall phpMyAdmin: %w", err)
+	}
+	return m.Status(ctx)
+}
+
 func (m *PHPMyAdminManager) createArgs() []string {
 	args := []string{"create", "--name", m.cfg.Container}
 	if m.cfg.Network != "" {
