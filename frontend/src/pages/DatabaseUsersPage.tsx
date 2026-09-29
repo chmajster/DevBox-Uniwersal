@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { request } from '../api/client'
-import type { DatabaseRecord, DatabaseUser, DatabaseUserCreateResult } from '../api/types'
+import type { DatabaseConnectionCredential, DatabaseRecord, DatabaseUser, DatabaseUserCreateResult, DatabaseUserPasswordResult } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { Modal } from '../components/Modal'
 
@@ -32,7 +32,7 @@ export function DatabaseUsersPage() {
   const [newPassword, setNewPassword] = useState('')
   const [editorMessage, setEditorMessage] = useState('')
   const [editorError, setEditorError] = useState('')
-  const [credential, setCredential] = useState<{ database: string; username: string; password: string } | null>(null)
+  const [credential, setCredential] = useState<DatabaseConnectionCredential | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -100,11 +100,7 @@ export function DatabaseUsersPage() {
           privileges,
         }),
       })
-      setCredential({
-        database: databaseById.get(databaseId)?.name ?? databaseId,
-        username: result.credential.username,
-        password: result.credential.password,
-      })
+      setCredential(result.credential)
       setUsername('')
       setPassword('')
       setGeneratePassword(false)
@@ -129,15 +125,11 @@ export function DatabaseUsersPage() {
     setEditorMessage('')
     setEditorError('')
     try {
-      const result = await request<{ password: string }>(`/database-users/${item.id}/password`, {
+      const result = await request<DatabaseUserPasswordResult>(`/database-users/${item.id}/password`, {
         method: 'POST',
         ...(generate ? {} : { body: JSON.stringify({ password: newPassword }) }),
       })
-      setCredential({
-        database: databaseById.get(item.database_id)?.name ?? item.database_id,
-        username: item.username,
-        password: result.password,
-      })
+      setCredential(result.credential)
       setNewPassword('')
       setEditorMessage(generate
         ? `Hasło zmienione pomyślnie. Wygenerowano nowe hasło użytkownika ${item.username}.`
@@ -192,7 +184,7 @@ export function DatabaseUsersPage() {
     {message && <div className="success-banner">{message}</div>}
     {credential && <section className="credential-card">
       <div><strong>Dane dostępowe</strong><p className="muted">Hasło jest pokazywane po utworzeniu lub zmianie.</p></div>
-      <code>DB_NAME={credential.database}<br />DB_USER={credential.username}<br />DB_PASSWORD={credential.password}</code>
+      <code>DB_DRIVER={credential.engine}<br />DB_HOST={credential.host}<br />DB_PORT={credential.port}<br />DB_DATABASE={credential.database}<br />DB_USERNAME={credential.username}<br />DB_PASSWORD={credential.password}</code>
       <button type="button" className="secondary" onClick={() => setCredential(null)}>Ukryj</button>
     </section>}
 
