@@ -20,6 +20,34 @@ func TestValidationRejectsCLIInjectionCharacters(t *testing.T) {
 	}
 }
 
+func TestValidateImageRefMatchesDockerReferenceShape(t *testing.T) {
+	for _, value := range []string{
+		"nginx",
+		"nginx:latest",
+		"devbox/runtime-project-123:0123456789abcdef",
+		"ghcr.io/example/app:v1.2.3",
+		"localhost:5000/example/app:dev",
+		"example/app@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+	} {
+		if err := validateImageRef(value); err != nil {
+			t.Fatalf("expected image ref %q to pass: %v", value, err)
+		}
+	}
+
+	for _, value := range []string{
+		"DevBox/runtime-app:latest",
+		"devbox/runtime___legacy:latest",
+		"devbox//app:latest",
+		"devbox/app:",
+		"devbox/app::latest",
+		"devbox/app@sha256:not-a-digest",
+	} {
+		if err := validateImageRef(value); err == nil {
+			t.Fatalf("expected Docker-invalid image ref %q to fail before CLI invocation", value)
+		}
+	}
+}
+
 func TestDiscoverComposeProjectsAcceptsSupportedFileNames(t *testing.T) {
 	root := t.TempDir()
 	names := []string{"compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"}

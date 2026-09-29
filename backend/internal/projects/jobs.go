@@ -642,19 +642,19 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	port = spec.HostPort
 	h.logPortPlan(ctx, job.ID, "reserved", portPlan)
 
+	if err := setStage(DeploymentDependencies); err != nil {
+		return nil, err
+	}
 	state, err := h.repo.RuntimeContainerState(ctx, p.ID)
 	if err != nil {
 		return nil, err
 	}
 	imageExists, err := h.integrations.Managed.ManagedImageExists(ctx, spec.Image)
 	if err != nil {
-		return nil, fmt.Errorf("inspect managed image: %w", err)
+		return nil, fmt.Errorf("inspect managed image %q: %w", spec.Image, err)
 	}
 	needsBuild := forceRebuild || state.Fingerprint != spec.Fingerprint || state.ImageTag != spec.Image || !imageExists
 
-	if err := setStage(DeploymentDependencies); err != nil {
-		return nil, err
-	}
 	if err := setStage(DeploymentBuilding); err != nil {
 		return nil, err
 	}

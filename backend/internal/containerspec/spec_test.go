@@ -113,6 +113,50 @@ func TestGenerateManagedAddsLiveSourceMounts(t *testing.T) {
 	}
 }
 
+func TestGenerateManagedDoesNotLeaveTrailingSeparatorWhenUUIDIsTruncated(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("ok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := GenerateManaged("12345678-1234-1234-1234-123456789abc", dir, "static", "", nil, "", 18080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(spec.Image, "devbox/runtime-12345678-1234-1234-1234:") {
+		t.Fatalf("UUID truncation produced an invalid Docker image reference: %q", spec.Image)
+	}
+	if strings.Contains(spec.Image, "-:") {
+		t.Fatalf("Docker repository component must not end in a separator: %q", spec.Image)
+	}
+}
+
+func TestGenerateManagedSanitizesLegacyProjectIDForDockerReference(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("ok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := GenerateManaged("Legacy___Project::ID///old", dir, "static", "", nil, "", 18080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(spec.Image, "devbox/runtime-legacy-project-id-old:") {
+		t.Fatalf("unexpected Docker image reference: %q", spec.Image)
+	}
+	if spec.ContainerName != "devbox-app-legacy-project-id-old" {
+		t.Fatalf("unexpected Docker container name: %q", spec.ContainerName)
+	}
+}
+
+func TestGenerateCustomDockerfileRejectsProjectIDWithoutDockerSafeCharacters(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM busybox\nEXPOSE 8080\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := GenerateCustomDockerfile("___///:::", dir, 18080); err == nil {
+		t.Fatal("expected invalid legacy project id to be rejected before Docker invocation")
+	}
+}
+
 func TestGenerateManagedRejectsUnknownModule(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("ok"), 0o600); err != nil {

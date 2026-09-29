@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-29 — Managed image reference hardening
+
+### Fixed
+
+- normalized legacy project identifiers before composing managed/custom Docker image and container names so separator runs cannot produce Docker-invalid repository references,
+- rejected project identifiers that cannot produce a safe Docker resource suffix before invoking the Docker CLI,
+- tightened image-reference validation for repository components, tags, registries and digests so malformed references fail as DevBox input errors rather than opaque Docker daemon `invalid reference format` failures,
+- moved managed-image state/inspection into the dependency stage and included the generated image reference in the safe error context, so deployment history no longer mislabels image-inspection failures as database configuration failures.
+
+### Tests
+
+- added regression coverage for legacy project IDs, custom Dockerfile empty identifiers, Docker reference grammar and persisted deployment stage on managed-image inspection failure.
+
 ## Unreleased
 
 ### Directory picker parser fix

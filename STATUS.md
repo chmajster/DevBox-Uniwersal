@@ -56,6 +56,7 @@ DevBox Universal is an integrated local development control plane.
 - Docker Engine inventory and container lifecycle.
 - Images, volumes, networks and Docker Compose project management.
 - Managed application image generation for projects without Compose/Dockerfile.
+- Managed image/container names are normalized to Docker-safe repository components, including legacy project IDs; malformed references are rejected before invoking Docker and image-inspection failures are recorded in the dependency/runtime deployment stage.
 - Atomic managed-container replacement with rollback, no-new-privileges and reduced capabilities.
 - Managed build contexts exclude secret environment files and common local dependency/cache directories.
 - RBAC/audit protection for mutations.
