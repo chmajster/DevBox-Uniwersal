@@ -6,6 +6,7 @@ import { BackupsPage } from './pages/BackupsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DatabasesPage } from './pages/DatabasesPage'
 import { DatabaseEnginePage } from './pages/DatabaseEnginePage'
+import { DatabaseUserAccountPage } from './pages/DatabaseUserAccountPage'
 import { DatabaseUsersPage } from './pages/DatabaseUsersPage'
 import { CredentialsPage } from './pages/CredentialsPage'
 import { DockerPage } from './pages/DockerPage'
@@ -46,6 +47,7 @@ export function App() {
         <Route path={ROUTES.backups} element={<BackupsPage />} />
         <Route path="databases" element={<DatabasesPage />} />
         <Route path="databases/:engine" element={<DatabaseEnginePage />} />
+        <Route path="databases/:engine/users/:userId" element={<DatabaseUserAccountPage />} />
         <Route path={ROUTES.databaseUsers} element={<DatabaseUsersPage />} />
         <Route path="domains" element={<DomainsPage />} />
         <Route path="ports" element={<PortsPage />} />
