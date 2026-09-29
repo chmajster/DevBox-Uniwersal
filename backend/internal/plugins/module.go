@@ -19,6 +19,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 )
 
 type PHPFPMStatus struct {
@@ -48,6 +49,10 @@ type MySQLPluginStatus struct {
 	Host          string `json:"host,omitempty"`
 	Port          int    `json:"port,omitempty"`
 	ContainerHost string `json:"container_host,omitempty"`
+	ContainerName string `json:"container_name,omitempty"`
+	Image         string `json:"image,omitempty"`
+	Volume        string `json:"volume,omitempty"`
+	Network       string `json:"network,omitempty"`
 	Installable   bool   `json:"installable"`
 	Message       string `json:"message,omitempty"`
 }
@@ -60,6 +65,10 @@ type PostgreSQLStatus struct {
 	Host          string `json:"host,omitempty"`
 	Port          int    `json:"port,omitempty"`
 	ContainerHost string `json:"container_host,omitempty"`
+	ContainerName string `json:"container_name,omitempty"`
+	Image         string `json:"image,omitempty"`
+	Volume        string `json:"volume,omitempty"`
+	Network       string `json:"network,omitempty"`
 	Installable   bool   `json:"installable"`
 	Message       string `json:"message,omitempty"`
 }
@@ -77,12 +86,24 @@ type HostDatabaseInstance struct {
 	Source    string   `json:"source,omitempty"`
 }
 
+type dockerDatabaseServer interface {
+	Action(context.Context, string) error
+	ContainerState(context.Context) (bool, bool, error)
+	ApplicationEndpoint() providers.DatabaseEndpoint
+	Network() string
+	ContainerName() string
+	Image() string
+	Volume() string
+}
+
 type Service struct {
 	helperBinary      string
 	sudoBinary        string
 	jobs              jobs.JobRunner
 	reservedHostPorts map[int]string
 	mysqlDetector     func(context.Context) (HostDatabaseInstance, bool)
+	mysqlServer       dockerDatabaseServer
+	postgresqlServer  dockerDatabaseServer
 }
 
 type ServiceOption func(*Service)
@@ -90,6 +111,18 @@ type ServiceOption func(*Service)
 func WithJobRunner(runner jobs.JobRunner) ServiceOption {
 	return func(service *Service) {
 		service.jobs = runner
+	}
+}
+
+func WithMySQLDatabaseServer(server dockerDatabaseServer) ServiceOption {
+	return func(service *Service) {
+		service.mysqlServer = server
+	}
+}
+
+func WithPostgreSQLDatabaseServer(server dockerDatabaseServer) ServiceOption {
+	return func(service *Service) {
+		service.postgresqlServer = server
 	}
 }
 
