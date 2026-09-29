@@ -26,6 +26,7 @@ DevBox Universal is an integrated local development control plane.
 - Redesigned login, persistent dark/light theme and shared module forms, tables, statuses and logs.
 - Native accessible dialogs, keyboard navigation, visible focus, reduced-motion support and graceful handling of disabled browser storage.
 - Frontend unit tests and a Chromium smoke workflow with synthetic API fixtures and screenshot artifacts. This is not full provider/infrastructure E2E coverage.
+- Update failures expose the exact installer/updater stage, exit code, sanitized recent updater log lines and the most relevant failure line directly in the Updates UI; secrets matching common credential patterns are redacted before API delivery.
 - Runtime/deployment API and persistence now use the managed-container model; migration 007 adds per-project runtime versions, container policy, module selections and managed image state.
 
 ## Projects / Git / deployments
