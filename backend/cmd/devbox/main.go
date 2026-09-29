@@ -281,6 +281,8 @@ func serve() error {
 			cfg.MySQLPort,
 			fmt.Sprintf("zarządzany MySQL DevBox (%s)", cfg.ManagedMySQLContainer),
 		))
+	} else {
+		pluginOptions = append(pluginOptions, plugins.WithHostMySQLControlPlane(true))
 	}
 	pluginService := plugins.NewService(cfg.NginxHelperBinary, cfg.SudoBinary, pluginOptions...)
 	for _, handler := range pluginService.Handlers() {
