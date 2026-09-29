@@ -80,6 +80,7 @@ type Service struct {
 	sudoBinary        string
 	jobs              jobs.JobRunner
 	reservedHostPorts map[int]string
+	mysqlDetector     func(context.Context) (HostDatabaseInstance, bool)
 }
 
 type ServiceOption func(*Service)
@@ -102,11 +103,18 @@ func WithReservedHostPort(port int, owner string) ServiceOption {
 	}
 }
 
+func withMySQLDetector(detector func(context.Context) (HostDatabaseInstance, bool)) ServiceOption {
+	return func(service *Service) {
+		service.mysqlDetector = detector
+	}
+}
+
 func NewService(helperBinary, sudoBinary string, options ...ServiceOption) *Service {
 	service := &Service{
 		helperBinary:      strings.TrimSpace(helperBinary),
 		sudoBinary:        strings.TrimSpace(sudoBinary),
 		reservedHostPorts: make(map[int]string),
+		mysqlDetector:     detectHostMySQL,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -228,7 +236,11 @@ func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
 		}
 	}
 
-	instance, installed := detectHostMySQL(ctx)
+	detector := s.mysqlDetector
+	if detector == nil {
+		detector = detectHostMySQL
+	}
+	instance, installed := detector(ctx)
 	if !installed {
 		if conflict := s.mysqlInstallConflict(); conflict != "" {
 			status.Installable = false
@@ -259,6 +271,7 @@ func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
 	if status.Running {
 		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany i aktywna usługa odpowiada na TCP 3306."
 	} else if owner, reserved := s.reservedHostPorts[3306]; reserved {
+		status.Installable = false
 		if owner == "" {
 			owner = "inna usługa DevBox"
 		}
