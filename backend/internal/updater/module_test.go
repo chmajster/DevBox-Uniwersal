@@ -55,3 +55,25 @@ func TestProgressActive(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateServiceStateRunning(t *testing.T) {
+	for _, item := range []struct {
+		state string
+		want  bool
+	}{
+		{"active", true},
+		{"activating", true},
+		{"reloading", true},
+		{"deactivating", true},
+		{"inactive", false},
+		{"failed", false},
+		{"unknown", false},
+		{"", false},
+	} {
+		t.Run(item.state, func(t *testing.T) {
+			if got := updateServiceStateRunning(item.state); got != item.want {
+				t.Fatalf("state=%q running=%v want=%v", item.state, got, item.want)
+			}
+		})
+	}
+}
