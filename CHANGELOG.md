@@ -25,7 +25,7 @@
 
 ### Unified project database connectivity
 
-- Added a selectable application-SQL section to Plugins: administrators can choose MySQL/MariaDB, PostgreSQL, or both, and both server installations now execute through durable Job Engine jobs. Installed host engines are discovered automatically by the per-project database configuration and exposed to containers through `host.docker.internal`.
+- Consolidated the duplicate SQL plugin cards into a single `Serwery baz danych dla aplikacji` entry. MySQL/MariaDB and PostgreSQL are shown as shared servers rather than individual databases: one server may contain many databases/users and serve many applications at once. Administrators can still choose either engine or both, and both installations execute through durable Job Engine jobs. Installed host engines are discovered automatically by the per-project database configuration and exposed to containers through `host.docker.internal`.
 - Kept host SQL strictly application-facing: the DevBox control plane continues to use SQLite. Moved the managed `devbox-mysql` loopback administrative publication to configurable `DEVBOX_MANAGED_MYSQL_ADMIN_PORT` (default `13306`) while preserving `devbox-mysql:3306` inside Docker, so host MySQL/MariaDB can use TCP 3306 simultaneously.
 - Added managed-MySQL reconciliation labels so upgrades recreate only the `devbox-mysql` container when its managed configuration changes while preserving `devbox-mysql-data` and the SecretStore root credential. The privileged helper sudoers policy now permits the allowlisted MySQL/MariaDB/PostgreSQL service restarts required after package installation.
 - phpMyAdmin now reconciles host-gateway access and can expose both managed MySQL and host MySQL/MariaDB targets; the plugin routes are included in OpenAPI discovery.
@@ -80,7 +80,7 @@
 - Added sanitized managed build contexts that exclude .env files, VCS metadata, dependency trees and common local caches.
 - Added atomic managed-container replacement with health verification and rollback to the previous container on failure.
 - Deploy now switches directly to a live deployment view showing the current stage and progress until success/failure; failures preserve the exact stage where execution stopped.
-- Project runtime validation no longer requires PHP-FPM, Go, Node.js or Python executables on the host.
+- Project runtime validation no longer requires PHP-FPM, Go, Node.js or Python executables on the host; Plugins now marks host PHP-FPM as optional because managed PHP applications use their container runtime.
 - Removed the unnecessary Docker Compose `--project-directory` flag; Compose now uses the absolute `--file` path and works with Docker installations that reject that flag.
 - Added a dedicated Runtime containers CI workflow covering managed-container backend and frontend quality gates.
 

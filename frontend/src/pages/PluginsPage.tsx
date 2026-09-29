@@ -17,7 +17,7 @@ export function PluginsPage() {
   const [postgresql, setPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
   const [selectedSQLEngines, setSelectedSQLEngines] = useState<SQLInstallEngine[]>([])
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'mysql-install' | 'postgresql-install' | 'sql-install' | null>(null)
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'sql-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
@@ -85,42 +85,6 @@ export function PluginsPage() {
       await new Promise((resolve) => window.setTimeout(resolve, 1000))
     }
     throw new Error('Instalacja serwera SQL nadal trwa. Sprawdź status zadania w zakładce Zadania.')
-  }
-
-  async function installMySQL() {
-    setBusyAction('mysql-install')
-    setError('')
-    setMessage('')
-    try {
-      const job = await request<Job>('/plugins/mysql/install', { method: 'POST' })
-      setMessage(`Instalacja MySQL/MariaDB została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
-      await waitForJob(job.id)
-      await load()
-      setMessage('Hostowy MySQL/MariaDB został zainstalowany i zweryfikowany.')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Instalacja MySQL/MariaDB nie powiodła się')
-      await load().catch(() => undefined)
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
-  async function installPostgreSQL() {
-    setBusyAction('postgresql-install')
-    setError('')
-    setMessage('')
-    try {
-      const job = await request<Job>('/plugins/postgresql/install', { method: 'POST' })
-      setMessage(`Instalacja PostgreSQL została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
-      await waitForJob(job.id)
-      await load()
-      setMessage('Hostowy PostgreSQL został zainstalowany, uruchomiony i zweryfikowany.')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Instalacja PostgreSQL nie powiodła się')
-      await load().catch(() => undefined)
-    } finally {
-      setBusyAction(null)
-    }
   }
 
   function toggleSQLEngine(engine: SQLInstallEngine, checked: boolean) {
@@ -299,14 +263,14 @@ export function PluginsPage() {
         <div className="actions">
           <Icon name="cpu" size={24} />
           <div>
-            <h2>PHP-FPM</h2>
-            <p className="muted">Runtime FastCGI wymagany do uruchamiania aplikacji PHP zarządzanych przez DevBox Universal.</p>
+            <h2>PHP-FPM na hoście</h2>
+            <p className="muted">Opcjonalny komponent systemowy hosta. Zarządzane aplikacje PHP DevBox uruchamiają własny runtime wewnątrz kontenera Docker.</p>
           </div>
         </div>
         <p className="muted small">
           {phpFPM?.installed
-            ? 'PHP-FPM został wykryty w systemie.'
-            : 'PHP-FPM nie jest zainstalowany. Aplikacje PHP wymagające PHP-FPM nie uruchomią się do czasu instalacji tego komponentu.'}
+            ? 'PHP-FPM został wykryty na hoście. Nie zmienia to konfiguracji PHP wewnątrz kontenerów aplikacji.'
+            : 'Brak hostowego PHP-FPM nie blokuje zarządzanych aplikacji PHP. Instaluj go tylko wtedy, gdy potrzebuje go inne narzędzie lub ręczna konfiguracja hosta.'}
         </p>
       </div>
 
@@ -337,159 +301,136 @@ export function PluginsPage() {
       </div>
     </section>
 
-    <section className="panel phpmyadmin-panel">
-      <div>
+    <section className="panel database-server-plugin">
+      <div className="section-heading database-server-plugin-heading">
         <div className="actions">
           <Icon name="database" size={24} />
           <div>
-            <h2>Bazy SQL dla aplikacji</h2>
-            <p className="muted">Zainstaluj MySQL/MariaDB, PostgreSQL albo oba silniki jako usługi hosta dostępne dla aplikacji uruchamianych przez DevBox.</p>
+            <h2>Serwery baz danych dla aplikacji</h2>
+            <p className="muted">Instalujesz serwer bazodanowy, nie pojedynczą bazę. Jeden serwer może przechowywać wiele baz i obsługiwać wiele aplikacji jednocześnie.</p>
           </div>
         </div>
-        <p className="muted small">
-          Te serwery przechowują dane aplikacji. Nie są bazą kontrolną DevBox Universal — stan samego DevBox pozostaje w SQLite.
-          Po instalacji silniki pojawią się automatycznie w konfiguracji <strong>Baza danych</strong> projektu.
-        </p>
+        <div className="actions">
+          <span className="status-chip" data-ok={mysql?.running || postgresql?.running ? 'true' : 'false'}>
+            Aktywne: {[mysql?.running, postgresql?.running].filter(Boolean).length}/2
+          </span>
+        </div>
       </div>
 
-      <div className="phpmyadmin-status">
-        <label className="actions">
-          <input
-            type="checkbox"
-            checked={mysql?.installed || selectedSQLEngines.includes('mysql')}
-            disabled={busy || Boolean(mysql?.installed) || !canInstallSystemPackages || !mysql?.installable}
-            onChange={(event) => toggleSQLEngine('mysql', event.target.checked)}
-          />
-          <strong>MySQL / MariaDB</strong>
-          <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
-            {mysql?.installed ? 'Zainstalowany' : 'Do instalacji'}
-          </span>
-          <code>host.docker.internal:3306</code>
-        </label>
-        <label className="actions">
-          <input
-            type="checkbox"
-            checked={postgresql?.installed || selectedSQLEngines.includes('postgresql')}
-            disabled={busy || Boolean(postgresql?.installed) || !canInstallSystemPackages || !postgresql?.installable}
-            onChange={(event) => toggleSQLEngine('postgresql', event.target.checked)}
-          />
-          <strong>PostgreSQL</strong>
-          <span className="status-chip" data-ok={postgresql?.installed ? 'true' : 'false'}>
-            {postgresql?.installed ? 'Zainstalowany' : 'Do instalacji'}
-          </span>
-          <code>host.docker.internal:{postgresql?.port ?? 5432}</code>
-        </label>
+      <div className="database-server-explainer">
+        <strong>Model współdzielony</strong>
+        <span>1 serwer → wiele baz → wielu użytkowników → wiele aplikacji. Każda aplikacja może korzystać z własnej bazy i własnego użytkownika na tym samym serwerze.</span>
+        <span>DevBox Universal przechowuje swój własny stan w SQLite. Serwery poniżej są przeznaczone wyłącznie dla danych aplikacji.</span>
+      </div>
 
-        {canInstallSystemPackages && (
-          <div className="actions">
+      <div className="database-server-grid">
+        <article className="database-server-engine" data-installed={mysql?.installed ? 'true' : 'false'}>
+          <div className="database-server-engine-header">
+            <div>
+              <div className="database-server-engine-title">
+                {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
+                  <input
+                    aria-label="Zaznacz MySQL lub MariaDB do instalacji"
+                    type="checkbox"
+                    checked={selectedSQLEngines.includes('mysql')}
+                    disabled={busy}
+                    onChange={(event) => toggleSQLEngine('mysql', event.target.checked)}
+                  />
+                )}
+                <strong>MySQL / MariaDB</strong>
+              </div>
+              <span className="muted small">Współdzielony serwer SQL dla wielu baz i wielu aplikacji.</span>
+            </div>
+            <div className="actions">
+              <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
+                {mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
+              </span>
+              {mysql?.installed && <span className="status-chip" data-ok={mysql.running ? 'true' : 'false'}>
+                {mysql.running ? 'Działa' : 'Nie odpowiada'}
+              </span>}
+            </div>
+          </div>
+
+          <div className="database-server-engine-meta">
+            <div><span>Typ</span><strong>Serwer bazodanowy</strong></div>
+            <div><span>Silnik</span><strong>{mysql?.engine === 'mariadb' ? 'MariaDB' : 'MySQL'}</strong></div>
+            <div><span>Port</span><strong><code>{mysql?.port ?? 3306}</code></strong></div>
+            <div><span>Adres dla aplikacji</span><strong><code>{mysql?.container_host ?? 'host.docker.internal'}:{mysql?.port ?? 3306}</code></strong></div>
+            <div><span>Obsługiwane bazy</span><strong>Wiele</strong></div>
+            <div><span>Obsługiwane aplikacje</span><strong>Wiele</strong></div>
+            <div><span>PHP</span><strong>mysqli / PDO MySQL</strong></div>
+            <div><span>Model</span><strong>1 serwer → N baz</strong></div>
+          </div>
+
+          {mysql?.version && <p className="muted small">Wersja: <code>{mysql.version}</code></p>}
+          {mysql?.message && <p className="muted small">{mysql.message}</p>}
+          {!mysql?.installed && canInstallSystemPackages && mysql && !mysql.installable && (
+            <p className="muted small">{mysql.message || 'Instalacja MySQL/MariaDB jest obecnie niedostępna.'}</p>
+          )}
+        </article>
+
+        <article className="database-server-engine" data-installed={postgresql?.installed ? 'true' : 'false'}>
+          <div className="database-server-engine-header">
+            <div>
+              <div className="database-server-engine-title">
+                {!postgresql?.installed && canInstallSystemPackages && postgresql?.installable && (
+                  <input
+                    aria-label="Zaznacz PostgreSQL do instalacji"
+                    type="checkbox"
+                    checked={selectedSQLEngines.includes('postgresql')}
+                    disabled={busy}
+                    onChange={(event) => toggleSQLEngine('postgresql', event.target.checked)}
+                  />
+                )}
+                <strong>PostgreSQL</strong>
+              </div>
+              <span className="muted small">Współdzielony serwer PostgreSQL dla wielu baz i wielu aplikacji.</span>
+            </div>
+            <div className="actions">
+              <span className="status-chip" data-ok={postgresql?.installed ? 'true' : 'false'}>
+                {postgresql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
+              </span>
+              {postgresql?.installed && <span className="status-chip" data-ok={postgresql.running ? 'true' : 'false'}>
+                {postgresql.running ? 'Działa' : 'Nie odpowiada'}
+              </span>}
+            </div>
+          </div>
+
+          <div className="database-server-engine-meta">
+            <div><span>Typ</span><strong>Serwer bazodanowy</strong></div>
+            <div><span>Silnik</span><strong>PostgreSQL</strong></div>
+            <div><span>Port</span><strong><code>{postgresql?.port ?? 5432}</code></strong></div>
+            <div><span>Adres dla aplikacji</span><strong><code>{postgresql?.container_host ?? 'host.docker.internal'}:{postgresql?.port ?? 5432}</code></strong></div>
+            <div><span>Obsługiwane bazy</span><strong>Wiele</strong></div>
+            <div><span>Obsługiwane aplikacje</span><strong>Wiele</strong></div>
+            <div><span>PHP</span><strong>pgsql / PDO PostgreSQL</strong></div>
+            <div><span>Model</span><strong>1 serwer → N baz</strong></div>
+          </div>
+
+          {postgresql?.version && <p className="muted small">Wersja: <code>{postgresql.version}</code></p>}
+          {postgresql?.message && <p className="muted small">{postgresql.message}</p>}
+          {!postgresql?.installed && canInstallSystemPackages && postgresql && !postgresql.installable && (
+            <p className="muted small">Instalacja PostgreSQL jest obecnie niedostępna.</p>
+          )}
+        </article>
+      </div>
+
+      <div className="database-server-plugin-footer">
+        <div>
+          <strong>Serwer ≠ baza</strong>
+          <p className="muted small">Plugin instaluje i wykrywa silnik serwera. Konkretne bazy, użytkownicy i przypisania aplikacji są osobnymi zasobami i mogą współdzielić ten sam serwer. MySQLi jest sterownikiem PHP do MySQL, a nie osobnym serwerem bazodanowym.</p>
+        </div>
+        <div className="actions">
+          {canInstallSystemPackages && (
             <button
               type="button"
               onClick={() => void installSelectedSQL()}
               disabled={busy || selectedSQLEngines.length === 0}
             >
-              {busyAction === 'sql-install' ? 'Instalowanie SQL…' : 'Zainstaluj zaznaczone'}
-            </button>
-          </div>
-        )}
-        {!canInstallSystemPackages && <span className="muted small">Instalacja serwerów SQL wymaga roli administratora.</span>}
-      </div>
-    </section>
-
-    <section className="panel phpmyadmin-panel">
-      <div>
-        <div className="actions">
-          <Icon name="database" size={24} />
-          <div>
-            <h2>MySQL / MariaDB — SQL aplikacji</h2>
-            <p className="muted">Hostowy serwer SQL przeznaczony do baz danych aplikacji. Nie jest używany jako baza kontrolna DevBox Universal.</p>
-          </div>
-        </div>
-        <p className="muted small">
-          {mysql?.installed
-            ? 'Serwer hostowy został wykryty. Aplikacje mogą wybrać go w konfiguracji bazy i łączyć się przez host.docker.internal:3306.'
-            : 'Zainstaluj hostowy MySQL/MariaDB, jeżeli dane aplikacji mają być przechowywane w bazie działającej bezpośrednio na hoście.'}
-        </p>
-      </div>
-
-      <div className="phpmyadmin-status">
-        <div className="actions">
-          <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
-            {mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
-          </span>
-          {mysql?.installed && <span className="status-chip" data-ok={mysql.running ? 'true' : 'false'}>
-            {mysql.running ? 'Usługa działa' : 'Usługa nie odpowiada'}
-          </span>}
-          {mysql?.engine && <span className="status-chip" data-ok="true">{mysql.engine === 'mariadb' ? 'MariaDB' : 'MySQL'}</span>}
-        </div>
-
-        {mysql?.version && <p className="muted small">Wersja: <code>{mysql.version}</code></p>}
-        {mysql?.client_path && <p className="muted small">Klient: <code>{mysql.client_path}</code></p>}
-        {mysql?.server_path && <p className="muted small">Serwer: <code>{mysql.server_path}</code></p>}
-        {mysql?.host && mysql?.port && <p className="muted small">Adres hosta: <code>{mysql.host}:{mysql.port}</code></p>}
-        {mysql?.container_host && mysql?.port && <p className="muted small">Adres z kontenera: <code>{mysql.container_host}:{mysql.port}</code></p>}
-        {mysql?.message && <p className="muted small">{mysql.message}</p>}
-        <p className="muted small">DevBox przechowuje własny stan w SQLite. Kontener <code>devbox-mysql</code> zachowuje wewnętrzny endpoint <code>devbox-mysql:3306</code>, ale jego loopbackowy port administracyjny jest oddzielony od hostowego portu 3306.</p>
-
-        <div className="actions">
-          {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
-            <button type="button" onClick={() => void installMySQL()} disabled={busy}>
-              {busyAction === 'mysql-install' ? 'Instalowanie…' : 'Zainstaluj MySQL / MariaDB'}
+              {busyAction === 'sql-install' ? 'Instalowanie serwerów…' : 'Zainstaluj zaznaczone serwery'}
             </button>
           )}
-          {!mysql?.installed && !canInstallSystemPackages && (
-            <span className="muted small">Instalacja MySQL/MariaDB wymaga roli administratora.</span>
-          )}
-          {!mysql?.installed && canInstallSystemPackages && mysql && !mysql.installable && (
-            <span className="muted small">{mysql.message || 'Instalacja z panelu jest obecnie niedostępna.'}</span>
-          )}
-        </div>
-      </div>
-    </section>
-
-    <section className="panel phpmyadmin-panel">
-      <div>
-        <div className="actions">
-          <Icon name="database" size={24} />
-          <div>
-            <h2>PostgreSQL — SQL aplikacji</h2>
-            <p className="muted">Hostowy serwer PostgreSQL przeznaczony do baz danych aplikacji. Nie jest używany jako baza kontrolna DevBox Universal.</p>
-          </div>
-        </div>
-        <p className="muted small">
-          {postgresql?.installed
-            ? 'PostgreSQL jest zainstalowany. Aplikacje mogą wybrać wykryty klaster i port w konfiguracji bazy danych.'
-            : 'Zainstaluj PostgreSQL, jeżeli aplikacje mają korzystać z hostowego serwera PostgreSQL.'}
-        </p>
-      </div>
-
-      <div className="phpmyadmin-status">
-        <div className="actions">
-          <span className="status-chip" data-ok={postgresql?.installed ? 'true' : 'false'}>
-            {postgresql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
-          </span>
-          {postgresql?.installed && <span className="status-chip" data-ok={postgresql.running ? 'true' : 'false'}>
-            {postgresql.running ? 'Uruchomiony' : 'Nie odpowiada'}
-          </span>}
-        </div>
-
-        {postgresql?.version && <p className="muted small">Wersja: <code>{postgresql.version}</code></p>}
-        {postgresql?.path && <p className="muted small">Klient: <code>{postgresql.path}</code></p>}
-        {postgresql?.host && postgresql?.port && <p className="muted small">Adres lokalny: <code>{postgresql.host}:{postgresql.port}</code></p>}
-        {postgresql?.container_host && postgresql?.port && <p className="muted small">Adres z kontenera: <code>{postgresql.container_host}:{postgresql.port}</code></p>}
-        {postgresql?.message && <p className="muted small">{postgresql.message}</p>}
-
-        <div className="actions">
-          {!postgresql?.installed && canInstallSystemPackages && postgresql?.installable && (
-            <button type="button" onClick={installPostgreSQL} disabled={busy}>
-              {busyAction === 'postgresql-install' ? 'Instalowanie…' : 'Zainstaluj PostgreSQL'}
-            </button>
-          )}
-          {!postgresql?.installed && !canInstallSystemPackages && (
-            <span className="muted small">Instalacja PostgreSQL wymaga roli administratora.</span>
-          )}
-          {!postgresql?.installed && canInstallSystemPackages && postgresql && !postgresql.installable && (
-            <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
-          )}
+          {!canInstallSystemPackages && <span className="muted small">Instalacja serwerów baz danych wymaga roli administratora.</span>}
         </div>
       </div>
     </section>
