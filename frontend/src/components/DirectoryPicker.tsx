@@ -27,11 +27,11 @@ function errorMessage(error: unknown) {
 function Chevron({ expanded, loading, cycle }: { expanded: boolean; loading: boolean; cycle: boolean }) {
   if (loading) return <span className="directory-tree-spinner" aria-hidden="true" />
   if (cycle) return <span className="directory-tree-cycle" aria-hidden="true">↻</span>
-  return <span className={\`directory-tree-chevron\${expanded ? ' is-expanded' : ''}\`} aria-hidden="true" />
+  return <span className={`directory-tree-chevron${expanded ? ' is-expanded' : ''}`} aria-hidden="true" />
 }
 
 function FolderIcon({ open }: { open: boolean }) {
-  return <span className={\`directory-tree-folder\${open ? ' is-open' : ''}\`} aria-hidden="true">
+  return <span className={`directory-tree-folder${open ? ' is-open' : ''}`} aria-hidden="true">
     <span className="directory-tree-folder-tab" />
   </span>
 }
@@ -81,7 +81,7 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
       return next
     })
     try {
-      const listing = await request<DirectoryListing>(\`/project-directories?path=\${encodeURIComponent(path)}\`)
+      const listing = await request<DirectoryListing>(`/project-directories?path=${encodeURIComponent(path)}`)
       setListings(current => ({
         ...current,
         [path]: listing.directories ?? [],
@@ -135,10 +135,10 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
     const nextAncestors = new Set(ancestors)
     nextAncestors.add(path)
 
-    return <div key={\`\${depth}:\${path}\`} className="directory-tree-node">
+    return <div key={`${depth}:${path}`} className="directory-tree-node">
       <div
-        className={\`directory-tree-row\${selected === path ? ' is-selected' : ''}\`}
-        style={{ paddingLeft: \`\${10 + depth * 22}px\` }}
+        className={`directory-tree-row${selected === path ? ' is-selected' : ''}`}
+        style={{ paddingLeft: `${10 + depth * 22}px` }}
         role="treeitem"
         aria-level={depth + 1}
         aria-selected={selected === path}
@@ -149,7 +149,7 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
         <button
           type="button"
           className="directory-tree-toggle"
-          aria-label={cycle ? \`Cykl \${label}\` : isExpanded ? \`Zwiń \${label}\` : \`Rozwiń \${label}\`}
+          aria-label={cycle ? `Cykl ${label}` : isExpanded ? `Zwiń ${label}` : `Rozwiń ${label}`}
           onClick={() => { if (!cycle) void toggle(path) }}
           disabled={isLoading || cycle || depth >= 32}
         >
@@ -164,13 +164,13 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
           <span className="directory-tree-label">{label}</span>
         </button>
       </div>
-      {cycle && <div className="directory-tree-empty" style={{ paddingLeft: \`\${44 + depth * 22}px\` }}>Pominięto cykl dowiązania symbolicznego</div>}
-      {errors[path] && <div className="directory-tree-error" style={{ paddingLeft: \`\${44 + depth * 22}px\` }}>{errors[path]}</div>}
+      {cycle && <div className="directory-tree-empty" style={{ paddingLeft: `${44 + depth * 22}px` }}>Pominięto cykl dowiązania symbolicznego</div>}
+      {errors[path] && <div className="directory-tree-error" style={{ paddingLeft: `${44 + depth * 22}px` }}>{errors[path]}</div>}
       {!cycle && isExpanded && children.map(child => renderNode(child.path, child.name, depth + 1, nextAncestors))}
       {!cycle && isExpanded && truncated.has(path) &&
-        <div className="directory-tree-empty" style={{ paddingLeft: \`\${44 + depth * 22}px\` }}>Lista ograniczona do 500 katalogów</div>}
+        <div className="directory-tree-empty" style={{ paddingLeft: `${44 + depth * 22}px` }}>Lista ograniczona do 500 katalogów</div>}
       {!cycle && isExpanded && !isLoading && !errors[path] && children.length === 0 &&
-        <div className="directory-tree-empty" style={{ paddingLeft: \`\${44 + depth * 22}px\` }}>Brak podkatalogów</div>}
+        <div className="directory-tree-empty" style={{ paddingLeft: `${44 + depth * 22}px` }}>Brak podkatalogów</div>}
     </div>
   }
 
