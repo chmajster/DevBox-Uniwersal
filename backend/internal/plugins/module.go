@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
@@ -44,6 +46,20 @@ type PostgreSQLStatus struct {
 	Port        int    `json:"port,omitempty"`
 	Installable bool   `json:"installable"`
 	Message     string `json:"message,omitempty"`
+}
+
+type MySQLPluginStatus struct {
+	Installed     bool   `json:"installed"`
+	Running       bool   `json:"running"`
+	Engine        string `json:"engine,omitempty"`
+	Path          string `json:"path,omitempty"`
+	ServerPath    string `json:"server_path,omitempty"`
+	Version       string `json:"version,omitempty"`
+	Host          string `json:"host,omitempty"`
+	Port          int    `json:"port,omitempty"`
+	ContainerHost string `json:"container_host,omitempty"`
+	Installable   bool   `json:"installable"`
+	Message       string `json:"message,omitempty"`
 }
 
 type Service struct {
@@ -153,6 +169,109 @@ func firstLine(value string) string {
 		return strings.TrimSpace(line)
 	}
 	return value
+}
+
+func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
+	status := MySQLPluginStatus{
+		Installable:   s.helperBinary != "",
+		Host:          "127.0.0.1",
+		Port:          3306,
+		ContainerHost: "host.docker.internal",
+	}
+
+	clientPath, _ := findMySQLClient()
+	serverPath, engine, serverErr := findMySQLServer()
+	if serverErr != nil {
+		status.Path = clientPath
+		if clientPath != "" {
+			status.Message = "Wykryto klienta MySQL/MariaDB, ale serwer nie jest zainstalowany. Możesz doinstalować serwer z panelu Pluginy."
+		} else {
+			status.Message = "Hostowy MySQL/MariaDB nie jest zainstalowany. Możesz zainstalować lokalny serwer z panelu Pluginy."
+		}
+		if !status.Installable {
+			status.Message += " Instalacja z panelu jest niedostępna, ponieważ DEVBOX_PRIVILEGED_HELPER nie jest skonfigurowany."
+		}
+		return status
+	}
+
+	status.Installed = true
+	status.Engine = engine
+	status.Path = clientPath
+	status.ServerPath = serverPath
+	versionBinary := serverPath
+	if clientPath != "" {
+		versionBinary = clientPath
+	}
+	if out, versionErr := exec.CommandContext(ctx, versionBinary, "--version").CombinedOutput(); versionErr == nil {
+		status.Version = firstLine(string(out))
+	}
+
+	address := net.JoinHostPort(status.Host, strconv.Itoa(status.Port))
+	conn, dialErr := net.DialTimeout("tcp", address, 750*time.Millisecond)
+	if dialErr == nil {
+		status.Running = true
+		_ = conn.Close()
+	}
+
+	if status.Running {
+		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany i nasłuchuje na 127.0.0.1:3306."
+	} else {
+		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany, ale nie odpowiada przez TCP na 127.0.0.1:3306."
+	}
+	return status
+}
+
+func (s *Service) InstallMySQL(ctx context.Context) (MySQLPluginStatus, error) {
+	if status := s.MySQLStatus(ctx); status.Installed {
+		return status, nil
+	}
+	if s.helperBinary == "" {
+		return MySQLPluginStatus{}, errors.New("privileged helper is not configured")
+	}
+	if err := s.installSystemPackage(ctx, "mysql"); err != nil {
+		return MySQLPluginStatus{}, fmt.Errorf("install MySQL/MariaDB: %w", err)
+	}
+	status := s.MySQLStatus(ctx)
+	if !status.Installed {
+		return status, errors.New("MySQL/MariaDB installation completed but the server executable was not detected")
+	}
+	return status, nil
+}
+
+func findMySQLClient() (string, error) {
+	for _, candidate := range []string{"mysql", "mariadb"} {
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path, nil
+		}
+	}
+	return "", errors.New("mysql client executable not found")
+}
+
+func findMySQLServer() (string, string, error) {
+	for _, candidate := range []struct {
+		name   string
+		engine string
+	}{
+		{name: "mysqld", engine: "mysql"},
+		{name: "mariadbd", engine: "mariadb"},
+	} {
+		if path, err := exec.LookPath(candidate.name); err == nil {
+			return path, candidate.engine, nil
+		}
+	}
+	for _, candidate := range []struct {
+		path   string
+		engine string
+	}{
+		{path: "/usr/sbin/mysqld", engine: "mysql"},
+		{path: "/usr/sbin/mariadbd", engine: "mariadb"},
+		{path: "/usr/libexec/mysqld", engine: "mysql"},
+	} {
+		if info, err := os.Stat(candidate.path); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return candidate.path, candidate.engine, nil
+		}
+	}
+	return "", "", errors.New("mysql server executable not found")
 }
 
 func (s *Service) PostgreSQLStatus(ctx context.Context) PostgreSQLStatus {
@@ -306,6 +425,8 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/plugins/docker-compose/install", admin(m.installDockerCompose))
 	mux.Handle("GET /api/v1/plugins/php-fpm/status", viewer(m.phpFPMStatus))
 	mux.Handle("POST /api/v1/plugins/php-fpm/install", admin(m.installPHPFPM))
+	mux.Handle("GET /api/v1/plugins/mysql/status", viewer(m.mySQLStatus))
+	mux.Handle("POST /api/v1/plugins/mysql/install", admin(m.installMySQL))
 	mux.Handle("GET /api/v1/plugins/postgresql/status", viewer(m.postgreSQLStatus))
 	mux.Handle("POST /api/v1/plugins/postgresql/install", admin(m.installPostgreSQL))
 	mux.Handle("GET /api/v1/plugins/php/extensions", viewer(m.phpExtensions))
@@ -329,6 +450,30 @@ func (m *Module) installDockerCompose(w http.ResponseWriter, r *http.Request) {
 			actor = &id
 		}
 		_ = m.audit.Record(r.Context(), actor, "plugin.docker_compose.install", "plugin", nil, map[string]any{"mode": status.Mode, "path": status.Path, "version": status.Version}, nil)
+	}
+	writeData(w, http.StatusOK, status)
+}
+
+func (m *Module) mySQLStatus(w http.ResponseWriter, r *http.Request) {
+	writeData(w, http.StatusOK, m.service.MySQLStatus(r.Context()))
+}
+
+func (m *Module) installMySQL(w http.ResponseWriter, r *http.Request) {
+	status, err := m.service.InstallMySQL(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "mysql_install_failed", err.Error())
+		return
+	}
+	if m.audit != nil {
+		var actor *string
+		if user, ok := api.CurrentUser(r.Context()); ok {
+			id := user.ID
+			actor = &id
+		}
+		_ = m.audit.Record(r.Context(), actor, "plugin.mysql.install", "plugin", nil, map[string]any{
+			"engine": status.Engine, "path": status.Path, "server_path": status.ServerPath,
+			"version": status.Version, "running": status.Running,
+		}, nil)
 	}
 	writeData(w, http.StatusOK, status)
 }
