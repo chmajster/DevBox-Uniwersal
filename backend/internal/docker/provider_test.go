@@ -33,7 +33,7 @@ func (r *stubRunner) Stream(_ context.Context, args ...string) (io.ReadCloser, e
 }
 
 func TestListContainersParsesDockerJSONLines(t *testing.T) {
-	runner := &stubRunner{responses: []runnerResponse{{stdout: "{\"ID\":\"abc123\",\"Names\":\"web\",\"Image\":\"nginx:latest\",\"State\":\"running\",\"Status\":\"Up 1 minute\",\"Ports\":\"0.0.0.0:8080->80/tcp\",\"CreatedAt\":\"today\"}\n"}}}
+	runner := &stubRunner{responses: []runnerResponse{{stdout: "{\"ID\":\"abc123\",\"Names\":\"web\",\"Image\":\"nginx:latest\",\"State\":\"running\",\"Status\":\"Up 1 minute\",\"Ports\":\"0.0.0.0:8080->80/tcp\",\"CreatedAt\":\"today\",\"Labels\":\"com.docker.compose.project=plan,com.docker.compose.service=web,io.devbox.project=project-123\"}\n"}}}
 	provider := newCLIProviderWithRunner(runner)
 	items, err := provider.ListContainers(context.Background())
 	if err != nil {
@@ -42,8 +42,24 @@ func TestListContainersParsesDockerJSONLines(t *testing.T) {
 	if len(items) != 1 || items[0].Name != "web" || items[0].State != "running" {
 		t.Fatalf("unexpected containers: %#v", items)
 	}
+	if items[0].ComposeProject != "plan" || items[0].ProjectID != "project-123" {
+		t.Fatalf("container project metadata was not parsed: %#v", items[0])
+	}
 	if got := strings.Join(runner.calls[0], " "); strings.Contains(got, "sh -c") || strings.Contains(got, "bash -c") {
 		t.Fatalf("provider must not invoke a shell: %s", got)
+	}
+}
+
+func TestDockerListLabelReturnsRequestedMetadata(t *testing.T) {
+	labels := "com.docker.compose.project=plan,io.devbox.project=project-123,other=value"
+	if got := dockerListLabel(labels, "com.docker.compose.project"); got != "plan" {
+		t.Fatalf("compose project = %q, want plan", got)
+	}
+	if got := dockerListLabel(labels, "io.devbox.project"); got != "project-123" {
+		t.Fatalf("DevBox project = %q, want project-123", got)
+	}
+	if got := dockerListLabel(labels, "missing"); got != "" {
+		t.Fatalf("missing label = %q, want empty", got)
 	}
 }
 

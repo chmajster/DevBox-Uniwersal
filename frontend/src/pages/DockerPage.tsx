@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { request } from '../api/client'
-import type { ComposeProcess, ComposeProject, DockerContainer, DockerImage, DockerNetwork, DockerStatus, DockerVolume } from '../api/types'
+import type { ComposeProcess, ComposeProject, DockerContainer, DockerImage, DockerNetwork, DockerStatus, DockerVolume, Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { groupDockerContainers } from './dockerContainerGroups'
 
 type Section = 'containers' | 'images' | 'volumes' | 'networks' | 'compose'
 
@@ -10,6 +11,8 @@ export function DockerPage() {
   const [section, setSection] = useState<Section>('containers')
   const [status, setStatus] = useState<DockerStatus | null>(null)
   const [containers, setContainers] = useState<DockerContainer[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [images, setImages] = useState<DockerImage[]>([])
   const [volumes, setVolumes] = useState<DockerVolume[]>([])
   const [networks, setNetworks] = useState<DockerNetwork[]>([])
@@ -26,20 +29,23 @@ export function DockerPage() {
     setStatus(dockerStatus)
     if (!dockerStatus.available) {
       setContainers([])
+      setProjects([])
       setImages([])
       setVolumes([])
       setNetworks([])
       setComposeProjects([])
       return
     }
-    const [nextContainers, nextImages, nextVolumes, nextNetworks, nextCompose] = await Promise.all([
+    const [nextContainers, nextProjects, nextImages, nextVolumes, nextNetworks, nextCompose] = await Promise.all([
       request<DockerContainer[]>('/docker/containers'),
+      request<Project[]>('/projects').catch(() => []),
       request<DockerImage[]>('/docker/images'),
       request<DockerVolume[]>('/docker/volumes'),
       request<DockerNetwork[]>('/docker/networks'),
       request<ComposeProject[]>('/docker/compose/projects')
     ])
     setContainers(nextContainers ?? [])
+    setProjects(nextProjects ?? [])
     setImages(nextImages ?? [])
     setVolumes(nextVolumes ?? [])
     setNetworks(nextNetworks ?? [])
@@ -87,6 +93,17 @@ export function DockerPage() {
 
   const canOperate = user?.role === 'admin' || user?.role === 'operator'
 
+  const containerGroups = useMemo(() => groupDockerContainers(containers, projects), [containers, projects])
+
+  function toggleContainerGroup(key: string) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   return <>
     <div className="page-heading">
       <div>
@@ -117,25 +134,55 @@ export function DockerPage() {
 
     {status?.available === false && <div className="empty-panel">Docker data is unavailable because the engine cannot be queried.</div>}
 
-    {status?.available && section === 'containers' && <div className="table-wrap"><table>
-      <thead><tr><th>Name</th><th>Image</th><th>State</th><th>Status</th><th>Ports</th><th>Actions</th></tr></thead>
-      <tbody>
-        {containers.map((item) => <tr key={item.id}>
-          <td><strong>{item.name}</strong><div className="mono muted">{item.id.slice(0, 12)}</div></td>
-          <td>{item.image}</td>
-          <td><span className={'state-pill state-' + item.state}>{item.state}</span></td>
-          <td>{item.status}</td>
-          <td className="mono">{item.ports || '—'}</td>
-          <td><div className="row-actions">
-            <button type="button" className="secondary-button" onClick={() => showLogs(item.id)}>Logs</button>
-            {canOperate && item.state !== 'running' && <button type="button" disabled={busy} onClick={() => containerAction(item.id, 'start')}>Start</button>}
-            {canOperate && item.state === 'running' && <button type="button" disabled={busy} onClick={() => containerAction(item.id, 'stop')}>Stop</button>}
-            {canOperate && <button type="button" className="secondary-button" disabled={busy} onClick={() => containerAction(item.id, 'restart')}>Restart</button>}
-          </div></td>
-        </tr>)}
-        {containers.length === 0 && <tr><td colSpan={6} className="muted">No containers reported by Docker.</td></tr>}
-      </tbody>
-    </table></div>}
+    {status?.available && section === 'containers' && <div className="docker-container-groups">
+      {containerGroups.map((group) => {
+        const collapsed = collapsedGroups.has(group.key)
+        const groupDescription = group.kind === 'project'
+          ? 'Aplikacja / projekt'
+          : group.kind === 'infrastructure'
+            ? 'Usługi infrastrukturalne DevBox'
+            : 'Kontenery bez przypisanego projektu'
+        return <section className={'docker-container-card docker-container-card-' + group.kind} key={group.key}>
+          <button
+            type="button"
+            className="docker-container-card-header"
+            aria-expanded={!collapsed}
+            onClick={() => toggleContainerGroup(group.key)}
+          >
+            <span className="docker-container-card-chevron" aria-hidden="true">{collapsed ? '›' : '⌄'}</span>
+            <span className="docker-container-card-title">
+              <strong>{group.label}</strong>
+              <small>{groupDescription} · {group.containers.length} {group.containers.length === 1 ? 'kontener' : 'kontenery'}</small>
+            </span>
+            <span className="docker-container-card-summary">
+              <span className="state-pill state-running">{group.running} running</span>
+              {group.stopped > 0 && <span className="state-pill state-exited">{group.stopped} stopped</span>}
+            </span>
+          </button>
+          {!collapsed && <div className="docker-container-card-body">
+            <div className="table-wrap docker-container-table-wrap"><table>
+              <thead><tr><th>Name</th><th>Image</th><th>State</th><th>Status</th><th>Ports</th><th>Actions</th></tr></thead>
+              <tbody>
+                {group.containers.map((item) => <tr key={item.id}>
+                  <td><strong>{item.name}</strong><div className="mono muted">{item.id.slice(0, 12)}</div></td>
+                  <td>{item.image}</td>
+                  <td><span className={'state-pill state-' + item.state}>{item.state}</span></td>
+                  <td>{item.status}</td>
+                  <td className="mono">{item.ports || '—'}</td>
+                  <td><div className="row-actions">
+                    <button type="button" className="secondary-button" onClick={() => showLogs(item.id)}>Logs</button>
+                    {canOperate && item.state !== 'running' && <button type="button" disabled={busy} onClick={() => containerAction(item.id, 'start')}>Start</button>}
+                    {canOperate && item.state === 'running' && <button type="button" disabled={busy} onClick={() => containerAction(item.id, 'stop')}>Stop</button>}
+                    {canOperate && <button type="button" className="secondary-button" disabled={busy} onClick={() => containerAction(item.id, 'restart')}>Restart</button>}
+                  </div></td>
+                </tr>)}
+              </tbody>
+            </table></div>
+          </div>}
+        </section>
+      })}
+      {containerGroups.length === 0 && <div className="empty-panel">No containers reported by Docker.</div>}
+    </div>}
 
     {status?.available && section === 'images' && <div className="table-wrap"><table>
       <thead><tr><th>Repository</th><th>Tag</th><th>ID</th><th>Size</th><th>Created</th></tr></thead>

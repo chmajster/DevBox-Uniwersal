@@ -126,15 +126,30 @@ func (p *CLIProvider) ListContainers(ctx context.Context) ([]Container, error) {
 		Status    string `json:"Status"`
 		Ports     string `json:"Ports"`
 		CreatedAt string `json:"CreatedAt"`
+		Labels    string `json:"Labels"`
 	}
 	if err := decodeJSONLines(out, &raw); err != nil {
 		return nil, fmt.Errorf("decode docker container list: %w", err)
 	}
 	items := make([]Container, 0, len(raw))
 	for _, item := range raw {
-		items = append(items, Container{ID: item.ID, Name: item.Names, Image: item.Image, State: item.State, Status: item.Status, Ports: item.Ports, CreatedAt: item.CreatedAt})
+		items = append(items, Container{
+			ID: item.ID, Name: item.Names, Image: item.Image, State: item.State, Status: item.Status, Ports: item.Ports, CreatedAt: item.CreatedAt,
+			ComposeProject: dockerListLabel(item.Labels, "com.docker.compose.project"),
+			ProjectID:      dockerListLabel(item.Labels, "io.devbox.project"),
+		})
 	}
 	return items, nil
+}
+
+func dockerListLabel(labels, key string) string {
+	for _, entry := range strings.Split(labels, ",") {
+		name, value, ok := strings.Cut(strings.TrimSpace(entry), "=")
+		if ok && name == key {
+			return value
+		}
+	}
+	return ""
 }
 
 func (p *CLIProvider) InspectContainer(ctx context.Context, id string) (ContainerDetail, error) {
@@ -167,8 +182,12 @@ func (p *CLIProvider) InspectContainer(ctx context.Context, id string) (Containe
 	}
 	item := raw[0]
 	return ContainerDetail{
-		Container: Container{ID: item.ID, Name: strings.TrimPrefix(item.Name, "/"), Image: item.Config.Image, State: item.State.Status, Status: item.State.Status},
-		Running:   item.State.Running, StartedAt: item.State.StartedAt, FinishedAt: item.State.FinishedAt, Labels: item.Config.Labels,
+		Container: Container{
+			ID: item.ID, Name: strings.TrimPrefix(item.Name, "/"), Image: item.Config.Image, State: item.State.Status, Status: item.State.Status,
+			ComposeProject: item.Config.Labels["com.docker.compose.project"],
+			ProjectID:      item.Config.Labels["io.devbox.project"],
+		},
+		Running: item.State.Running, StartedAt: item.State.StartedAt, FinishedAt: item.State.FinishedAt, Labels: item.Config.Labels,
 	}, nil
 }
 

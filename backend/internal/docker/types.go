@@ -37,13 +37,15 @@ type Status struct {
 }
 
 type Container struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Image     string `json:"image"`
-	State     string `json:"state"`
-	Status    string `json:"status"`
-	Ports     string `json:"ports,omitempty"`
-	CreatedAt string `json:"created_at,omitempty"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Image          string `json:"image"`
+	State          string `json:"state"`
+	Status         string `json:"status"`
+	Ports          string `json:"ports,omitempty"`
+	CreatedAt      string `json:"created_at,omitempty"`
+	ComposeProject string `json:"compose_project,omitempty"`
+	ProjectID      string `json:"project_id,omitempty"`
 }
 
 type ContainerDetail struct {

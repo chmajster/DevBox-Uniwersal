@@ -205,6 +205,8 @@ export interface DockerContainer {
   status: string
   ports?: string
   created_at?: string
+  compose_project?: string
+  project_id?: string
 }
 
 export interface DockerImage {
