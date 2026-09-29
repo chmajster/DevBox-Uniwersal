@@ -33,6 +33,7 @@ type ProjectDatabaseRuntime struct {
 	ApplicationService string
 	DatabaseService    string
 	HostGateway        bool
+	HostAccessOnly     bool
 }
 
 type ProjectDatabaseResolver interface {
