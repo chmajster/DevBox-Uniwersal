@@ -59,6 +59,9 @@ DevBox Universal is an integrated local development control plane.
 
 ## Databases
 
+- Plugins provide a dedicated `Bazy danych dla aplikacji` selector. Administrators may install/configure MySQL/MariaDB, PostgreSQL or both on independent host ports; these host SQL services are application-only and never become control-plane storage.
+- Application SQL services are exposed to containers as `host.docker.internal:<selected-port>` and are listed in project database configuration only after listener/readiness checks pass. Managed `devbox-mysql` may keep 3306 while host application MySQL uses another free port such as 3307.
+- Legacy installations that still use host MySQL for the DevBox control-plane are explicitly marked `control-plane`, cannot be reconfigured from the application plugin, and are not returned as application-ready host databases.
 - Project database mode selection uses a dedicated responsive five-option layout. `Połącz z bazą na hoście` is a network-access-only choice: it stores no database name, username or password, does not inject database credential variables, and shows the exact `host.docker.internal:<port>` application endpoint.
 - Per-project database bindings support `none`, DevBox-managed MySQL, project-owned Compose MySQL/MariaDB, external credentialed MySQL/MariaDB and host-access-only MySQL/MariaDB/PostgreSQL.
 - Host database access discovers installed MySQL/MariaDB and PostgreSQL instances, including PostgreSQL cluster ports from `pg_lsclusters`. Selecting an instance sets its engine/port automatically; custom ports remain editable. The host-access-only choice stores only `host.docker.internal`, the selected engine/port and the `host_access_only` flag. External credentialed loopback bindings still normalize to the same Docker host target.
