@@ -51,7 +51,61 @@ import (
 )
 
 )
-	sensitiveAssignmentPattern = regexp.MustCompile(`(?i)(password|passwd|token|secret|api[_-]?key|authorization)([[:space:]]*[:=][[:space:]]*)([^[:space:]]+)`)
+	sensitiveAssignmentPattern = regexp.MustCompile(`(?i)(password|passwd|token|secret|api[_-]?key)([[:space:]]*[:=][[:space:]]*)([^[:space:]]+)`)
+	authorizationHeaderPattern = regexp.MustCompile(`(?i)(authorization[[:space:]]*:[[:space:]]*).+package updater
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
+)
+
+const (
+	defaultRepository   = "https://github.com/chmajster/DevBox-Uniwersal.git"
+	defaultRef          = "main"
+	defaultProgressFile = "/var/lib/devbox/update-status"
+	defaultUpdateLog    = "/var/log/devbox-update.log"
+	updateLogTailLines  = 40
+	updateLogTailBytes  = 32 * 1024
+)
+
+var (
+	gitRefPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+package updater
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
+)
+
+)
+	)
 	bearerPattern = regexp.MustCompile(`(?i)(bearer[[:space:]]+)[A-Za-z0-9._~+/=-]+`)
 	mysqlPasswordPattern = regexp.MustCompile(`(?i)(-p|--password=)([^[:space:]]+)`)
 )
@@ -304,6 +358,7 @@ func readUpdateLogTail(path string, maxLines, maxBytes int) ([]string, error) {
 }
 
 func sanitizeUpdateLogLine(line string) string {
+	line = authorizationHeaderPattern.ReplaceAllString(line, "$1[REDACTED]")
 	line = sensitiveAssignmentPattern.ReplaceAllString(line, "$1$2[REDACTED]")
 	line = bearerPattern.ReplaceAllString(line, "$1[REDACTED]")
 	line = mysqlPasswordPattern.ReplaceAllString(line, "$1[REDACTED]")
