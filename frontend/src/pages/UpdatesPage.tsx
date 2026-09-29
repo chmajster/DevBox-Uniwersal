@@ -399,7 +399,9 @@ export function UpdatesPage() {
 
           <div className="update-failure-error">
             <span>Dokładny błąd</span>
-            <pre>{progress?.error || 'Updater zakończył się błędem bez dodatkowego komunikatu.'}</pre>
+            <pre>{progress?.failure_detail || progress?.error || 'Updater zakończył się błędem bez dodatkowego komunikatu.'}</pre>
+            {progress?.failure_detail && progress?.error && progress.failure_detail !== progress.error &&
+              <small className="muted">Updater: {progress.error}</small>}
           </div>
 
           {progress?.log_tail && progress.log_tail.length > 0 && <details className="update-failure-log" open>
