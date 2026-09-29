@@ -112,3 +112,14 @@ func TestSanitizeUpdateLogLineRedactsMySQLPassword(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+
+func TestFailureDetailFromLogTailSkipsUpdaterSummary(t *testing.T) {
+	lines := []string{
+		"[FAIL] npm run build: TypeScript compilation failed",
+		"[2026-09-29T18:25:53Z] Aktualizacja nie powiodła się na etapie: frontend. Kod wyjścia: 2.",
+	}
+	if got := failureDetailFromLogTail(lines); got != "[FAIL] npm run build: TypeScript compilation failed" {
+		t.Fatalf("got %q", got)
+	}
+}
