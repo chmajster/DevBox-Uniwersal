@@ -86,8 +86,8 @@ type HostDatabaseInstance struct {
 }
 
 type Service struct {
-	helperBinary      string
-	sudoBinary        string
+	helperBinary          string
+	sudoBinary            string
 	jobs                  jobs.JobRunner
 	reservedHostPorts     map[int]string
 	mysqlDetector         func(context.Context) (HostDatabaseInstance, bool)
