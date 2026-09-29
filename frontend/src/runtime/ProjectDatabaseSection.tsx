@@ -12,6 +12,7 @@ import type {
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { databaseModeFields } from './databaseMode'
+import { effectiveRuntimeName, preparePHPModuleConfig, updatePHPModuleSelection } from './phpModuleConfig'
 
 interface Props {
   projectId: string
@@ -50,6 +51,13 @@ function modeLabel(mode: DatabaseMode) {
     case 'external': return 'Istniejący host MySQL/MariaDB'
     default: return 'Brak bazy'
   }
+}
+
+function formatDatabaseTimestamp(value?: string) {
+  if (!value || value.startsWith('0001-01-01')) return '—'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime()) || parsed.getUTCFullYear() <= 1) return '—'
+  return parsed.toLocaleString('pl-PL')
 }
 
 const databaseModeOptions: Array<{ mode: DatabaseMode; title: string; description: string }> = [
@@ -118,7 +126,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   }, [load, loadComposeServices])
 
   const modeFields = databaseModeFields(draft.mode)
-  const effectiveRuntime = (runtimeConfig?.runtime || runtimeInfo?.runtime || '').toLowerCase()
+  const effectiveRuntime = effectiveRuntimeName(runtimeConfig?.runtime, runtimeInfo?.runtime)
   const phpModules = useMemo(() => new Set((runtimeConfig?.modules ?? []).map((item) => item.name.toLowerCase())), [runtimeConfig])
   const needsPHPMySQLDriver = draft.mode !== 'none' && effectiveRuntime === 'php' && !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
 
@@ -189,17 +197,22 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   }
 
   async function addPDODriver() {
-    if (!runtimeConfig) return
+    if (!runtimeConfig) {
+      setError('Nie udało się pobrać konfiguracji runtime projektu. Odśwież widok i spróbuj ponownie.')
+      return
+    }
     await perform('pdo', async () => {
-      const modules = runtimeConfig.modules.some((item) => item.name === 'pdo_mysql')
-        ? runtimeConfig.modules
-        : [...runtimeConfig.modules, { name: 'pdo_mysql' }]
+      const configWithDriver = {
+        ...runtimeConfig,
+        modules: updatePHPModuleSelection(runtimeConfig.modules, 'pdo_mysql', true),
+      }
+      const payload = preparePHPModuleConfig(configWithDriver)
       const saved = await request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`, {
         method: 'PUT',
-        body: JSON.stringify({ ...runtimeConfig, modules }),
+        body: JSON.stringify(payload),
       })
       setRuntimeConfig(saved)
-      setMessage('PDO MySQL dodano do konfiguracji runtime projektu. Zostanie zainstalowane przy przebudowie obrazu.')
+      setMessage('PDO MySQL dodano do konfiguracji runtime projektu. Runtime PHP został zapisany automatycznie i sterownik zostanie zainstalowany przy przebudowie obrazu.')
     })
   }
 
@@ -298,7 +311,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         <label>Nazwa bazy<input readOnly value={binding?.database || 'zostanie utworzona automatycznie'} /></label>
         <label>Użytkownik<input readOnly value={binding?.username || 'zostanie utworzony automatycznie'} /></label>
         <label>Status<input readOnly value={binding?.status || 'jeszcze nie utworzono'} /></label>
-        <label>Data utworzenia<input readOnly value={binding?.created_at ? new Date(binding.created_at).toLocaleString('pl-PL') : '—'} /></label>
+        <label>Data utworzenia<input readOnly value={formatDatabaseTimestamp(binding?.created_at)} /></label>
       </>}
 
       {modeFields.includes('compose_service') && <>
