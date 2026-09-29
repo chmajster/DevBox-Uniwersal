@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Directory picker UI
+
+- Rebuilt the project directory chooser into an Explorer-style folder tree with expandable chevrons, yellow folder icons and a compact selected-row treatment.
+- Kept the existing allowlisted-root API, lazy directory loading, cycle protection, traversal limit messages, double-click selection and final path confirmation.
+- Added a frontend regression test for the new tree shell.
+
+
 
 ### Port management UI
 

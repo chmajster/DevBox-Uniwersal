@@ -24,6 +24,18 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
+function Chevron({ expanded, loading, cycle }: { expanded: boolean; loading: boolean; cycle: boolean }) {
+  if (loading) return <span className="directory-tree-spinner" aria-hidden="true" />
+  if (cycle) return <span className="directory-tree-cycle" aria-hidden="true">↻</span>
+  return <span className={\`directory-tree-chevron\${expanded ? ' is-expanded' : ''}\`} aria-hidden="true" />
+}
+
+function FolderIcon({ open }: { open: boolean }) {
+  return <span className={\`directory-tree-folder\${open ? ' is-open' : ''}\`} aria-hidden="true">
+    <span className="directory-tree-folder-tab" />
+  </span>
+}
+
 export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerProps) {
   const [selected, setSelected] = useState(value)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -69,7 +81,7 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
       return next
     })
     try {
-      const listing = await request<DirectoryListing>(`/project-directories?path=${encodeURIComponent(path)}`)
+      const listing = await request<DirectoryListing>(\`/project-directories?path=\${encodeURIComponent(path)}\`)
       setListings(current => ({
         ...current,
         [path]: listing.directories ?? [],
@@ -110,6 +122,11 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
     setExpanded(current => new Set(current).add(resolvedPath))
   }
 
+  function choose(path: string) {
+    onSelect(path)
+    onClose()
+  }
+
   function renderNode(path: string, label: string, depth: number, ancestors: Set<string>) {
     const cycle = ancestors.has(path)
     const isExpanded = expanded.has(path)
@@ -118,41 +135,42 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
     const nextAncestors = new Set(ancestors)
     nextAncestors.add(path)
 
-    return <div key={`${depth}:${path}`} className="directory-tree-node">
+    return <div key={\`\${depth}:\${path}\`} className="directory-tree-node">
       <div
-        className={`directory-tree-row${selected === path ? ' is-selected' : ''}`}
-        style={{ paddingLeft: `${depth * 18}px` }}
+        className={\`directory-tree-row\${selected === path ? ' is-selected' : ''}\`}
+        style={{ paddingLeft: \`\${10 + depth * 22}px\` }}
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-selected={selected === path}
+        aria-expanded={cycle ? undefined : isExpanded}
+        title={path}
+        onDoubleClick={() => choose(path)}
       >
         <button
           type="button"
           className="directory-tree-toggle"
-          aria-label={cycle ? `Cykl ${label}` : isExpanded ? `Zwiń ${label}` : `Rozwiń ${label}`}
-          aria-expanded={!cycle && isExpanded}
+          aria-label={cycle ? \`Cykl \${label}\` : isExpanded ? \`Zwiń \${label}\` : \`Rozwiń \${label}\`}
           onClick={() => { if (!cycle) void toggle(path) }}
           disabled={isLoading || cycle || depth >= 32}
         >
-          {cycle ? '↺' : isLoading ? '…' : isExpanded ? '−' : '+'}
+          <Chevron expanded={isExpanded} loading={isLoading} cycle={cycle} />
         </button>
         <button
           type="button"
           className="directory-tree-name"
           onClick={() => setSelected(path)}
-          onDoubleClick={() => {
-            onSelect(path)
-            onClose()
-          }}
-          title={path}
         >
-          {label}
+          <FolderIcon open={isExpanded} />
+          <span className="directory-tree-label">{label}</span>
         </button>
       </div>
-      {cycle && <div className="directory-tree-empty" style={{ paddingLeft: `${depth * 18 + 34}px` }}>Pominięto cykl dowiązania symbolicznego</div>}
-      {errors[path] && <div className="directory-tree-error" style={{ paddingLeft: `${depth * 18 + 34}px` }}>{errors[path]}</div>}
+      {cycle && <div className="directory-tree-empty" style={{ paddingLeft: \`\${44 + depth * 22}px\` }}>Pominięto cykl dowiązania symbolicznego</div>}
+      {errors[path] && <div className="directory-tree-error" style={{ paddingLeft: \`\${44 + depth * 22}px\` }}>{errors[path]}</div>}
       {!cycle && isExpanded && children.map(child => renderNode(child.path, child.name, depth + 1, nextAncestors))}
       {!cycle && isExpanded && truncated.has(path) &&
-        <div className="directory-tree-empty" style={{ paddingLeft: `${depth * 18 + 34}px` }}>Lista ograniczona do 500 katalogów</div>}
+        <div className="directory-tree-empty" style={{ paddingLeft: \`\${44 + depth * 22}px\` }}>Lista ograniczona do 500 katalogów</div>}
       {!cycle && isExpanded && !isLoading && !errors[path] && children.length === 0 &&
-        <div className="directory-tree-empty" style={{ paddingLeft: `${depth * 18 + 34}px` }}>Brak podkatalogów</div>}
+        <div className="directory-tree-empty" style={{ paddingLeft: \`\${44 + depth * 22}px\` }}>Brak podkatalogów</div>}
     </div>
   }
 
@@ -162,16 +180,22 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
     <div className="directory-picker-header">
       <div>
         <strong>Wybierz katalog</strong>
-        <span className="muted">Widoczne są wyłącznie katalogi dozwolone przez konfigurację DevBox.</span>
+        <span className="muted">Rozwiń foldery i wybierz katalog z drzewa.</span>
       </div>
       <button type="button" className="secondary" onClick={onClose}>Zamknij</button>
     </div>
 
-    <div className="directory-tree" role="tree" aria-label="Drzewo katalogów">
-      {loading.has('') && <div className="directory-tree-empty">Ładowanie katalogów…</div>}
-      {errors[''] && <div className="directory-tree-error">{errors['']}</div>}
-      {!loading.has('') && !errors[''] && roots.map(root => renderNode(root.path, root.name, 0, new Set()))}
-      {!loading.has('') && !errors[''] && roots.length === 0 && <div className="directory-tree-empty">Brak skonfigurowanych katalogów do przeglądania</div>}
+    <div className="directory-tree-shell">
+      <div className="directory-tree-title">
+        <FolderIcon open />
+        <strong>Katalogi</strong>
+      </div>
+      <div className="directory-tree" role="tree" aria-label="Drzewo katalogów">
+        {loading.has('') && <div className="directory-tree-empty directory-tree-root-message">Ładowanie katalogów…</div>}
+        {errors[''] && <div className="directory-tree-error directory-tree-root-message">{errors['']}</div>}
+        {!loading.has('') && !errors[''] && roots.map(root => renderNode(root.path, root.name || root.path, 0, new Set()))}
+        {!loading.has('') && !errors[''] && roots.length === 0 && <div className="directory-tree-empty directory-tree-root-message">Brak skonfigurowanych katalogów do przeglądania</div>}
+      </div>
     </div>
 
     <div className="directory-picker-selection">
@@ -184,8 +208,7 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
         disabled={!selected}
         onClick={() => {
           if (!selected) return
-          onSelect(selected)
-          onClose()
+          choose(selected)
         }}
       >
         Wybierz katalog
