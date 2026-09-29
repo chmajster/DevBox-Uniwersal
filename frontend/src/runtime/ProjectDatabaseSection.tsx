@@ -131,7 +131,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     setHostDatabasesLoading(true)
     try {
       const items = await request<HostDatabaseInstance[]>('/plugins/databases/host')
-      setHostDatabases((items ?? []).filter((item) => item.installed))
+      setHostDatabases((items ?? []).filter((item) => item.installed && item.application_ready))
     } catch {
       setHostDatabases([])
     } finally {
@@ -334,7 +334,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
               checked={selectedModeChoice === choice}
               onChange={() => {
                 const firstHost = choice === 'host'
-                  ? (hostDatabases.find((item) => item.running) ?? hostDatabases[0])
+                  ? (hostDatabases.find((item) => item.application_ready) ?? hostDatabases[0])
                   : undefined
                 setDraft({
                   ...emptyDraft,
@@ -393,7 +393,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         {hostDatabaseSelected ? <>
           <div className="validation-box span-2">
             <strong>Wybierz bazę działającą na hoście.</strong>
-            <span>DevBox wykrywa lokalny MySQL/MariaDB i PostgreSQL. Wybór ustawia silnik i port, a kontener dostaje dostęp przez <code>host.docker.internal:host-gateway</code>. Nazwę bazy i credentiale nadal ustawia sama aplikacja.</span>
+            <span>Lista zawiera wyłącznie bazy oznaczone w Pluginach jako gotowe dla aplikacji. Wybór ustawia silnik i port, a kontener dostaje dostęp przez <code>host.docker.internal:host-gateway</code>. Nazwę bazy i credentiale nadal ustawia sama aplikacja.</span>
           </div>
           <label className="span-2">Baza / port na hoście
             <select
@@ -412,8 +412,8 @@ export function ProjectDatabaseSection({ projectId }: Props) {
             </select>
           </label>
           {hostDatabases.length === 0 && !hostDatabasesLoading && <div className="validation-box span-2">
-            <strong>Nie wykryto MySQL/MariaDB ani PostgreSQL na hoście.</strong>
-            <span>Możesz nadal ustawić silnik i port ręcznie. Po instalacji bazy odśwież stronę, aby pojawiła się na liście.</span>
+            <strong>Brak gotowej bazy aplikacyjnej na hoście.</strong>
+            <span>Wejdź w <strong>Pluginy → Bazy danych dla aplikacji</strong>, wybierz MySQL/MariaDB i/lub PostgreSQL i skonfiguruj port. Po zakończeniu baza pojawi się tutaj automatycznie.</span>
           </div>}
           <label>Silnik
             <select disabled={readOnly || busy !== ''} value={selectedEngine} onChange={(event) => {
