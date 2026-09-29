@@ -307,101 +307,102 @@ export function PluginsPage() {
       </div>
     </section>
 
-    <section className="panel phpmyadmin-panel">
-      <div>
-        <div className="actions">
-          <Icon name="database" size={24} />
-          <div>
-            <h2>MySQL / MariaDB na hoście</h2>
-            <p className="muted">Opcjonalny serwer MySQL/MariaDB instalowany bezpośrednio w systemie hosta przez manager pakietów.</p>
+    <section className="panel application-database-plugin">
+      <div className="section-heading">
+        <div>
+          <div className="actions">
+            <Icon name="database" size={24} />
+            <div>
+              <h2>Bazy danych dla aplikacji</h2>
+              <p className="muted">Wybierz MySQL/MariaDB, PostgreSQL albo oba silniki. Te serwery są przeznaczone wyłącznie dla baz aplikacji uruchamianych przez DevBox.</p>
+            </div>
           </div>
+          <p className="muted small">Nie są używane jako baza control-plane DevBox. Po instalacji pojawią się automatycznie w zakładce <strong>Baza danych</strong> projektu jako dostępne bazy na hoście.</p>
         </div>
-        <p className="muted small">
-          {mysql?.installed
-            ? 'Serwer hostowy został wykryty. Jest niezależny od zarządzanego kontenera devbox-mysql.'
-            : 'Zainstaluj hostowy MySQL/MariaDB, jeżeli aplikacje mają łączyć się z bazą działającą bezpośrednio na hoście.'}
-        </p>
+        <span className="status-chip" data-ok={(mysql?.application_ready || postgresql?.application_ready) ? 'true' : 'false'}>
+          {(mysql?.application_ready ? 1 : 0) + (postgresql?.application_ready ? 1 : 0)} gotowe
+        </span>
       </div>
 
-      <div className="phpmyadmin-status">
-        <div className="actions">
-          <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
-            {mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
-          </span>
-          {mysql?.installed && <span className="status-chip" data-ok={mysql.running ? 'true' : 'false'}>
-            {mysql.running ? 'Usługa działa' : 'Usługa nie odpowiada'}
-          </span>}
-          {mysql?.engine && <span className="status-chip" data-ok="true">{mysql.engine === 'mariadb' ? 'MariaDB' : 'MySQL'}</span>}
-        </div>
-
-        {mysql?.version && <p className="muted small">Wersja: <code>{mysql.version}</code></p>}
-        {mysql?.client_path && <p className="muted small">Klient: <code>{mysql.client_path}</code></p>}
-        {mysql?.server_path && <p className="muted small">Serwer: <code>{mysql.server_path}</code></p>}
-        {mysql?.host && mysql?.port && <p className="muted small">Adres hosta: <code>{mysql.host}:{mysql.port}</code></p>}
-        {mysql?.container_host && mysql?.port && <p className="muted small">Adres z kontenera: <code>{mysql.container_host}:{mysql.port}</code></p>}
-        {mysql?.message && <p className="muted small">{mysql.message}</p>}
-        <p className="muted small">Instalacja hostowa nie zastępuje zarządzanego MySQL DevBox (<code>devbox-mysql</code>). DevBox blokuje instalację, jeżeli port 3306 jest już zarezerwowany przez zarządzany MySQL lub inny listener.</p>
-
-        <div className="actions">
-          {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
-            <button type="button" onClick={() => void installMySQL()} disabled={busy}>
-              {busyAction === 'mysql-install' ? 'Instalowanie…' : 'Zainstaluj MySQL / MariaDB'}
-            </button>
-          )}
-          {!mysql?.installed && !canInstallSystemPackages && (
-            <span className="muted small">Instalacja MySQL/MariaDB wymaga roli administratora.</span>
-          )}
-          {!mysql?.installed && canInstallSystemPackages && mysql && !mysql.installable && (
-            <span className="muted small">{mysql.message || 'Instalacja z panelu jest obecnie niedostępna.'}</span>
-          )}
-        </div>
-      </div>
-    </section>
-
-    <section className="panel phpmyadmin-panel">
-      <div>
-        <div className="actions">
-          <Icon name="database" size={24} />
-          <div>
-            <h2>PostgreSQL</h2>
-            <p className="muted">Opcjonalny lokalny serwer PostgreSQL instalowany przez systemowy manager pakietów.</p>
+      <div className="application-database-grid">
+        <label className="application-database-card" data-selected={mysqlSelected ? 'true' : 'false'}>
+          <div className="application-database-card-header">
+            <input
+              type="checkbox"
+              checked={mysqlSelected}
+              onChange={(event) => setMySQLSelected(event.target.checked)}
+              disabled={!canInstallSystemPackages || busy}
+            />
+            <div>
+              <strong>MySQL / MariaDB</strong>
+              <span>Baza hostowa tylko dla aplikacji</span>
+            </div>
           </div>
-        </div>
-        <p className="muted small">
-          {postgresql?.installed
-            ? 'PostgreSQL jest zainstalowany. Status poniżej pokazuje, czy lokalny serwer odpowiada.'
-            : 'PostgreSQL nie jest wymagany przez DevBox. Możesz go doinstalować, jeżeli projekty potrzebują lokalnego serwera PostgreSQL.'}
-        </p>
+          <div className="actions">
+            <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>{mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}</span>
+            {mysql?.installed && <span className="status-chip" data-ok={mysql.application_ready ? 'true' : 'false'}>{mysql.application_ready ? 'Gotowy dla aplikacji' : 'Wymaga konfiguracji'}</span>}
+          </div>
+          <label>Port aplikacyjny
+            <input
+              type="number"
+              min={1024}
+              max={65535}
+              value={mysqlPort}
+              onChange={(event) => setMySQLPort(Number(event.target.value))}
+              disabled={!canInstallSystemPackages || busy}
+            />
+          </label>
+          <p className="muted small">Adres z kontenera: <code>{mysql?.container_host ?? 'host.docker.internal'}:{mysqlPort}</code></p>
+          {mysql?.version && <p className="muted small">Wersja: <code>{mysql.version}</code></p>}
+          {mysql?.message && <p className="muted small">{mysql.message}</p>}
+        </label>
+
+        <label className="application-database-card" data-selected={postgresqlSelected ? 'true' : 'false'}>
+          <div className="application-database-card-header">
+            <input
+              type="checkbox"
+              checked={postgresqlSelected}
+              onChange={(event) => setPostgreSQLSelected(event.target.checked)}
+              disabled={!canInstallSystemPackages || busy}
+            />
+            <div>
+              <strong>PostgreSQL</strong>
+              <span>Baza hostowa tylko dla aplikacji</span>
+            </div>
+          </div>
+          <div className="actions">
+            <span className="status-chip" data-ok={postgresql?.installed ? 'true' : 'false'}>{postgresql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}</span>
+            {postgresql?.installed && <span className="status-chip" data-ok={postgresql.application_ready ? 'true' : 'false'}>{postgresql.application_ready ? 'Gotowy dla aplikacji' : 'Wymaga konfiguracji'}</span>}
+          </div>
+          <label>Port aplikacyjny
+            <input
+              type="number"
+              min={1024}
+              max={65535}
+              value={postgresqlPort}
+              onChange={(event) => setPostgreSQLPort(Number(event.target.value))}
+              disabled={!canInstallSystemPackages || busy}
+            />
+          </label>
+          <p className="muted small">Adres z kontenera: <code>{postgresql?.container_host ?? 'host.docker.internal'}:{postgresqlPort}</code></p>
+          {postgresql?.version && <p className="muted small">Wersja: <code>{postgresql.version}</code></p>}
+          {postgresql?.message && <p className="muted small">{postgresql.message}</p>}
+        </label>
       </div>
 
-      <div className="phpmyadmin-status">
-        <div className="actions">
-          <span className="status-chip" data-ok={postgresql?.installed ? 'true' : 'false'}>
-            {postgresql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
-          </span>
-          {postgresql?.installed && <span className="status-chip" data-ok={postgresql.running ? 'true' : 'false'}>
-            {postgresql.running ? 'Uruchomiony' : 'Nie odpowiada'}
-          </span>}
-        </div>
-
-        {postgresql?.version && <p className="muted small">Wersja: <code>{postgresql.version}</code></p>}
-        {postgresql?.path && <p className="muted small">Klient: <code>{postgresql.path}</code></p>}
-        {postgresql?.host && postgresql?.port && <p className="muted small">Adres lokalny: <code>{postgresql.host}:{postgresql.port}</code></p>}
-        {postgresql?.message && <p className="muted small">{postgresql.message}</p>}
-
-        <div className="actions">
-          {!postgresql?.installed && canInstallSystemPackages && postgresql?.installable && (
-            <button type="button" onClick={installPostgreSQL} disabled={busy}>
-              {busyAction === 'postgresql-install' ? 'Instalowanie…' : 'Zainstaluj PostgreSQL'}
-            </button>
-          )}
-          {!postgresql?.installed && !canInstallSystemPackages && (
-            <span className="muted small">Instalacja PostgreSQL wymaga roli administratora.</span>
-          )}
-          {!postgresql?.installed && canInstallSystemPackages && postgresql && !postgresql.installable && (
-            <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
-          )}
-        </div>
+      <div className="actions application-database-actions">
+        {canInstallSystemPackages ? (
+          <button
+            type="button"
+            onClick={() => void installSelectedDatabases()}
+            disabled={busy || (!mysqlSelected && !postgresqlSelected)}
+          >
+            {busyAction === 'database-install' ? 'Instalowanie / konfigurowanie…' : 'Zainstaluj / skonfiguruj wybrane'}
+          </button>
+        ) : (
+          <span className="muted small">Instalacja baz systemowych wymaga roli administratora.</span>
+        )}
+        <span className="muted small">Możesz mieć oba silniki jednocześnie. Porty muszą być różne i wolne na hoście.</span>
       </div>
     </section>
 
