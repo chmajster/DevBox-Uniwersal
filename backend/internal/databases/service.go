@@ -423,6 +423,10 @@ func (s *Service) ListUsers(ctx context.Context) ([]DatabaseUser, error) {
 	return s.repo.ListUsers(ctx)
 }
 
+func (s *Service) GetUser(ctx context.Context, id string) (DatabaseUser, error) {
+	return s.repo.UserByID(ctx, id)
+}
+
 func (s *Service) CreateUser(ctx context.Context, databaseID, username string, requestedPassword *string, privileges []string, actor *string, remote *string) (DatabaseUser, string, error) {
 	if s.secrets == nil {
 		return DatabaseUser{}, "", ErrSecretsUnavailable
