@@ -119,6 +119,17 @@ func normalizeDatabaseEngineName(engine string) string {
 	return name
 }
 
+func databaseAccountEngine(engine string) string {
+	switch normalizeDatabaseEngineName(engine) {
+	case "mysql", "mariadb":
+		return "mysql"
+	case "postgresql":
+		return "postgresql"
+	default:
+		return normalizeDatabaseEngineName(engine)
+	}
+}
+
 func (s *Service) engineFor(engine string) (databaseEngine, error) {
 	name := normalizeDatabaseEngineName(engine)
 	if name == "" {
@@ -233,11 +244,27 @@ func (s *Service) DeleteDatabase(ctx context.Context, id string, actor *string, 
 	}
 	for _, user := range users {
 		_ = provider.Revoke(ctx, item.Name, user.Username)
-		if err := provider.DeleteUser(ctx, user.Username); err != nil {
+		if err := s.repo.DeleteUserDatabaseGrant(ctx, user.ID, item.ID); err != nil && !errors.Is(err, ErrNotFound) {
 			return err
 		}
-		if s.secrets != nil && user.SecretRef != "" {
-			_ = s.secrets.Delete(ctx, "database-user", user.SecretRef)
+		refreshed, refreshErr := s.repo.UserByID(ctx, user.ID)
+		if refreshErr != nil && !errors.Is(refreshErr, ErrNotFound) {
+			return refreshErr
+		}
+		if refreshErr == nil && len(refreshed.Databases) == 0 {
+			accountProvider, providerErr := s.engineFor(refreshed.Engine)
+			if providerErr != nil {
+				return providerErr
+			}
+			if err := accountProvider.DeleteUser(ctx, refreshed.Username); err != nil {
+				return err
+			}
+			if s.secrets != nil && refreshed.SecretRef != "" {
+				_ = s.secrets.Delete(ctx, "database-user", refreshed.SecretRef)
+			}
+			if err := s.repo.DeleteUser(ctx, refreshed.ID); err != nil {
+				return err
+			}
 		}
 	}
 	if err := provider.DeleteDatabase(ctx, item.Name); err != nil {
@@ -306,6 +333,7 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	}
 	user := DatabaseUser{
 		ID:         newID(),
+		Engine:     databaseAccountEngine(database.Engine),
 		DatabaseID: database.ID,
 		Username:   username,
 		Privileges: defaultPrivileges(),
@@ -421,7 +449,7 @@ func (s *Service) CreateUser(ctx context.Context, databaseID, username string, r
 		return DatabaseUser{}, "", err
 	}
 	now := time.Now().UTC()
-	user := DatabaseUser{ID: newID(), DatabaseID: database.ID, Username: username, SecretRef: "", Privileges: privileges, CreatedAt: now, UpdatedAt: now}
+	user := DatabaseUser{ID: newID(), Engine: databaseAccountEngine(database.Engine), DatabaseID: database.ID, Username: username, SecretRef: "", Privileges: privileges, CreatedAt: now, UpdatedAt: now}
 	user.SecretRef = user.ID
 	if err := s.secrets.Put(ctx, "database-user", user.SecretRef, []byte(password)); err != nil {
 		return DatabaseUser{}, "", err
@@ -455,11 +483,7 @@ func (s *Service) DatabaseUserConnection(ctx context.Context, userID, password s
 	if err != nil {
 		return ConnectionConfig{}, err
 	}
-	database, err := s.repo.DatabaseByID(ctx, user.DatabaseID)
-	if err != nil {
-		return ConnectionConfig{}, err
-	}
-	provider, err := s.engineFor(database.Engine)
+	provider, err := s.engineFor(user.Engine)
 	if err != nil {
 		return ConnectionConfig{}, err
 	}
@@ -468,10 +492,12 @@ func (s *Service) DatabaseUserConnection(ctx context.Context, userID, password s
 		endpoint := endpointEngine.ApplicationEndpoint()
 		host, port = endpoint.Host, endpoint.Port
 	}
-	return ConnectionConfig{
-		Engine: database.Engine, Host: host, Port: port, Database: database.Name,
-		Username: user.Username, Password: password,
-	}, nil
+	connection := ConnectionConfig{Engine: user.Engine, Host: host, Port: port, Username: user.Username, Password: password}
+	if len(user.Databases) > 0 {
+		connection.Database = user.Databases[0].DatabaseName
+		connection.Engine = user.Databases[0].Engine
+	}
+	return connection, nil
 }
 
 func (s *Service) DeleteUser(ctx context.Context, id string, actor *string, remote *string) error {
@@ -479,15 +505,21 @@ func (s *Service) DeleteUser(ctx context.Context, id string, actor *string, remo
 	if err != nil {
 		return err
 	}
-	database, err := s.repo.DatabaseByID(ctx, user.DatabaseID)
+	for _, grant := range user.Databases {
+		database, dbErr := s.repo.DatabaseByID(ctx, grant.DatabaseID)
+		if dbErr != nil {
+			return dbErr
+		}
+		provider, providerErr := s.engineFor(database.Engine)
+		if providerErr != nil {
+			return providerErr
+		}
+		_ = provider.Revoke(ctx, database.Name, user.Username)
+	}
+	provider, err := s.engineFor(user.Engine)
 	if err != nil {
 		return err
 	}
-	provider, err := s.engineFor(database.Engine)
-	if err != nil {
-		return err
-	}
-	_ = provider.Revoke(ctx, database.Name, user.Username)
 	if err := provider.DeleteUser(ctx, user.Username); err != nil {
 		return err
 	}
@@ -497,7 +529,7 @@ func (s *Service) DeleteUser(ctx context.Context, id string, actor *string, remo
 	if err := s.repo.DeleteUser(ctx, id); err != nil {
 		return err
 	}
-	s.recordAudit(ctx, actor, "database_user.delete", "database_user", &id, map[string]any{"database_id": database.ID, "username": user.Username}, remote)
+	s.recordAudit(ctx, actor, "database_user.delete", "database_user", &id, map[string]any{"username": user.Username}, remote)
 	return nil
 }
 
@@ -531,11 +563,7 @@ func (s *Service) ChangeUserPassword(ctx context.Context, id string, requestedPa
 	if err != nil {
 		return "", err
 	}
-	database, err := s.repo.DatabaseByID(ctx, user.DatabaseID)
-	if err != nil {
-		return "", err
-	}
-	provider, err := s.engineFor(database.Engine)
+	provider, err := s.engineFor(user.Engine)
 	if err != nil {
 		return "", err
 	}
@@ -550,14 +578,23 @@ func (s *Service) ChangeUserPassword(ctx context.Context, id string, requestedPa
 	return password, nil
 }
 
-func (s *Service) ChangeGrants(ctx context.Context, id, action string, privileges []string, actor *string, remote *string) (DatabaseUser, error) {
+func (s *Service) ChangeGrants(ctx context.Context, id, databaseID, action string, privileges []string, actor *string, remote *string) (DatabaseUser, error) {
 	user, err := s.repo.UserByID(ctx, id)
 	if err != nil {
 		return DatabaseUser{}, err
 	}
-	database, err := s.repo.DatabaseByID(ctx, user.DatabaseID)
+	if databaseID == "" {
+		databaseID = user.DatabaseID
+	}
+	if databaseID == "" {
+		return DatabaseUser{}, errors.New("database is not selected")
+	}
+	database, err := s.repo.DatabaseByID(ctx, databaseID)
 	if err != nil {
 		return DatabaseUser{}, err
+	}
+	if databaseAccountEngine(database.Engine) != databaseAccountEngine(user.Engine) {
+		return DatabaseUser{}, errors.New("database belongs to a different SQL server")
 	}
 	privileges, err = normalizePrivileges(privileges)
 	if err != nil {
@@ -567,35 +604,141 @@ func (s *Service) ChangeGrants(ctx context.Context, id, action string, privilege
 	if err != nil {
 		return DatabaseUser{}, err
 	}
+	current := []string{}
+	for _, grant := range user.Databases {
+		if grant.DatabaseID == database.ID {
+			current = append(current, grant.Privileges...)
+			break
+		}
+	}
 	switch strings.ToLower(action) {
 	case "grant":
 		if err := provider.Grant(ctx, database.Name, user.Username, privileges); err != nil {
 			return DatabaseUser{}, err
 		}
 		for _, privilege := range privileges {
-			if !slices.Contains(user.Privileges, privilege) {
-				user.Privileges = append(user.Privileges, privilege)
+			if !slices.Contains(current, privilege) {
+				current = append(current, privilege)
 			}
 		}
 	case "revoke":
 		if err := provider.RevokePrivileges(ctx, database.Name, user.Username, privileges); err != nil {
 			return DatabaseUser{}, err
 		}
-		filtered := user.Privileges[:0]
-		for _, current := range user.Privileges {
-			if !slices.Contains(privileges, current) {
-				filtered = append(filtered, current)
+		filtered := current[:0]
+		for _, existing := range current {
+			if !slices.Contains(privileges, existing) {
+				filtered = append(filtered, existing)
 			}
 		}
-		user.Privileges = filtered
+		current = filtered
 	default:
 		return DatabaseUser{}, errors.New("grant action must be grant or revoke")
 	}
-	if err := s.repo.UpdateUserPrivileges(ctx, user.ID, user.Privileges); err != nil {
+	if len(current) == 0 {
+		if err := s.repo.DeleteUserDatabaseGrant(ctx, user.ID, database.ID); err != nil && !errors.Is(err, ErrNotFound) {
+			return DatabaseUser{}, err
+		}
+	} else if err := s.repo.UpsertUserDatabaseGrant(ctx, user.ID, database.ID, current); err != nil {
 		return DatabaseUser{}, err
 	}
 	s.recordAudit(ctx, actor, "database_user."+strings.ToLower(action), "database_user", &id, map[string]any{"database_id": database.ID, "privileges": privileges}, remote)
-	return user, nil
+	return s.repo.UserByID(ctx, user.ID)
+}
+
+func (s *Service) SetUserDatabaseAccess(ctx context.Context, userID, databaseID string, privileges []string, actor *string, remote *string) (DatabaseUser, error) {
+	user, err := s.repo.UserByID(ctx, userID)
+	if err != nil {
+		return DatabaseUser{}, err
+	}
+	database, err := s.repo.DatabaseByID(ctx, databaseID)
+	if err != nil {
+		return DatabaseUser{}, err
+	}
+	if databaseAccountEngine(database.Engine) != databaseAccountEngine(user.Engine) {
+		return DatabaseUser{}, errors.New("database belongs to a different SQL server")
+	}
+	if len(privileges) == 0 {
+		return DatabaseUser{}, errors.New("at least one database privilege is required")
+	}
+	privileges, err = normalizePrivileges(privileges)
+	if err != nil {
+		return DatabaseUser{}, err
+	}
+	provider, err := s.engineFor(database.Engine)
+	if err != nil {
+		return DatabaseUser{}, err
+	}
+	var old []string
+	for _, grant := range user.Databases {
+		if grant.DatabaseID == database.ID {
+			old = grant.Privileges
+			break
+		}
+	}
+	toGrant := make([]string, 0)
+	for _, privilege := range privileges {
+		if !slices.Contains(old, privilege) {
+			toGrant = append(toGrant, privilege)
+		}
+	}
+	toRevoke := make([]string, 0)
+	for _, privilege := range old {
+		if !slices.Contains(privileges, privilege) {
+			toRevoke = append(toRevoke, privilege)
+		}
+	}
+	if len(toGrant) > 0 {
+		if err := provider.Grant(ctx, database.Name, user.Username, toGrant); err != nil {
+			return DatabaseUser{}, err
+		}
+	}
+	if len(toRevoke) > 0 {
+		if err := provider.RevokePrivileges(ctx, database.Name, user.Username, toRevoke); err != nil {
+			return DatabaseUser{}, err
+		}
+	}
+	if err := s.repo.UpsertUserDatabaseGrant(ctx, user.ID, database.ID, privileges); err != nil {
+		return DatabaseUser{}, err
+	}
+	s.recordAudit(ctx, actor, "database_user.database_access.update", "database_user", &user.ID, map[string]any{"database_id": database.ID, "privileges": privileges}, remote)
+	return s.repo.UserByID(ctx, user.ID)
+}
+
+func (s *Service) RemoveUserDatabaseAccess(ctx context.Context, userID, databaseID string, actor *string, remote *string) (DatabaseUser, error) {
+	user, err := s.repo.UserByID(ctx, userID)
+	if err != nil {
+		return DatabaseUser{}, err
+	}
+	var grant *DatabaseUserGrant
+	for i := range user.Databases {
+		if user.Databases[i].DatabaseID == databaseID {
+			copy := user.Databases[i]
+			grant = &copy
+			break
+		}
+	}
+	if grant == nil {
+		return DatabaseUser{}, ErrNotFound
+	}
+	database, err := s.repo.DatabaseByID(ctx, databaseID)
+	if err != nil {
+		return DatabaseUser{}, err
+	}
+	provider, err := s.engineFor(database.Engine)
+	if err != nil {
+		return DatabaseUser{}, err
+	}
+	if len(grant.Privileges) > 0 {
+		if err := provider.RevokePrivileges(ctx, database.Name, user.Username, grant.Privileges); err != nil {
+			return DatabaseUser{}, err
+		}
+	}
+	if err := s.repo.DeleteUserDatabaseGrant(ctx, user.ID, database.ID); err != nil {
+		return DatabaseUser{}, err
+	}
+	s.recordAudit(ctx, actor, "database_user.database_access.delete", "database_user", &user.ID, map[string]any{"database_id": database.ID}, remote)
+	return s.repo.UserByID(ctx, user.ID)
 }
 
 func defaultPrivilegesForEngine(engine string) []string {
