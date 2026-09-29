@@ -96,8 +96,8 @@ export function DatabasesPage() {
     return {
       mysqlDatabases: mysqlDatabaseIds.size,
       postgreSQLDatabases: postgreSQLDatabaseIds.size,
-      mysqlUsers: users.filter((item) => mysqlDatabaseIds.has(item.database_id)).length,
-      postgreSQLUsers: users.filter((item) => postgreSQLDatabaseIds.has(item.database_id)).length,
+      mysqlUsers: users.filter((item) => item.engine === 'mysql' || item.engine === 'mariadb').length,
+      postgreSQLUsers: users.filter((item) => item.engine === 'postgresql' || item.engine === 'postgres').length,
     }
   }, [databases, users])
 

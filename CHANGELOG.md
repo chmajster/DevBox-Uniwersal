@@ -25,6 +25,8 @@
 
 ### Unified project database connectivity
 
+- Reworked SQL users into server-level accounts: the MySQL/MariaDB and PostgreSQL Users tabs now list accounts, each account opens on its own page, and one account can receive access to multiple databases with an independent privilege set per database.
+- Added account-wide password change/generation plus database assignment/removal APIs and migrated existing one-database user rows into `database_accounts` and `database_user_grants` without dropping existing credentials or grants.
 - Simplified the project database UI after moving SQL plugins to Docker: removed the dedicated host-database discovery/access mode, host IP/service/version fields and host-specific connection guide. Managed applications now see the real Docker endpoint `devbox-mysql:3306` and network `devbox-apps`.
 - Removed the obsolete `GET /api/v1/plugins/databases/host` discovery endpoint and its host package/service probes. Existing persisted `host_access_only` bindings remain backend-compatible, but the project UI no longer creates new ones.
 - phpMyAdmin now targets the managed MySQL container directly on `devbox-apps` and reports that Docker target/network. It no longer adds host MySQL as an automatic second target or displays host-gateway/reachability state.

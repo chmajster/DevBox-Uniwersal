@@ -292,11 +292,20 @@ export interface DatabaseRecord {
   updated_at: string
 }
 
+export interface DatabaseUserGrant {
+  database_id: string
+  database_name: string
+  engine: string
+  privileges: string[]
+}
+
 export interface DatabaseUser {
   id: string
-  database_id: string
+  engine: string
   username: string
-  privileges: string[]
+  databases: DatabaseUserGrant[]
+  database_id?: string
+  privileges?: string[]
   created_at: string
   updated_at: string
 }
