@@ -104,6 +104,9 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const [draft, setDraft] = useState<DatabaseBindingInput>(emptyDraft)
   const [composeServices, setComposeServices] = useState<string[]>([])
   const [managedMySQL, setManagedMySQL] = useState<MySQLPluginStatus | null>(null)
+  const [managedPostgreSQL, setManagedPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
+  const [databaseServices, setDatabaseServices] = useState<ProjectDatabaseServices | null>(null)
+  const [serviceSelection, setServiceSelection] = useState<DatabaseServiceSelection>('mysql')
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeContainerConfig | null>(null)
   const [runtimeInfo, setRuntimeInfo] = useState<ProjectRuntimeInfo | null>(null)
   const [backups, setBackups] = useState<DatabaseBackup[]>([])
@@ -113,17 +116,25 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
-    const [currentBinding, config, runtime, mysqlStatus] = await Promise.all([
+    const [currentBinding, config, runtime, mysqlStatus, postgresqlStatus, selectedServices] = await Promise.all([
       request<DatabaseBinding>(`/projects/${encodeURIComponent(projectId)}/database-binding`),
       request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`).catch(() => null),
       request<ProjectRuntimeInfo>(`/projects/${encodeURIComponent(projectId)}/runtime`).catch(() => null),
       request<MySQLPluginStatus>('/plugins/mysql/status').catch(() => null),
+      request<PostgreSQLPluginStatus>('/plugins/postgresql/status').catch(() => null),
+      request<ProjectDatabaseServices>(`/projects/${encodeURIComponent(projectId)}/database-services`).catch(() => null),
     ])
+    const savedServices = selectedServices?.engines ?? []
+    const currentDraft = bindingToDraft(currentBinding)
+    if (savedServices.length > 0) currentDraft.mode = 'managed'
     setBinding(currentBinding)
-    setDraft(bindingToDraft(currentBinding))
+    setDraft(currentDraft)
     setRuntimeConfig(config)
     setRuntimeInfo(runtime)
     setManagedMySQL(mysqlStatus)
+    setManagedPostgreSQL(postgresqlStatus)
+    setDatabaseServices(selectedServices)
+    setServiceSelection(serviceSelectionFromEngines(savedServices, currentBinding.engine ?? 'mysql'))
   }, [projectId])
 
   const loadComposeServices = useCallback(async () => {
@@ -146,10 +157,15 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const effectiveRuntime = effectiveRuntimeName(runtimeConfig?.runtime, runtimeInfo?.runtime)
   const phpModules = useMemo(() => new Set((runtimeConfig?.modules ?? []).map((item) => item.name.toLowerCase())), [runtimeConfig])
   const selectedEngine = (draft.engine || binding?.engine || 'mysql').toLowerCase()
-  const needsPHPMySQLDriver = draft.mode !== 'none' && effectiveRuntime === 'php' &&
-    (selectedEngine === 'mysql' || selectedEngine === 'mariadb') &&
-    !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
-  const managedServerKnownMissing = managedMySQL !== null && !managedMySQL.installed
+  const selectedServices = serviceEngines(serviceSelection)
+  const usesMySQL = draft.mode === 'managed'
+    ? selectedServices.includes('mysql')
+    : draft.mode !== 'none' && (selectedEngine === 'mysql' || selectedEngine === 'mariadb')
+  const usesPostgreSQL = draft.mode === 'managed' && selectedServices.includes('postgresql')
+  const needsPHPMySQLDriver = effectiveRuntime === 'php' && usesMySQL && !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
+  const needsPHPPostgreSQLDriver = effectiveRuntime === 'php' && usesPostgreSQL && !phpModules.has('pgsql') && !phpModules.has('pdo_pgsql')
+  const managedMySQLMissing = managedMySQL !== null && !managedMySQL.installed
+  const managedPostgreSQLMissing = managedPostgreSQL !== null && !managedPostgreSQL.installed
 
 
   async function perform(name: string, action: () => Promise<void>) {
