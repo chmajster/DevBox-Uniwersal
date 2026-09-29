@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { request } from '../api/client'
-import type { DockerComposePluginStatus, PHPFPMStatus, PHPMyAdminStatus, PostgreSQLPluginStatus } from '../api/types'
+import type { DockerComposePluginStatus, MySQLPluginStatus, PHPFPMStatus, PHPMyAdminStatus, PostgreSQLPluginStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 
@@ -12,23 +12,26 @@ export function PluginsPage() {
   const canInstallSystemPackages = user?.role === 'admin'
   const [dockerCompose, setDockerCompose] = useState<DockerComposePluginStatus | null>(null)
   const [phpFPM, setPHPFPM] = useState<PHPFPMStatus | null>(null)
+  const [mysql, setMySQL] = useState<MySQLPluginStatus | null>(null)
   const [postgresql, setPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'postgresql-install' | null>(null)
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'mysql-install' | 'postgresql-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
-    const [dockerComposeStatus, phpFPMStatus, postgreSQLStatus, phpMyAdminStatus] = await Promise.all([
+    const [dockerComposeStatus, phpFPMStatus, mySQLStatus, postgreSQLStatus, phpMyAdminStatus] = await Promise.all([
       request<DockerComposePluginStatus>('/plugins/docker-compose/status'),
       request<PHPFPMStatus>('/plugins/php-fpm/status'),
+      request<MySQLPluginStatus>('/plugins/mysql/status'),
       request<PostgreSQLPluginStatus>('/plugins/postgresql/status'),
       request<PHPMyAdminStatus>('/phpmyadmin/status'),
     ])
     setDockerCompose(dockerComposeStatus)
     setPHPFPM(phpFPMStatus)
+    setMySQL(mySQLStatus)
     setPostgreSQL(postgreSQLStatus)
     setPHPMyAdmin(phpMyAdminStatus)
   }, [])
@@ -63,6 +66,22 @@ export function PluginsPage() {
       setMessage('PHP-FPM został zainstalowany i jest gotowy do użycia.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Instalacja PHP-FPM nie powiodła się')
+      await load().catch(() => undefined)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function installMySQL() {
+    setBusyAction('mysql-install')
+    setError('')
+    setMessage('')
+    try {
+      const status = await request<MySQLPluginStatus>('/plugins/mysql/install', { method: 'POST' })
+      setMySQL(status)
+      setMessage('Hostowy MySQL/MariaDB został zainstalowany.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Instalacja MySQL/MariaDB nie powiodła się')
       await load().catch(() => undefined)
     } finally {
       setBusyAction(null)
@@ -238,6 +257,57 @@ export function PluginsPage() {
             <span className="muted small">Instalacja pakietu systemowego wymaga roli administratora.</span>
           )}
           {!phpFPM?.installed && canInstallSystemPackages && phpFPM && !phpFPM.installable && (
+            <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
+          )}
+        </div>
+      </div>
+    </section>
+
+    <section className="panel phpmyadmin-panel">
+      <div>
+        <div className="actions">
+          <Icon name="database" size={24} />
+          <div>
+            <h2>MySQL / MariaDB na hoście</h2>
+            <p className="muted">Opcjonalny serwer MySQL/MariaDB instalowany bezpośrednio w systemie hosta przez manager pakietów.</p>
+          </div>
+        </div>
+        <p className="muted small">
+          {mysql?.installed
+            ? 'Serwer hostowy został wykryty. Jest niezależny od zarządzanego kontenera devbox-mysql.'
+            : 'Zainstaluj hostowy MySQL/MariaDB, jeżeli aplikacje mają łączyć się z bazą działającą bezpośrednio na hoście.'}
+        </p>
+      </div>
+
+      <div className="phpmyadmin-status">
+        <div className="actions">
+          <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
+            {mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
+          </span>
+          {mysql?.installed && <span className="status-chip" data-ok={mysql.running ? 'true' : 'false'}>
+            {mysql.running ? 'TCP 3306 dostępny' : 'TCP 3306 nie odpowiada'}
+          </span>}
+          {mysql?.engine && <span className="status-chip" data-ok="true">{mysql.engine === 'mariadb' ? 'MariaDB' : 'MySQL'}</span>}
+        </div>
+
+        {mysql?.version && <p className="muted small">Wersja: <code>{mysql.version}</code></p>}
+        {mysql?.path && <p className="muted small">Klient: <code>{mysql.path}</code></p>}
+        {mysql?.server_path && <p className="muted small">Serwer: <code>{mysql.server_path}</code></p>}
+        {mysql?.host && mysql?.port && <p className="muted small">Adres hosta: <code>{mysql.host}:{mysql.port}</code></p>}
+        {mysql?.container_host && mysql?.port && <p className="muted small">Adres z kontenera: <code>{mysql.container_host}:{mysql.port}</code></p>}
+        {mysql?.message && <p className="muted small">{mysql.message}</p>}
+        <p className="muted small">Instalacja hostowa nie zastępuje zarządzanego MySQL DevBox (<code>devbox-mysql</code>). Dla dostępu z kontenera wybierz w projekcie „Połącz z MySQL na hoście”. Instalator nie otwiera MySQL na wszystkie interfejsy i nie zmienia grantów użytkowników — <code>bind-address</code> oraz uprawnienia skonfiguruj świadomie po stronie serwera.</p>
+
+        <div className="actions">
+          {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
+            <button type="button" onClick={installMySQL} disabled={busy}>
+              {busyAction === 'mysql-install' ? 'Instalowanie…' : 'Zainstaluj MySQL'}
+            </button>
+          )}
+          {!mysql?.installed && !canInstallSystemPackages && (
+            <span className="muted small">Instalacja MySQL/MariaDB wymaga roli administratora.</span>
+          )}
+          {!mysql?.installed && canInstallSystemPackages && mysql && !mysql.installable && (
             <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
           )}
         </div>
