@@ -105,7 +105,6 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const [composeServices, setComposeServices] = useState<string[]>([])
   const [managedMySQL, setManagedMySQL] = useState<MySQLPluginStatus | null>(null)
   const [managedPostgreSQL, setManagedPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
-  const [databaseServices, setDatabaseServices] = useState<ProjectDatabaseServices | null>(null)
   const [serviceSelection, setServiceSelection] = useState<DatabaseServiceSelection>('mysql')
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeContainerConfig | null>(null)
   const [runtimeInfo, setRuntimeInfo] = useState<ProjectRuntimeInfo | null>(null)
@@ -133,7 +132,6 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     setRuntimeInfo(runtime)
     setManagedMySQL(mysqlStatus)
     setManagedPostgreSQL(postgresqlStatus)
-    setDatabaseServices(selectedServices)
     setServiceSelection(serviceSelectionFromEngines(savedServices, currentBinding.engine ?? 'mysql'))
   }, [projectId])
 
@@ -438,7 +436,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     </div>}
 
     {!readOnly && <div className="actions">
-      <button type="button" disabled={busy !== '' || (draft.mode === 'managed' && ((selectedServices.includes('mysql') && managedMySQLMissing) || (selectedServices.includes('postgresql') && managedPostgreSQLMissing)))} onClick={() => void saveBinding()}>{busy === 'save' ? 'Zapisywanie…' : 'Zapisz konfigurację bazy'}</button>
+      <button type="button" disabled={busy !== ''} onClick={() => void saveBinding()}>{busy === 'save' ? 'Zapisywanie…' : 'Zapisz konfigurację bazy'}</button>
       {draft.mode !== 'managed' && binding?.mode !== 'none' && !binding?.host_access_only && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void testConnection()}>{busy === 'test' ? 'Testowanie…' : 'Testuj połączenie'}</button>}
       {draft.mode !== 'managed' && binding?.database_id && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void perform('backups', loadBackups)}>Kopie zapasowe</button>}
     </div>}
