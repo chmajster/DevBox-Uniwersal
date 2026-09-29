@@ -141,21 +141,30 @@ func (r *Repository) ListUsers(ctx context.Context) ([]DatabaseUser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list database users: %w", err)
 	}
-	defer rows.Close()
 
 	var out []DatabaseUser
 	for rows.Next() {
 		item, err := scanDatabaseAccount(rows.Scan)
 		if err != nil {
-			return nil, err
-		}
-		item, err = r.decorateDatabaseUser(ctx, item)
-		if err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
 		out = append(out, item)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i], err = r.decorateDatabaseUser(ctx, out[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func (r *Repository) UsersByDatabase(ctx context.Context, databaseID string) ([]DatabaseUser, error) {
@@ -168,21 +177,30 @@ func (r *Repository) UsersByDatabase(ctx context.Context, databaseID string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("list database users: %w", err)
 	}
-	defer rows.Close()
 
 	var out []DatabaseUser
 	for rows.Next() {
 		item, err := scanDatabaseAccount(rows.Scan)
 		if err != nil {
-			return nil, err
-		}
-		item, err = r.decorateDatabaseUser(ctx, item)
-		if err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
 		out = append(out, item)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i], err = r.decorateDatabaseUser(ctx, out[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func (r *Repository) UserByID(ctx context.Context, id string) (DatabaseUser, error) {
