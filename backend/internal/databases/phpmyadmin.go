@@ -8,8 +8,14 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
+)
+
+const (
+	phpMyAdminHostDatabaseHost = "host.docker.internal"
+	phpMyAdminHostDatabasePort = 3306
 )
 
 type PHPMyAdminConfig struct {
@@ -71,23 +77,7 @@ func (m *PHPMyAdminManager) Install(ctx context.Context) (PHPMyAdminStatus, erro
 	if err := m.run(ctx, "pull", m.cfg.Image); err != nil {
 		return PHPMyAdminStatus{}, fmt.Errorf("pull phpMyAdmin image: %w", err)
 	}
-	mysqlHost, addHostGateway := dockerMySQLTarget(m.cfg.MySQLHost)
-	args := []string{
-		"create",
-		"--name", m.cfg.Container,
-	}
-	if m.cfg.Network != "" {
-		args = append(args, "--network", m.cfg.Network)
-	}
-	args = append(args, "-p", "127.0.0.1:"+strconv.Itoa(m.cfg.HostPort)+":80")
-	if addHostGateway {
-		args = append(args, "--add-host", "host.docker.internal:host-gateway")
-	}
-	args = append(args,
-		"-e", "PMA_HOST="+mysqlHost,
-		"-e", "PMA_PORT="+strconv.Itoa(m.cfg.MySQLPort),
-		m.cfg.Image,
-	)
+	args := m.createArgs()
 	if err := m.run(ctx, args...); err != nil {
 		return PHPMyAdminStatus{}, fmt.Errorf("create phpMyAdmin container: %w", err)
 	}
@@ -107,6 +97,9 @@ func (m *PHPMyAdminManager) matchesConfiguration(ctx context.Context) (bool, err
 		Config struct {
 			Env []string `json:"Env"`
 		} `json:"Config"`
+		HostConfig struct {
+			ExtraHosts []string `json:"ExtraHosts"`
+		} `json:"HostConfig"`
 		NetworkSettings struct {
 			Networks map[string]json.RawMessage `json:"Networks"`
 		} `json:"NetworkSettings"`
@@ -117,19 +110,19 @@ func (m *PHPMyAdminManager) matchesConfiguration(ctx context.Context) (bool, err
 		}
 		return false, fmt.Errorf("decode phpMyAdmin configuration: %w", err)
 	}
-	mysqlHost, _ := dockerMySQLTarget(m.cfg.MySQLHost)
-	expectedHost := "PMA_HOST=" + mysqlHost
-	expectedPort := "PMA_PORT=" + strconv.Itoa(m.cfg.MySQLPort)
-	hasHost, hasPort := false, false
+	actualEnvironment := make(map[string]string, len(raw[0].Config.Env))
 	for _, entry := range raw[0].Config.Env {
-		switch entry {
-		case expectedHost:
-			hasHost = true
-		case expectedPort:
-			hasPort = true
+		key, value, ok := strings.Cut(entry, "=")
+		if ok {
+			actualEnvironment[key] = value
 		}
 	}
-	if !hasHost || !hasPort {
+	for key, expected := range m.requiredEnvironment() {
+		if actualEnvironment[key] != expected {
+			return false, nil
+		}
+	}
+	if !containsExact(raw[0].HostConfig.ExtraHosts, phpMyAdminHostDatabaseHost+":host-gateway") {
 		return false, nil
 	}
 	if m.cfg.Network != "" {
@@ -160,6 +153,13 @@ func (m *PHPMyAdminManager) Reconcile(ctx context.Context) (PHPMyAdminStatus, er
 }
 
 func (m *PHPMyAdminManager) Start(ctx context.Context) (PHPMyAdminStatus, error) {
+	status, err := m.Install(ctx)
+	if err != nil {
+		return PHPMyAdminStatus{}, err
+	}
+	if status.Running {
+		return status, nil
+	}
 	if err := m.run(ctx, "start", m.cfg.Container); err != nil {
 		return PHPMyAdminStatus{}, fmt.Errorf("start phpMyAdmin: %w", err)
 	}
@@ -174,10 +174,69 @@ func (m *PHPMyAdminManager) Stop(ctx context.Context) (PHPMyAdminStatus, error) 
 }
 
 func (m *PHPMyAdminManager) Restart(ctx context.Context) (PHPMyAdminStatus, error) {
-	if err := m.run(ctx, "restart", m.cfg.Container); err != nil {
-		return PHPMyAdminStatus{}, fmt.Errorf("restart phpMyAdmin: %w", err)
+	status, err := m.Install(ctx)
+	if err != nil {
+		return PHPMyAdminStatus{}, err
+	}
+	action := "start"
+	if status.Running {
+		action = "restart"
+	}
+	if err := m.run(ctx, action, m.cfg.Container); err != nil {
+		return PHPMyAdminStatus{}, fmt.Errorf("%s phpMyAdmin: %w", action, err)
 	}
 	return m.Status(ctx)
+}
+
+func (m *PHPMyAdminManager) createArgs() []string {
+	args := []string{"create", "--name", m.cfg.Container}
+	if m.cfg.Network != "" {
+		args = append(args, "--network", m.cfg.Network)
+	}
+	args = append(args,
+		"-p", "127.0.0.1:"+strconv.Itoa(m.cfg.HostPort)+":80",
+		"--add-host", phpMyAdminHostDatabaseHost+":host-gateway",
+	)
+
+	environment := m.requiredEnvironment()
+	keys := make([]string, 0, len(environment))
+	for key := range environment {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		args = append(args, "-e", key+"="+environment[key])
+	}
+	args = append(args, m.cfg.Image)
+	return args
+}
+
+func (m *PHPMyAdminManager) requiredEnvironment() map[string]string {
+	mysqlHost, _ := dockerMySQLTarget(m.cfg.MySQLHost)
+	environment := map[string]string{
+		"PMA_ARBITRARY": "1",
+	}
+
+	if strings.EqualFold(mysqlHost, phpMyAdminHostDatabaseHost) && m.cfg.MySQLPort == phpMyAdminHostDatabasePort {
+		environment["PMA_HOST"] = phpMyAdminHostDatabaseHost
+		environment["PMA_PORT"] = strconv.Itoa(phpMyAdminHostDatabasePort)
+		environment["PMA_VERBOSE"] = "MySQL/MariaDB na hoście"
+		return environment
+	}
+
+	environment["PMA_HOSTS"] = mysqlHost + "," + phpMyAdminHostDatabaseHost
+	environment["PMA_PORTS"] = strconv.Itoa(m.cfg.MySQLPort) + "," + strconv.Itoa(phpMyAdminHostDatabasePort)
+	environment["PMA_VERBOSES"] = "DevBox MySQL,MySQL/MariaDB na hoście"
+	return environment
+}
+
+func containsExact(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *PHPMyAdminManager) Status(ctx context.Context) (PHPMyAdminStatus, error) {
@@ -192,12 +251,36 @@ func (m *PHPMyAdminManager) Status(ctx context.Context) (PHPMyAdminStatus, error
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return PHPMyAdminStatus{Installed: false, Running: false, State: "not_installed", URL: url}, nil
+			return PHPMyAdminStatus{
+				Installed: false, Running: false, State: "not_installed", URL: url,
+				HostDatabaseAccess: false, HostDatabaseHost: phpMyAdminHostDatabaseHost, HostDatabasePort: phpMyAdminHostDatabasePort,
+			}, nil
 		}
 		return PHPMyAdminStatus{}, fmt.Errorf("inspect phpMyAdmin container: %w", err)
 	}
 	state := strings.TrimSpace(stdout.String())
-	return PHPMyAdminStatus{Installed: true, Running: state == "running", State: state, URL: url}, nil
+	hostAccess, _ := m.matchesConfiguration(ctx)
+	hostReachable := false
+	if state == "running" && hostAccess {
+		hostReachable = m.hostDatabaseReachable(ctx)
+	}
+	return PHPMyAdminStatus{
+		Installed: true, Running: state == "running", State: state, URL: url,
+		HostDatabaseAccess: hostAccess, HostDatabaseReachable: hostReachable,
+		HostDatabaseHost: phpMyAdminHostDatabaseHost, HostDatabasePort: phpMyAdminHostDatabasePort,
+	}, nil
+}
+
+func (m *PHPMyAdminManager) hostDatabaseReachable(ctx context.Context) bool {
+	script := fmt.Sprintf(
+		`$s=@fsockopen("%s",%d,$errno,$errstr,2); if ($s) { fclose($s); exit(0); } exit(1);`,
+		phpMyAdminHostDatabaseHost,
+		phpMyAdminHostDatabasePort,
+	)
+	cmd := exec.CommandContext(ctx, m.cfg.DockerBinary, "exec", m.cfg.Container, "php", "-r", script)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	return cmd.Run() == nil
 }
 
 func (m *PHPMyAdminManager) run(ctx context.Context, args ...string) error {

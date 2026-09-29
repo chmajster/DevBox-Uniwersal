@@ -104,6 +104,6 @@ For a database server running on the Docker host, DevBox uses the stable applica
 
 - Managed application containers, project-owned Dockerfiles and project-owned Compose use the same binding resolver.
 - Existing backup/restore and database-user/grant implementations remain authoritative.
-- phpMyAdmin joins `devbox-apps` and targets `devbox-mysql` in managed mode.
+- phpMyAdmin joins `devbox-apps` for managed MySQL and also receives `host.docker.internal:host-gateway`. Its container exposes both the managed `devbox-mysql` target and host MySQL/MariaDB on `host.docker.internal:3306`, with arbitrary-server login enabled. Existing phpMyAdmin containers are reconciled on install/start/restart when this networking configuration is missing.
 - The API never returns stored password plaintext from binding reads or password rotation.
 - Deleting a managed project database removes its binding so stale application endpoints are not retained.
