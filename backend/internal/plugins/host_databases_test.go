@@ -55,7 +55,14 @@ func (r *recordingPluginJobRunner) Retry(context.Context, string) (domain.Job, e
 func TestQueueMySQLInstallUsesJobEngine(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	runner := &recordingPluginJobRunner{}
-	service := NewService("/usr/local/lib/devbox/devbox-helper", "/usr/bin/sudo", WithJobRunner(runner))
+	service := NewService(
+		"/usr/local/lib/devbox/devbox-helper",
+		"/usr/bin/sudo",
+		WithJobRunner(runner),
+		withMySQLDetector(func(context.Context) (HostDatabaseInstance, bool) {
+			return HostDatabaseInstance{}, false
+		}),
+	)
 	actor := "admin-user"
 
 	job, err := service.QueueMySQLInstall(context.Background(), &actor)
@@ -82,6 +89,9 @@ func TestMySQLInstallRejectedWhenManagedPortIsReserved(t *testing.T) {
 		"/usr/bin/sudo",
 		WithJobRunner(runner),
 		WithReservedHostPort(3306, "zarządzany MySQL DevBox (devbox-mysql)"),
+		withMySQLDetector(func(context.Context) (HostDatabaseInstance, bool) {
+			return HostDatabaseInstance{}, false
+		}),
 	)
 
 	status := service.MySQLStatus(context.Background())
