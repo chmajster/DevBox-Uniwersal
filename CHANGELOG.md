@@ -24,6 +24,8 @@
 
 ### Unified project database connectivity
 
+- Added an admin-only `MySQL / MariaDB na hoście` plugin with real server/client detection, TCP 3306 readiness, version/engine reporting and installation through the existing allowlisted privileged helper. The host server remains separate from the Docker-managed `devbox-mysql` service and is exposed to project containers through the existing `Połącz z MySQL na hoście` flow.
+
 - Host database access now discovers installed host MySQL/MariaDB and PostgreSQL services through `GET /api/v1/plugins/databases/host`; the project database tab lets the user choose the detected engine/port directly and still permits an explicit custom port.
 - Host-access bindings preserve the selected engine and port instead of forcing MySQL/3306. PostgreSQL defaults to 5432, Debian/Ubuntu PostgreSQL clusters are discovered via `pg_lsclusters`, and generated PHP runtimes validate/install the matching MySQL or PostgreSQL driver.
 - Host MySQL/MariaDB bindings now work from managed containers, custom Dockerfile deployments and project Compose: loopback hosts (`127.0.0.1`, `localhost`, `::1`) resolve to `host.docker.internal`, and DevBox injects `host.docker.internal:host-gateway` where Linux/WSL Docker needs it.
