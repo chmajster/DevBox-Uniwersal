@@ -117,7 +117,6 @@ func TestBrowseDirectoriesDoesNotExposeSymlinkEscape(t *testing.T) {
 	}
 }
 
-
 func TestSuggestDirectoriesFiltersRealChildDirectories(t *testing.T) {
 	root := t.TempDir()
 	for _, name := range []string{"Documents", "Downloads", "Other"} {
