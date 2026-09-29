@@ -312,7 +312,7 @@ export function PluginsPage() {
         </div>
         <div className="actions">
           <span className="status-chip" data-ok={mysql?.running || postgresql?.running ? 'true' : 'false'}>
-            {[mysql?.running, postgresql?.running].filter(Boolean).length} aktywnych
+            Aktywne: {[mysql?.running, postgresql?.running].filter(Boolean).length}/2
           </span>
         </div>
       </div>
