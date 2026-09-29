@@ -117,6 +117,9 @@ func (r *Repository) Update(ctx context.Context, p Project, credentialName strin
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM project_runtime_modules WHERE project_id=? AND runtime<>?`, p.ID, p.Runtime); err != nil {
+		return fmt.Errorf("remove stale runtime modules: %w", err)
+	}
 	_, err = tx.ExecContext(ctx, `UPDATE project_sources SET provider=?,repository_url=?,reference=?,credential_secret_id=?,credential_kind=?,credential_name=?,updated_at=? WHERE project_id=?`,
 		p.SourceType, p.RepositoryURL, nullable(p.Branch), nullable(p.CredentialID), nullable(p.CredentialKind), nullable(credentialName), p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.ID)
 	if err != nil {

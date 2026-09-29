@@ -4,12 +4,22 @@ import { apiURL, request } from '../api/client'
 import { listLogs, logQuery } from '../api/operations'
 import type { Deployment, GitState, Job, LogEntry, Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { DirectoryPicker } from '../components/DirectoryPicker'
 import { ProjectRuntimeSection } from '../runtime/ProjectRuntimeSection'
 import { ProjectDatabaseSection } from '../runtime/ProjectDatabaseSection'
 import { ProjectPortsSection } from '../runtime/ProjectPortsSection'
 import { publishedApplicationURL } from '../runtime/portSettings'
 
 type Tab = 'overview' | 'git' | 'deployments' | 'logs' | 'runtime' | 'database' | 'ports' | 'settings'
+
+const runtimeOptions = [
+  { value: '', label: 'Automatycznie wykryj' },
+  { value: 'php', label: 'PHP' },
+  { value: 'node', label: 'Node.js' },
+  { value: 'python', label: 'Python' },
+  { value: 'go', label: 'Go' },
+  { value: 'static', label: 'Static / HTML' },
+] as const
 
 const projectDetailTabs: Array<{ id: Tab; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -72,12 +82,25 @@ export function ProjectDetailPage() {
   const [tab, setTab] = useState<Tab>(() => tabFromParam(searchParams.get('tab')))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
-  const [config, setConfig] = useState({ working_directory: '', build_command: '', start_command: '', healthcheck: '', auto_start: false })
+  const [directoryBrowserOpen, setDirectoryBrowserOpen] = useState(false)
+  const [config, setConfig] = useState({ local_path: '', runtime: '', working_directory: '', build_command: '', start_command: '', healthcheck: '', auto_start: false })
+
+  function syncConfig(item: Project) {
+    setConfig({
+      local_path: item.local_path,
+      runtime: item.runtime,
+      working_directory: item.working_directory,
+      build_command: item.build_command,
+      start_command: item.start_command,
+      healthcheck: item.healthcheck,
+      auto_start: item.auto_start,
+    })
+  }
 
   async function loadProject() {
     const item = await request<Project>(`/projects/${id}`)
     setProject(item)
-    setConfig({ working_directory: item.working_directory, build_command: item.build_command, start_command: item.start_command, healthcheck: item.healthcheck, auto_start: item.auto_start })
+    syncConfig(item)
   }
   async function loadDeployments() {
     const items = (await request<Deployment[]>(`/projects/${id}/deployments`)) ?? []
@@ -235,6 +258,8 @@ export function ProjectDetailPage() {
     try {
       const updated = await request<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(config) })
       setProject(updated)
+      syncConfig(updated)
+      setDirectoryBrowserOpen(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Save failed')
     } finally {
@@ -372,8 +397,44 @@ export function ProjectDetailPage() {
       <form className="panel form-grid project-settings-panel" onSubmit={save}>
         <div className="span-2">
           <h2>Ustawienia aplikacji</h2>
-          <p className="muted">Polecenia i zachowanie projektu niezależne od konfiguracji runtime, bazy danych i portów.</p>
+          <p className="muted">Zmień technologię, katalog źródłowy i zachowanie projektu. Zmiany runtime zostaną użyte przy następnym Deploy.</p>
         </div>
+
+        <label>Technologia / runtime
+          <select disabled={user?.role === 'viewer'} value={config.runtime} onChange={(e) => setConfig({ ...config, runtime: e.target.value })}>
+            {runtimeOptions.map((runtime) => <option key={runtime.value || 'auto'} value={runtime.value}>{runtime.label}</option>)}
+          </select>
+          <span className="muted small">Zmiana technologii zeruje wersję runtime i usuwa moduły należące do poprzedniej technologii. Szczegółową konfigurację ustawisz w zakładce Runtime.</span>
+        </label>
+
+        <div className="span-2 path-picker-field">
+          <label htmlFor="project-local-path">Ścieżka do aplikacji</label>
+          <div className="path-picker-row">
+            <input
+              id="project-local-path"
+              disabled={user?.role === 'viewer' || project.source_type !== 'local'}
+              value={config.local_path}
+              onChange={(e) => setConfig({ ...config, local_path: e.target.value })}
+              required={project.source_type === 'local'}
+            />
+            {project.source_type === 'local' && user?.role !== 'viewer' && <button type="button" className="secondary" onClick={() => setDirectoryBrowserOpen((open) => !open)}>
+              {directoryBrowserOpen ? 'Ukryj drzewko' : 'Przeglądaj…'}
+            </button>}
+          </div>
+          <span className="muted small">
+            {project.source_type === 'local'
+              ? 'Podaj istniejący katalog aplikacji. Ścieżka jest walidowana i zapisywana po stronie backendu.'
+              : 'Dla źródeł Git i pustych projektów katalog jest zarządzany przez DevBox i nie można go zmienić ręcznie.'}
+          </span>
+        </div>
+        {project.source_type === 'local' && directoryBrowserOpen && <div className="span-2">
+          <DirectoryPicker
+            value={config.local_path}
+            onSelect={(path) => setConfig({ ...config, local_path: path })}
+            onClose={() => setDirectoryBrowserOpen(false)}
+          />
+        </div>}
+
         <label className="span-2">Working directory<input disabled={user?.role === 'viewer'} value={config.working_directory} onChange={(e) => setConfig({ ...config, working_directory: e.target.value })} /></label>
         <label className="span-2">Build command (własny Docker/Compose)<input disabled={user?.role === 'viewer'} value={config.build_command} onChange={(e) => setConfig({ ...config, build_command: e.target.value })} /></label>
         <label className="span-2">Start command (własny Docker/Compose)<input disabled={user?.role === 'viewer'} value={config.start_command} onChange={(e) => setConfig({ ...config, start_command: e.target.value })} /></label>

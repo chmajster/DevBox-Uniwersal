@@ -15,6 +15,13 @@
 
 ## Unreleased
 
+### Application technology and source path editing
+
+- Added application Settings controls for changing the selected runtime/technology and, for local-source projects, the application source directory.
+- Local paths are validated by the backend before persistence and can also be selected with the existing directory tree browser.
+- Changing runtime clears an incompatible runtime version and stale modules from the previous technology so the next deployment rebuilds from coherent configuration.
+- Git-managed and empty-project source paths remain DevBox-managed and cannot be redirected through the generic project PATCH API.
+
 ### Docker container organization
 
 - changed the Docker Containers tab from one flat table to expandable application cards,
