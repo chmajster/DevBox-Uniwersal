@@ -74,9 +74,9 @@ DevBox Universal is an integrated local development control plane.
 - SQL users are server-level accounts. One MySQL/MariaDB or PostgreSQL account can be assigned to multiple managed databases on the same server, with an independent privilege set for each database. The engine Users tab opens a dedicated account page for password changes, database assignment/removal and per-database grants.
 - phpMyAdmin is reconciled against the current MySQL target before it is opened. In the standard managed setup it joins `devbox-apps` and connects directly to `devbox-mysql:3306`; it no longer adds host MySQL as a second automatic target or performs host-MySQL reachability checks.
 - Project Compose files remain untouched; DevBox creates a mode-0600 override outside the repository for environment/network additions and detects or explicitly selects the application service.
-- Connection tests execute real `SELECT 1`; managed tests traverse Docker DNS on `devbox-apps`, Compose tests use the selected database service and external tests run from the Docker execution boundary.
-- Generated PHP runtimes validate MySQL/MariaDB database bindings for `pdo_mysql` or `mysqli`. The project database UI can add `pdo_mysql` to the application container before rebuild; MySQLi remains a PHP driver, not a database server.
-- Database backup/restore jobs remain unchanged and the project database tab exposes assigned backups; phpMyAdmin uses `devbox-mysql` over `devbox-apps` in managed mode.
+- Credential-bearing binding tests execute real `SELECT 1`; legacy managed tests traverse Docker DNS on `devbox-apps`, Compose tests use the selected database service and external tests run from the Docker execution boundary. The credential-free shared-service selector intentionally does not manufacture an account just to test connectivity.
+- Generated PHP runtimes surface missing database drivers for the selected shared services: MySQL/MariaDB can add `pdo_mysql`, while PostgreSQL can add `pgsql`/PDO PostgreSQL through the existing runtime module mechanism.
+- Database backup/restore jobs and phpMyAdmin remain managed in the central database/plugin workflows; the shared-service project view no longer duplicates account/password/backup administration.
 - Admin-only full control-plane backup/import/download/restore workflow with SQLite snapshot, checksum, encrypted-secret state, managed Nginx files and controlled Docker/Compose manifests. Restore is validated and applied before database open on the next service start.
 
 ## Networking
