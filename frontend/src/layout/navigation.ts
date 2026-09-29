@@ -10,7 +10,6 @@ const items: NavigationItem[] = [
   { to: ROUTES.users, label: 'Użytkownicy', icon: 'lock', group: 'Główne', roles: ['admin'] },
   { to: '/docker', label: 'Kontenery', icon: 'box', group: 'Główne' },
   { to: '/databases', label: 'Bazy danych', icon: 'database', group: 'Główne' },
-  { to: ROUTES.databaseUsers, label: 'Użytkownicy baz', icon: 'lock', group: 'Główne' },
   { to: '/domains', label: 'Domeny i proxy', icon: 'globe', group: 'Główne' },
   { to: '/ports', label: 'Porty', icon: 'network', group: 'Główne' },
   { to: ROUTES.plugins, label: 'Pluginy', icon: 'puzzle', group: 'Infrastruktura' },
