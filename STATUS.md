@@ -59,9 +59,9 @@ DevBox Universal is an integrated local development control plane.
 
 ## Databases
 
-- Project database mode selection uses a dedicated responsive five-option layout. `Połącz z MySQL na hoście` is a network-access-only choice: it stores no database name, username or password, does not inject database credential variables, and shows the exact in-application configuration (`host.docker.internal:3306`) with `.env` and PHP MySQLi examples.
-- Per-project database bindings support `none`, DevBox-managed MySQL, project-owned Compose MySQL/MariaDB and external MySQL/MariaDB.
-- The host-MySQL access-only choice stores only the stable `host.docker.internal` target plus the `host_access_only` flag. External credentialed bindings that target `localhost` or any accepted IPv4/IPv6 loopback literal are normalized to the same target; DevBox injects `host.docker.internal:host-gateway` into managed/custom containers and private Compose overrides when required.
+- Project database mode selection uses a dedicated responsive five-option layout. `Połącz z bazą na hoście` is a network-access-only choice: it stores no database name, username or password, does not inject database credential variables, and shows the exact `host.docker.internal:<port>` application endpoint.
+- Per-project database bindings support `none`, DevBox-managed MySQL, project-owned Compose MySQL/MariaDB, external credentialed MySQL/MariaDB and host-access-only MySQL/MariaDB/PostgreSQL.
+- Host database access discovers installed MySQL/MariaDB and PostgreSQL instances, including PostgreSQL cluster ports from `pg_lsclusters`. Selecting an instance sets its engine/port automatically; custom ports remain editable. The host-access-only choice stores only `host.docker.internal`, the selected engine/port and the `host_access_only` flag. External credentialed loopback bindings still normalize to the same Docker host target.
 - External and Compose bindings can explicitly represent an empty database password in SecretStore; omitting the password continues to preserve an existing secret instead of silently replacing it.
 - Managed MySQL runs as `devbox-mysql` on the shared `devbox-apps` network with persistent `devbox-mysql-data`, loopback-only admin publication and durable lifecycle jobs.
 - Admin and application endpoints are separate: control-plane operations use the loopback endpoint while application containers use `devbox-mysql:3306`.
@@ -69,7 +69,7 @@ DevBox Universal is an integrated local development control plane.
 - Existing database/user/grant provisioning is reused; database-user passwords may be explicitly empty or securely generated when omitted, while generated credentials and external/Compose passwords remain SecretStore-backed and are injected only at runtime.
 - Project Compose files remain untouched; DevBox creates a mode-0600 override outside the repository for environment/network additions and detects or explicitly selects the application service.
 - Connection tests execute real `SELECT 1`; managed tests traverse Docker DNS on `devbox-apps`, Compose tests use the selected database service and external tests run from the Docker execution boundary.
-- PHP projects with a credentialed database binding require `pdo_mysql` or `mysqli`; network-access-only host MySQL mode does not force a PHP database driver.
+- Generated PHP runtimes validate the selected database family: MySQL/MariaDB host access requires `pdo_mysql` or `mysqli`, while PostgreSQL host access requires `pgsql`. The project database UI can add the matching module before rebuild.
 - Database backup/restore jobs remain unchanged and the project database tab exposes assigned backups; phpMyAdmin uses `devbox-mysql` over `devbox-apps` in managed mode.
 - Admin-only full control-plane backup/import/download/restore workflow with SQLite snapshot, checksum, encrypted-secret state, managed Nginx files and controlled Docker/Compose manifests. Restore is validated and applied before database open on the next service start.
 

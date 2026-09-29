@@ -24,6 +24,8 @@
 
 ### Unified project database connectivity
 
+- Host database access now discovers installed host MySQL/MariaDB and PostgreSQL services through `GET /api/v1/plugins/databases/host`; the project database tab lets the user choose the detected engine/port directly and still permits an explicit custom port.
+- Host-access bindings preserve the selected engine and port instead of forcing MySQL/3306. PostgreSQL defaults to 5432, Debian/Ubuntu PostgreSQL clusters are discovered via `pg_lsclusters`, and generated PHP runtimes validate/install the matching MySQL or PostgreSQL driver.
 - Host MySQL/MariaDB bindings now work from managed containers, custom Dockerfile deployments and project Compose: loopback hosts (`127.0.0.1`, `localhost`, `::1`) resolve to `host.docker.internal`, and DevBox injects `host.docker.internal:host-gateway` where Linux/WSL Docker needs it.
 - External/Compose database bindings can explicitly store an empty password in SecretStore; the project UI exposes a `Użytkownik bazy nie ma hasła` option without conflating it with preserving an existing secret.
 - Simplified the per-project database UX around the application workflow: create a new DevBox-managed database, enable network-only access from the application container to MySQL/MariaDB on the Docker host, connect with credentials to another existing MySQL/MariaDB endpoint, or use Compose. The dedicated host option persists no database credentials and only enables the existing `host.docker.internal:host-gateway` runtime mapping.

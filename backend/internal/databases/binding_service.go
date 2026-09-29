@@ -70,11 +70,13 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 	input.ApplicationService = strings.TrimSpace(input.ApplicationService)
 	input.ComposeService = strings.TrimSpace(input.ComposeService)
 	input.Engine = strings.ToLower(strings.TrimSpace(input.Engine))
+	if input.Engine == "postgres" {
+		input.Engine = "postgresql"
+	}
 	input.Host = strings.TrimSpace(input.Host)
 	input.Database = strings.TrimSpace(input.Database)
 	input.Username = strings.TrimSpace(input.Username)
 	if input.HostAccessOnly && input.Mode == DatabaseModeExternal {
-		input.Engine = "mysql"
 		input.Host = dockerHostInternal
 		input.Database = ""
 		input.Username = ""
@@ -85,7 +87,11 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 		input.Engine = "mysql"
 	}
 	if input.Port == 0 {
-		input.Port = 3306
+		if input.Engine == "postgresql" {
+			input.Port = 5432
+		} else {
+			input.Port = 3306
+		}
 	}
 	if err := validateBindingInput(input); err != nil {
 		return DatabaseBinding{}, err
@@ -166,7 +172,8 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 	case DatabaseModeExternal:
 		if input.HostAccessOnly {
 			item.Host = dockerHostInternal
-			item.Engine = "mysql"
+			item.Engine = input.Engine
+			item.Port = input.Port
 			item.Database = ""
 			item.Username = ""
 			item.SecretRef = ""
@@ -342,7 +349,7 @@ func (s *Service) TestApplicationConnection(ctx context.Context, projectID strin
 		return errors.New("project does not use a database")
 	}
 	if runtime.HostAccessOnly {
-		return errors.New("host MySQL access only configures container-to-host networking; database credentials are not configured")
+		return errors.New("host database access only configures container-to-host networking; database credentials are not configured")
 	}
 	defer clear(runtime.Secret)
 	if runtime.Connection.Mode == DatabaseModeCompose {
@@ -477,12 +484,16 @@ func validateBindingInput(input DatabaseBindingInput) error {
 		return fmt.Errorf("invalid database mode %q", input.Mode)
 	}
 	if input.HostAccessOnly && input.Mode != DatabaseModeExternal {
-		return errors.New("host-only MySQL access requires external database mode")
+		return errors.New("host database access requires external database mode")
 	}
 	if input.ApplicationService != "" && !databaseServiceName.MatchString(input.ApplicationService) {
 		return errors.New("invalid Compose application service")
 	}
-	if input.Engine != "mysql" && input.Engine != "mariadb" {
+	if input.HostAccessOnly {
+		if input.Engine != "mysql" && input.Engine != "mariadb" && input.Engine != "postgresql" {
+			return errors.New("host database engine must be mysql, mariadb or postgresql")
+		}
+	} else if input.Engine != "mysql" && input.Engine != "mariadb" {
 		return errors.New("database engine must be mysql or mariadb")
 	}
 	if input.Port < 1 || input.Port > 65535 {
@@ -502,10 +513,10 @@ func validateBindingInput(input DatabaseBindingInput) error {
 	case DatabaseModeExternal:
 		if input.HostAccessOnly {
 			if !strings.EqualFold(strings.TrimSpace(input.Host), dockerHostInternal) {
-				return errors.New("host-only MySQL access must use host.docker.internal")
+				return errors.New("host database access must use host.docker.internal")
 			}
 			if input.Database != "" || input.Username != "" || input.Password != "" || input.PasswordProvided {
-				return errors.New("host-only MySQL access does not accept database credentials")
+				return errors.New("host database access does not accept database credentials")
 			}
 			break
 		}

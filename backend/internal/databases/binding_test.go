@@ -243,6 +243,60 @@ func TestHostMySQLAccessOnlyNeedsNoDatabaseCredentials(t *testing.T) {
 	}
 }
 
+func TestHostPostgreSQLAccessOnlyPreservesEngineAndPort(t *testing.T) {
+	ctx := context.Background()
+	service, repo, store, _ := databaseBindingTestService(t)
+
+	item, err := service.UpdateDatabaseBinding(ctx, "project-1", DatabaseBindingInput{
+		Mode: DatabaseModeExternal, HostAccessOnly: true, Engine: "postgresql", Port: 5544,
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Engine != "postgresql" || item.Port != 5544 || item.Host != dockerHostInternal {
+		t.Fatalf("unexpected PostgreSQL host binding: %+v", item)
+	}
+	if item.Database != "" || item.Username != "" || item.HasSecret {
+		t.Fatalf("host-only PostgreSQL binding must not persist credentials: %+v", item)
+	}
+	if len(store.values) != 0 {
+		t.Fatalf("host-only PostgreSQL binding must not create secrets: %#v", store.values)
+	}
+
+	persisted, err := repo.DatabaseBindingByProject(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Engine != "postgresql" || persisted.Port != 5544 || !persisted.HostAccessOnly {
+		t.Fatalf("unexpected persisted PostgreSQL host binding: %+v", persisted)
+	}
+
+	runtime, err := service.ResolveRuntimeDatabase(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !runtime.HostGateway || !runtime.HostAccessOnly {
+		t.Fatalf("expected Docker host gateway for PostgreSQL host binding: %+v", runtime)
+	}
+	if runtime.Connection.Engine != "postgresql" || runtime.Connection.Port != 5544 || runtime.Connection.Host != dockerHostInternal {
+		t.Fatalf("unexpected PostgreSQL runtime connection: %+v", runtime.Connection)
+	}
+}
+
+func TestHostPostgreSQLAccessOnlyDefaultsTo5432(t *testing.T) {
+	ctx := context.Background()
+	service, _, _, _ := databaseBindingTestService(t)
+	item, err := service.UpdateDatabaseBinding(ctx, "project-1", DatabaseBindingInput{
+		Mode: DatabaseModeExternal, HostAccessOnly: true, Engine: "postgres",
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Engine != "postgresql" || item.Port != 5432 {
+		t.Fatalf("expected normalized PostgreSQL default port, got %+v", item)
+	}
+}
+
 func TestExternalDatabaseBindingAllowsExplicitEmptyPassword(t *testing.T) {
 	ctx := context.Background()
 	service, repo, store, _ := databaseBindingTestService(t)

@@ -558,8 +558,21 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		for _, module := range config.Modules {
 			modules = append(modules, containerspec.Module{Name: module.Name, Version: module.Version})
 		}
-		if databaseRuntime.Connection.Mode != providers.DatabaseModeNone && !databaseRuntime.HostAccessOnly && runtimeName == "php" && !hasPHPMySQLDriver(config.Modules) {
-			return nil, errors.New("project PHP runtime does not contain pdo_mysql or mysqli")
+		if databaseRuntime.Connection.Mode != providers.DatabaseModeNone && runtimeName == "php" {
+			engine := strings.ToLower(strings.TrimSpace(databaseRuntime.Connection.Engine))
+			switch engine {
+			case "mysql", "mariadb", "":
+				if !databaseRuntime.HostAccessOnly && !hasPHPMySQLDriver(config.Modules) {
+					return nil, errors.New("project PHP runtime does not contain pdo_mysql or mysqli")
+				}
+				if databaseRuntime.HostAccessOnly && !hasPHPMySQLDriver(config.Modules) {
+					return nil, errors.New("project PHP runtime does not contain a MySQL driver for host database access")
+				}
+			case "postgresql", "postgres":
+				if databaseRuntime.HostAccessOnly && !hasPHPPostgreSQLDriver(config.Modules) {
+					return nil, errors.New("project PHP runtime does not contain pgsql for host PostgreSQL access")
+				}
+			}
 		}
 		spec, err = containerspec.GenerateManaged(p.ID, workDir, runtimeName, config.RuntimeVersion, modules, commitAfter, port)
 		if err != nil {
@@ -889,6 +902,15 @@ func hasPHPMySQLDriver(modules []RuntimeModule) bool {
 	for _, module := range modules {
 		switch strings.ToLower(strings.TrimSpace(module.Name)) {
 		case "pdo_mysql", "mysqli":
+			return true
+		}
+	}
+	return false
+}
+
+func hasPHPPostgreSQLDriver(modules []RuntimeModule) bool {
+	for _, module := range modules {
+		if strings.EqualFold(strings.TrimSpace(module.Name), "pgsql") {
 			return true
 		}
 	}
