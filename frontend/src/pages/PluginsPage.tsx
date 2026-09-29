@@ -5,7 +5,6 @@ import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 
 type PHPMyAdminAction = 'install' | 'start' | 'stop' | 'restart'
-type SQLInstallEngine = 'mysql' | 'postgresql'
 
 export function PluginsPage() {
   const { user } = useAuth()
@@ -16,8 +15,7 @@ export function PluginsPage() {
   const [mysql, setMySQL] = useState<MySQLPluginStatus | null>(null)
   const [postgresql, setPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [selectedSQLEngines, setSelectedSQLEngines] = useState<SQLInstallEngine[]>([])
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'sql-install' | null>(null)
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'mysql-install' | 'postgresql-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
@@ -87,37 +85,36 @@ export function PluginsPage() {
     throw new Error('Instalacja serwera SQL nadal trwa. Sprawdź status zadania w zakładce Zadania.')
   }
 
-  function toggleSQLEngine(engine: SQLInstallEngine, checked: boolean) {
-    setSelectedSQLEngines((current) => checked
-      ? Array.from(new Set([...current, engine]))
-      : current.filter((item) => item !== engine))
-  }
-
-  async function installSelectedSQL() {
-    const engines = selectedSQLEngines.filter((engine) =>
-      engine === 'mysql' ? !mysql?.installed : !postgresql?.installed)
-    if (engines.length === 0) {
-      setError('Wybierz co najmniej jeden niezainstalowany silnik SQL.')
-      return
-    }
-
-    setBusyAction('sql-install')
+  async function installMySQL() {
+    setBusyAction('mysql-install')
     setError('')
     setMessage('')
     try {
-      const jobs: Job[] = []
-      for (const engine of engines) {
-        const endpoint = engine === 'mysql' ? '/plugins/mysql/install' : '/plugins/postgresql/install'
-        jobs.push(await request<Job>(endpoint, { method: 'POST' }))
-      }
-      const labels = engines.map((engine) => engine === 'mysql' ? 'MySQL/MariaDB' : 'PostgreSQL')
-      setMessage(`Instalacja ${labels.join(' + ')} została dodana do kolejki.`)
-      await Promise.all(jobs.map((job) => waitForJob(job.id)))
+      const job = await request<Job>('/plugins/mysql/install', { method: 'POST' })
+      setMessage(`Instalacja MySQL/MariaDB została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
+      await waitForJob(job.id)
       await load()
-      setSelectedSQLEngines([])
-      setMessage(`${labels.join(' + ')} są gotowe jako hostowe serwery SQL dla aplikacji.`)
+      setMessage('Serwer MySQL/MariaDB został zainstalowany i jest gotowy dla wielu baz oraz aplikacji.')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Instalacja wybranych serwerów SQL nie powiodła się')
+      setError(cause instanceof Error ? cause.message : 'Instalacja MySQL/MariaDB nie powiodła się')
+      await load().catch(() => undefined)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function installPostgreSQL() {
+    setBusyAction('postgresql-install')
+    setError('')
+    setMessage('')
+    try {
+      const job = await request<Job>('/plugins/postgresql/install', { method: 'POST' })
+      setMessage(`Instalacja PostgreSQL została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
+      await waitForJob(job.id)
+      await load()
+      setMessage('Serwer PostgreSQL został zainstalowany i jest gotowy dla wielu baz oraz aplikacji.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Instalacja PostgreSQL nie powiodła się')
       await load().catch(() => undefined)
     } finally {
       setBusyAction(null)
@@ -301,136 +298,101 @@ export function PluginsPage() {
       </div>
     </section>
 
-    <section className="panel database-server-plugin">
-      <div className="section-heading database-server-plugin-heading">
+    <section className="panel phpmyadmin-panel">
+      <div>
         <div className="actions">
           <Icon name="database" size={24} />
           <div>
-            <h2>Serwery baz danych dla aplikacji</h2>
-            <p className="muted">Instalujesz serwer bazodanowy, nie pojedynczą bazę. Jeden serwer może przechowywać wiele baz i obsługiwać wiele aplikacji jednocześnie.</p>
+            <h2>MySQL / MariaDB</h2>
+            <p className="muted">Osobny moduł serwera baz danych dla aplikacji. Jeden serwer może przechowywać wiele baz, wielu użytkowników i obsługiwać wiele aplikacji jednocześnie.</p>
           </div>
         </div>
+        <p className="muted small">
+          MySQLi i PDO MySQL są sterownikami PHP używanymi przez aplikację do połączenia z tym serwerem. Nie są osobnymi serwerami bazodanowymi.
+        </p>
+        {mysql?.message && <p className="muted small">{mysql.message}</p>}
+      </div>
+
+      <div className="phpmyadmin-status database-plugin-status">
         <div className="actions">
-          <span className="status-chip" data-ok={mysql?.running || postgresql?.running ? 'true' : 'false'}>
-            Aktywne: {[mysql?.running, postgresql?.running].filter(Boolean).length}/2
+          <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
+            {mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
           </span>
+          {mysql?.installed && <span className="status-chip" data-ok={mysql.running ? 'true' : 'false'}>
+            {mysql.running ? 'Działa' : 'Nie odpowiada'}
+          </span>}
+          {mysql?.engine && <span className="status-chip" data-ok="true">{mysql.engine === 'mariadb' ? 'MariaDB' : 'MySQL'}</span>}
         </div>
-      </div>
 
-      <div className="database-server-explainer">
-        <strong>Model współdzielony</strong>
-        <span>1 serwer → wiele baz → wielu użytkowników → wiele aplikacji. Każda aplikacja może korzystać z własnej bazy i własnego użytkownika na tym samym serwerze.</span>
-        <span>DevBox Universal przechowuje swój własny stan w SQLite. Serwery poniżej są przeznaczone wyłącznie dla danych aplikacji.</span>
-      </div>
-
-      <div className="database-server-grid">
-        <article className="database-server-engine" data-installed={mysql?.installed ? 'true' : 'false'}>
-          <div className="database-server-engine-header">
-            <div>
-              <div className="database-server-engine-title">
-                {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
-                  <input
-                    aria-label="Zaznacz MySQL lub MariaDB do instalacji"
-                    type="checkbox"
-                    checked={selectedSQLEngines.includes('mysql')}
-                    disabled={busy}
-                    onChange={(event) => toggleSQLEngine('mysql', event.target.checked)}
-                  />
-                )}
-                <strong>MySQL / MariaDB</strong>
-              </div>
-              <span className="muted small">Współdzielony serwer SQL dla wielu baz i wielu aplikacji.</span>
-            </div>
-            <div className="actions">
-              <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
-                {mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
-              </span>
-              {mysql?.installed && <span className="status-chip" data-ok={mysql.running ? 'true' : 'false'}>
-                {mysql.running ? 'Działa' : 'Nie odpowiada'}
-              </span>}
-            </div>
-          </div>
-
-          <div className="database-server-engine-meta">
-            <div><span>Typ</span><strong>Serwer bazodanowy</strong></div>
-            <div><span>Silnik</span><strong>{mysql?.engine === 'mariadb' ? 'MariaDB' : 'MySQL'}</strong></div>
-            <div><span>Port</span><strong><code>{mysql?.port ?? 3306}</code></strong></div>
-            <div><span>Adres dla aplikacji</span><strong><code>{mysql?.container_host ?? 'host.docker.internal'}:{mysql?.port ?? 3306}</code></strong></div>
-            <div><span>Obsługiwane bazy</span><strong>Wiele</strong></div>
-            <div><span>Obsługiwane aplikacje</span><strong>Wiele</strong></div>
-            <div><span>PHP</span><strong>mysqli / PDO MySQL</strong></div>
-            <div><span>Model</span><strong>1 serwer → N baz</strong></div>
-          </div>
-
-          {mysql?.version && <p className="muted small">Wersja: <code>{mysql.version}</code></p>}
-          {mysql?.message && <p className="muted small">{mysql.message}</p>}
-          {!mysql?.installed && canInstallSystemPackages && mysql && !mysql.installable && (
-            <p className="muted small">{mysql.message || 'Instalacja MySQL/MariaDB jest obecnie niedostępna.'}</p>
-          )}
-        </article>
-
-        <article className="database-server-engine" data-installed={postgresql?.installed ? 'true' : 'false'}>
-          <div className="database-server-engine-header">
-            <div>
-              <div className="database-server-engine-title">
-                {!postgresql?.installed && canInstallSystemPackages && postgresql?.installable && (
-                  <input
-                    aria-label="Zaznacz PostgreSQL do instalacji"
-                    type="checkbox"
-                    checked={selectedSQLEngines.includes('postgresql')}
-                    disabled={busy}
-                    onChange={(event) => toggleSQLEngine('postgresql', event.target.checked)}
-                  />
-                )}
-                <strong>PostgreSQL</strong>
-              </div>
-              <span className="muted small">Współdzielony serwer PostgreSQL dla wielu baz i wielu aplikacji.</span>
-            </div>
-            <div className="actions">
-              <span className="status-chip" data-ok={postgresql?.installed ? 'true' : 'false'}>
-                {postgresql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
-              </span>
-              {postgresql?.installed && <span className="status-chip" data-ok={postgresql.running ? 'true' : 'false'}>
-                {postgresql.running ? 'Działa' : 'Nie odpowiada'}
-              </span>}
-            </div>
-          </div>
-
-          <div className="database-server-engine-meta">
-            <div><span>Typ</span><strong>Serwer bazodanowy</strong></div>
-            <div><span>Silnik</span><strong>PostgreSQL</strong></div>
-            <div><span>Port</span><strong><code>{postgresql?.port ?? 5432}</code></strong></div>
-            <div><span>Adres dla aplikacji</span><strong><code>{postgresql?.container_host ?? 'host.docker.internal'}:{postgresql?.port ?? 5432}</code></strong></div>
-            <div><span>Obsługiwane bazy</span><strong>Wiele</strong></div>
-            <div><span>Obsługiwane aplikacje</span><strong>Wiele</strong></div>
-            <div><span>PHP</span><strong>pgsql / PDO PostgreSQL</strong></div>
-            <div><span>Model</span><strong>1 serwer → N baz</strong></div>
-          </div>
-
-          {postgresql?.version && <p className="muted small">Wersja: <code>{postgresql.version}</code></p>}
-          {postgresql?.message && <p className="muted small">{postgresql.message}</p>}
-          {!postgresql?.installed && canInstallSystemPackages && postgresql && !postgresql.installable && (
-            <p className="muted small">Instalacja PostgreSQL jest obecnie niedostępna.</p>
-          )}
-        </article>
-      </div>
-
-      <div className="database-server-plugin-footer">
-        <div>
-          <strong>Serwer ≠ baza</strong>
-          <p className="muted small">Plugin instaluje i wykrywa silnik serwera. Konkretne bazy, użytkownicy i przypisania aplikacji są osobnymi zasobami i mogą współdzielić ten sam serwer. MySQLi jest sterownikiem PHP do MySQL, a nie osobnym serwerem bazodanowym.</p>
+        <div className="database-plugin-meta">
+          <div><span>Port</span><strong><code>{mysql?.port ?? 3306}</code></strong></div>
+          <div><span>Adres dla aplikacji</span><strong><code>{mysql?.container_host ?? 'host.docker.internal'}:{mysql?.port ?? 3306}</code></strong></div>
+          <div><span>Bazy</span><strong>Wiele</strong></div>
+          <div><span>Aplikacje</span><strong>Wiele</strong></div>
+          <div><span>PHP</span><strong>mysqli / PDO MySQL</strong></div>
+          {mysql?.version && <div><span>Wersja</span><strong><code>{mysql.version}</code></strong></div>}
         </div>
+
         <div className="actions">
-          {canInstallSystemPackages && (
-            <button
-              type="button"
-              onClick={() => void installSelectedSQL()}
-              disabled={busy || selectedSQLEngines.length === 0}
-            >
-              {busyAction === 'sql-install' ? 'Instalowanie serwerów…' : 'Zainstaluj zaznaczone serwery'}
+          {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
+            <button type="button" onClick={() => void installMySQL()} disabled={busy}>
+              {busyAction === 'mysql-install' ? 'Instalowanie…' : 'Zainstaluj MySQL / MariaDB'}
             </button>
           )}
-          {!canInstallSystemPackages && <span className="muted small">Instalacja serwerów baz danych wymaga roli administratora.</span>}
+          {!mysql?.installed && !canInstallSystemPackages && (
+            <span className="muted small">Instalacja MySQL/MariaDB wymaga roli administratora.</span>
+          )}
+          {!mysql?.installed && canInstallSystemPackages && mysql && !mysql.installable && (
+            <span className="muted small">{mysql.message || 'Instalacja z panelu jest obecnie niedostępna.'}</span>
+          )}
+        </div>
+      </div>
+    </section>
+
+    <section className="panel phpmyadmin-panel">
+      <div>
+        <div className="actions">
+          <Icon name="database" size={24} />
+          <div>
+            <h2>PostgreSQL</h2>
+            <p className="muted">Osobny moduł serwera PostgreSQL dla aplikacji. Jeden serwer może przechowywać wiele baz, wielu użytkowników i obsługiwać wiele aplikacji jednocześnie.</p>
+          </div>
+        </div>
+        <p className="muted small">Aplikacje PHP korzystają z modułu <code>pgsql</code> lub <code>PDO PostgreSQL</code> do połączenia z tym serwerem.</p>
+        {postgresql?.message && <p className="muted small">{postgresql.message}</p>}
+      </div>
+
+      <div className="phpmyadmin-status database-plugin-status">
+        <div className="actions">
+          <span className="status-chip" data-ok={postgresql?.installed ? 'true' : 'false'}>
+            {postgresql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
+          </span>
+          {postgresql?.installed && <span className="status-chip" data-ok={postgresql.running ? 'true' : 'false'}>
+            {postgresql.running ? 'Działa' : 'Nie odpowiada'}
+          </span>}
+        </div>
+
+        <div className="database-plugin-meta">
+          <div><span>Port</span><strong><code>{postgresql?.port ?? 5432}</code></strong></div>
+          <div><span>Adres dla aplikacji</span><strong><code>{postgresql?.container_host ?? 'host.docker.internal'}:{postgresql?.port ?? 5432}</code></strong></div>
+          <div><span>Bazy</span><strong>Wiele</strong></div>
+          <div><span>Aplikacje</span><strong>Wiele</strong></div>
+          <div><span>PHP</span><strong>pgsql / PDO PostgreSQL</strong></div>
+          {postgresql?.version && <div><span>Wersja</span><strong><code>{postgresql.version}</code></strong></div>}
+        </div>
+
+        <div className="actions">
+          {!postgresql?.installed && canInstallSystemPackages && postgresql?.installable && (
+            <button type="button" onClick={() => void installPostgreSQL()} disabled={busy}>
+              {busyAction === 'postgresql-install' ? 'Instalowanie…' : 'Zainstaluj PostgreSQL'}
+            </button>
+          )}
+          {!postgresql?.installed && !canInstallSystemPackages && (
+            <span className="muted small">Instalacja PostgreSQL wymaga roli administratora.</span>
+          )}
+          {!postgresql?.installed && canInstallSystemPackages && postgresql && !postgresql.installable && (
+            <span className="muted small">Instalacja z panelu jest obecnie niedostępna.</span>
+          )}
         </div>
       </div>
     </section>
