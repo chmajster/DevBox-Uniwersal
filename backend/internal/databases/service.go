@@ -198,7 +198,7 @@ func (s *Service) CreateDatabase(ctx context.Context, name, engine, charset stri
 	if err := ValidateIdentifier(name); err != nil {
 		return Database{}, err
 	}
-	providerName := "local-mysql"
+	providerName := "managed-mysql"
 	if engine == "postgresql" {
 		providerName = "managed-postgresql"
 	}
