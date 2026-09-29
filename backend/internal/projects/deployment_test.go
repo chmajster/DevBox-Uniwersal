@@ -90,6 +90,18 @@ func TestProjectDatabaseEnvironmentInjectsReservedVariablesAndAliases(t *testing
 	}
 }
 
+func TestPHPPostgreSQLDriverDetection(t *testing.T) {
+	if hasPHPPostgreSQLDriver(nil) {
+		t.Fatal("empty PHP module set must not satisfy PostgreSQL driver requirement")
+	}
+	if hasPHPPostgreSQLDriver([]RuntimeModule{{Name: "pdo_mysql"}}) {
+		t.Fatal("MySQL driver must not satisfy PostgreSQL driver requirement")
+	}
+	if !hasPHPPostgreSQLDriver([]RuntimeModule{{Name: "pgsql"}}) {
+		t.Fatal("pgsql must satisfy PostgreSQL driver requirement")
+	}
+}
+
 func TestPHPMySQLDriverDetection(t *testing.T) {
 	if hasPHPMySQLDriver(nil) {
 		t.Fatal("empty PHP module set must not satisfy MySQL driver requirement")

@@ -5,6 +5,7 @@ import type {
   DatabaseBinding,
   DatabaseBindingInput,
   DatabaseMode,
+  HostDatabaseInstance,
   Job,
   PHPMyAdminStatus,
   ProjectRuntimeInfo,
@@ -49,7 +50,7 @@ function bindingToDraft(binding: DatabaseBinding): DatabaseBindingInput {
 }
 
 function modeLabel(mode: DatabaseMode, hostAccessOnly = false) {
-  if (databaseModeChoice(mode, hostAccessOnly) === 'host') return 'MySQL na hoście — dostęp sieciowy'
+  if (databaseModeChoice(mode, hostAccessOnly) === 'host') return 'Baza na hoście — dostęp sieciowy'
   switch (mode) {
     case 'managed': return 'Nowa baza w DevBox'
     case 'compose': return 'Baza z Docker Compose'
@@ -81,8 +82,8 @@ const databaseModeOptions: Array<{ choice: DatabaseModeChoice; mode: DatabaseMod
   {
     choice: 'host',
     mode: 'external',
-    title: 'Połącz z MySQL na hoście',
-    description: 'Tylko otwórz kontenerowi drogę do MySQL/MariaDB na hoście przez host.docker.internal — bez danych bazy i credentiali.',
+    title: 'Połącz z bazą na hoście',
+    description: 'Wybierz wykryty MySQL/MariaDB albo PostgreSQL i port. DevBox otworzy kontenerowi drogę przez host.docker.internal.',
   },
   {
     choice: 'external',
@@ -104,6 +105,8 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const [binding, setBinding] = useState<DatabaseBinding | null>(null)
   const [draft, setDraft] = useState<DatabaseBindingInput>(emptyDraft)
   const [composeServices, setComposeServices] = useState<string[]>([])
+  const [hostDatabases, setHostDatabases] = useState<HostDatabaseInstance[]>([])
+  const [hostDatabasesLoading, setHostDatabasesLoading] = useState(false)
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeContainerConfig | null>(null)
   const [runtimeInfo, setRuntimeInfo] = useState<ProjectRuntimeInfo | null>(null)
   const [backups, setBackups] = useState<DatabaseBackup[]>([])
@@ -124,6 +127,18 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     setRuntimeInfo(runtime)
   }, [projectId])
 
+  const loadHostDatabases = useCallback(async () => {
+    setHostDatabasesLoading(true)
+    try {
+      const items = await request<HostDatabaseInstance[]>('/plugins/databases/host')
+      setHostDatabases((items ?? []).filter((item) => item.installed))
+    } catch {
+      setHostDatabases([])
+    } finally {
+      setHostDatabasesLoading(false)
+    }
+  }, [])
+
   const loadComposeServices = useCallback(async () => {
     try {
       const services = await request<string[]>(`/projects/${encodeURIComponent(projectId)}/database-binding/compose-services`)
@@ -138,14 +153,21 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     setMessage('')
     void load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Nie udało się pobrać konfiguracji bazy danych'))
     void loadComposeServices()
-  }, [load, loadComposeServices])
+    void loadHostDatabases()
+  }, [load, loadComposeServices, loadHostDatabases])
 
   const modeFields = databaseModeFields(draft.mode)
   const selectedModeChoice = databaseModeChoice(draft.mode, Boolean(draft.host_access_only))
-  const hostMySQLSelected = selectedModeChoice === 'host'
+  const hostDatabaseSelected = selectedModeChoice === 'host'
   const effectiveRuntime = effectiveRuntimeName(runtimeConfig?.runtime, runtimeInfo?.runtime)
   const phpModules = useMemo(() => new Set((runtimeConfig?.modules ?? []).map((item) => item.name.toLowerCase())), [runtimeConfig])
-  const needsPHPMySQLDriver = draft.mode !== 'none' && !hostMySQLSelected && effectiveRuntime === 'php' && !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
+  const selectedEngine = (draft.engine || 'mysql').toLowerCase()
+  const needsPHPMySQLDriver = draft.mode !== 'none' && effectiveRuntime === 'php' &&
+    (selectedEngine === 'mysql' || selectedEngine === 'mariadb') &&
+    !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
+  const needsPHPPostgreSQLDriver = hostDatabaseSelected && effectiveRuntime === 'php' &&
+    selectedEngine === 'postgresql' && !phpModules.has('pgsql')
+  const selectedHostDatabase = hostDatabases.find((item) => item.engine === selectedEngine && item.port === (draft.port || 0))
 
   async function perform(name: string, action: () => Promise<void>) {
     setBusy(name)
@@ -213,15 +235,15 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     })
   }
 
-  async function addPDODriver() {
+  async function addPHPDatabaseDriver(driver: 'pdo_mysql' | 'pgsql') {
     if (!runtimeConfig) {
       setError('Nie udało się pobrać konfiguracji runtime projektu. Odśwież widok i spróbuj ponownie.')
       return
     }
-    await perform('pdo', async () => {
+    await perform('database-driver', async () => {
       const configWithDriver = {
         ...runtimeConfig,
-        modules: updatePHPModuleSelection(runtimeConfig.modules, 'pdo_mysql', true),
+        modules: updatePHPModuleSelection(runtimeConfig.modules, driver, true),
       }
       const payload = preparePHPModuleConfig(configWithDriver)
       const saved = await request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`, {
@@ -229,7 +251,9 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         body: JSON.stringify(payload),
       })
       setRuntimeConfig(saved)
-      setMessage('PDO MySQL dodano do konfiguracji runtime projektu. Runtime PHP został zapisany automatycznie i sterownik zostanie zainstalowany przy przebudowie obrazu.')
+      setMessage(driver === 'pgsql'
+        ? 'Sterownik PostgreSQL dodano do runtime PHP. Zostanie zainstalowany przy przebudowie obrazu.'
+        : 'PDO MySQL dodano do runtime PHP. Zostanie zainstalowane przy przebudowie obrazu.')
     })
   }
 
@@ -308,14 +332,20 @@ export function ProjectDatabaseSection({ projectId }: Props) {
               type="radio"
               name={`database-mode-${projectId}`}
               checked={selectedModeChoice === choice}
-              onChange={() => setDraft({
-                ...emptyDraft,
-                mode,
-                host: choice === 'host' ? dockerHostDatabaseHost : '',
-                port: 3306,
-                host_access_only: choice === 'host',
-                application_service: draft.application_service,
-              })}
+              onChange={() => {
+                const firstHost = choice === 'host'
+                  ? (hostDatabases.find((item) => item.running) ?? hostDatabases[0])
+                  : undefined
+                setDraft({
+                  ...emptyDraft,
+                  mode,
+                  engine: firstHost?.engine ?? 'mysql',
+                  host: choice === 'host' ? dockerHostDatabaseHost : '',
+                  port: firstHost?.port ?? 3306,
+                  host_access_only: choice === 'host',
+                  application_service: draft.application_service,
+                })
+              }}
             />
             <span className="database-mode-copy"><strong>{title}</strong><small>{description}</small></span>
           </label>
@@ -324,7 +354,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     </fieldset>
 
     {draft.mode !== 'none' && <div className="form-grid">
-      {modeFields.includes('application_service') && !hostMySQLSelected && <label>Application service
+      {modeFields.includes('application_service') && !hostDatabaseSelected && <label>Application service
         <select disabled={readOnly || busy !== ''} value={draft.application_service ?? ''} onChange={(event) => setDraft({ ...draft, application_service: event.target.value })}>
           <option value="">Automatycznie wykryj</option>
           {serviceOptions.map((service) => <option key={service} value={service}>{service}</option>)}
@@ -360,11 +390,49 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       </>}
 
       {modeFields.includes('host') && draft.mode === 'external' && <>
-        {hostMySQLSelected ? <>
+        {hostDatabaseSelected ? <>
           <div className="validation-box span-2">
-            <strong>Dostęp sieciowy do MySQL/MariaDB na hoście.</strong>
-            <span>DevBox nie zapisuje nazwy bazy, użytkownika ani hasła i nie wstrzykuje <code>DB_DATABASE</code>, <code>DB_USERNAME</code> ani <code>DB_PASSWORD</code>. Kontener otrzyma wyłącznie mapowanie <code>host.docker.internal:host-gateway</code>. Aplikacja korzysta z adresu <code>host.docker.internal:3306</code> i zarządza własnymi credentialami w swojej konfiguracji.</span>
+            <strong>Wybierz bazę działającą na hoście.</strong>
+            <span>DevBox wykrywa lokalny MySQL/MariaDB i PostgreSQL. Wybór ustawia silnik i port, a kontener dostaje dostęp przez <code>host.docker.internal:host-gateway</code>. Nazwę bazy i credentiale nadal ustawia sama aplikacja.</span>
           </div>
+          <label className="span-2">Baza / port na hoście
+            <select
+              disabled={readOnly || busy !== '' || hostDatabasesLoading}
+              value={selectedHostDatabase?.id ?? ''}
+              onChange={(event) => {
+                const selected = hostDatabases.find((item) => item.id === event.target.value)
+                if (!selected) return
+                setDraft({ ...draft, engine: selected.engine, host: dockerHostDatabaseHost, port: selected.port, host_access_only: true })
+              }}
+            >
+              <option value="">{hostDatabasesLoading ? 'Wykrywanie baz na hoście…' : 'Wybierz wykrytą bazę'}</option>
+              {hostDatabases.map((item) => <option key={item.id} value={item.id}>
+                {item.label} — port {item.port}{item.running ? ' — działa' : ' — zatrzymana / niedostępna'}
+              </option>)}
+            </select>
+          </label>
+          {hostDatabases.length === 0 && !hostDatabasesLoading && <div className="validation-box span-2">
+            <strong>Nie wykryto MySQL/MariaDB ani PostgreSQL na hoście.</strong>
+            <span>Możesz nadal ustawić silnik i port ręcznie. Po instalacji bazy odśwież stronę, aby pojawiła się na liście.</span>
+          </div>}
+          <label>Silnik
+            <select disabled={readOnly || busy !== ''} value={selectedEngine} onChange={(event) => {
+              const engine = event.target.value
+              setDraft({ ...draft, engine, port: engine === 'postgresql' ? 5432 : 3306, host: dockerHostDatabaseHost, host_access_only: true })
+            }}>
+              <option value="mysql">MySQL</option>
+              <option value="mariadb">MariaDB</option>
+              <option value="postgresql">PostgreSQL</option>
+            </select>
+          </label>
+          <label>Port na hoście
+            <input disabled={readOnly || busy !== ''} type="number" min={1} max={65535}
+              value={draft.port ?? (selectedEngine === 'postgresql' ? 5432 : 3306)}
+              onChange={(event) => setDraft({ ...draft, port: Number(event.target.value), host: dockerHostDatabaseHost, host_access_only: true })} />
+          </label>
+          <label>Adres używany w kontenerze<input readOnly value={dockerHostDatabaseHost} /></label>
+          <label>Status wykrytej usługi<input readOnly value={selectedHostDatabase ? (selectedHostDatabase.running ? 'działa' : 'zainstalowana, ale nie odpowiada') : 'port ustawiony ręcznie'} /></label>
+          {selectedHostDatabase?.version && <label className="span-2">Wersja<input readOnly value={selectedHostDatabase.version} /></label>}
           <div className="database-host-help span-2">
             <div>
               <strong>Jak ustawić połączenie wewnątrz aplikacji</strong>
@@ -374,23 +442,19 @@ export function ProjectDatabaseSection({ projectId }: Props) {
               <div>
                 <span className="database-host-help-label">Przykład .env / konfiguracji aplikacji</span>
                 <pre><code>{`DB_HOST=host.docker.internal
-DB_PORT=3306
+DB_PORT=${draft.port || (selectedEngine === 'postgresql' ? 5432 : 3306)}
 DB_DATABASE=moja_baza
 DB_USERNAME=moj_uzytkownik
 DB_PASSWORD=moje_haslo`}</code></pre>
               </div>
               <div>
-                <span className="database-host-help-label">PHP — MySQLi</span>
-                <pre><code>{`$mysqli = new mysqli(
-    getenv('DB_HOST') ?: 'host.docker.internal',
-    getenv('DB_USERNAME'),
-    getenv('DB_PASSWORD'),
-    getenv('DB_DATABASE'),
-    (int) (getenv('DB_PORT') ?: 3306)
-);`}</code></pre>
+                <span className="database-host-help-label">Sterownik PHP</span>
+                <pre><code>{selectedEngine === 'postgresql'
+                  ? 'Moduł: pgsql / pdo_pgsql\nHost: host.docker.internal'
+                  : 'Moduł: mysqli lub pdo_mysql\nHost: host.docker.internal'}</code></pre>
               </div>
             </div>
-            <p className="database-host-warning"><strong>Wymagane po stronie hosta:</strong> MySQL/MariaDB musi nasłuchiwać na interfejsie dostępnym z Dockera, a użytkownik bazy musi mieć odpowiedni grant. Jeżeli aplikacja PHP używa MySQLi lub PDO MySQL, dodaj odpowiednio moduł <code>mysqli</code> albo <code>pdo_mysql</code> w zakładce Runtime projektu.</p>
+            <p className="database-host-warning"><strong>Wymagane po stronie hosta:</strong> wybrany serwer musi nasłuchiwać na interfejsie dostępnym z Dockera. MySQL/MariaDB wymaga odpowiednich grantów, a PostgreSQL odpowiedniego <code>listen_addresses</code> i reguły <code>pg_hba.conf</code>.</p>
           </div>
         </> : <>
           <div className="validation-box span-2">
@@ -411,7 +475,7 @@ DB_PASSWORD=moje_haslo`}</code></pre>
         </>}
       </>}
 
-      {modeFields.includes('application_host') && !hostMySQLSelected && <label>Host używany przez aplikację
+      {modeFields.includes('application_host') && !hostDatabaseSelected && <label>Host używany przez aplikację
         <input readOnly value={draft.mode === 'managed'
           ? (binding?.application_host || 'devbox-mysql')
           : draft.mode === 'compose'
@@ -420,12 +484,16 @@ DB_PASSWORD=moje_haslo`}</code></pre>
               ? (['127.0.0.1', 'localhost', '::1'].includes((draft.host || '').trim().toLowerCase()) ? 'host.docker.internal' : (binding?.mode === 'external' && binding?.application_host && binding.host === draft.host ? binding.application_host : (draft.host || '—')))
               : '—'} />
       </label>}
-      {modeFields.includes('application_port') && !hostMySQLSelected && <label>Port używany przez aplikację<input readOnly value={draft.mode === 'managed' ? (binding?.application_port || 3306) : (draft.port || 3306)} /></label>}
+      {modeFields.includes('application_port') && !hostDatabaseSelected && <label>Port używany przez aplikację<input readOnly value={draft.mode === 'managed' ? (binding?.application_port || 3306) : (draft.port || 3306)} /></label>}
     </div>}
 
     {needsPHPMySQLDriver && <div className="validation-box">
-      <strong>Projekt korzysta z MySQL, ale kontener PHP nie posiada wybranego sterownika MySQL.</strong>
-      {!readOnly && <div className="actions"><button type="button" className="secondary" disabled={busy !== '' || !runtimeConfig} onClick={() => void addPDODriver()}>Dodaj PDO MySQL</button></div>}
+      <strong>Projekt korzysta z MySQL/MariaDB, ale kontener PHP nie posiada wybranego sterownika.</strong>
+      {!readOnly && <div className="actions"><button type="button" className="secondary" disabled={busy !== '' || !runtimeConfig} onClick={() => void addPHPDatabaseDriver('pdo_mysql')}>Dodaj PDO MySQL</button></div>}
+    </div>}
+    {needsPHPPostgreSQLDriver && <div className="validation-box">
+      <strong>Wybrano PostgreSQL na hoście, ale kontener PHP nie posiada sterownika PostgreSQL.</strong>
+      {!readOnly && <div className="actions"><button type="button" className="secondary" disabled={busy !== '' || !runtimeConfig} onClick={() => void addPHPDatabaseDriver('pgsql')}>Dodaj PostgreSQL do PHP</button></div>}
     </div>}
 
     {!readOnly && <div className="actions">

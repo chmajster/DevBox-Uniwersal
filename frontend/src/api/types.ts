@@ -366,6 +366,18 @@ export interface PostgreSQLPluginStatus {
   message?: string
 }
 
+export interface HostDatabaseInstance {
+  id: string
+  engine: 'mysql' | 'mariadb' | 'postgresql'
+  label: string
+  host: string
+  port: number
+  installed: boolean
+  running: boolean
+  version?: string
+  source?: string
+}
+
 export interface PHPExtension {
   id: string
   name: string
