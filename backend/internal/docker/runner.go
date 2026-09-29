@@ -123,14 +123,33 @@ func commandError(binary, stderr string, err error) error {
 		strings.Contains(lower, "error during connect"),
 		strings.Contains(lower, "the system cannot find the file specified"):
 		return fmt.Errorf("%w: %s", ErrUnavailable, message)
-	case strings.Contains(lower, "no such container"),
-		strings.Contains(lower, "no such image"),
-		strings.Contains(lower, "no such volume"),
-		strings.Contains(lower, "no such network"):
+	case dockerResourceNotFound(lower):
 		return fmt.Errorf("%w: %s", ErrNotFound, message)
 	}
 	if message == "" {
 		message = err.Error()
 	}
 	return fmt.Errorf("docker command failed: %s", message)
+}
+
+func dockerResourceNotFound(message string) bool {
+	for _, marker := range []string{
+		"no such container",
+		"no such image",
+		"no such volume",
+		"no such network",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	if !strings.Contains(message, " not found") {
+		return false
+	}
+	for _, resource := range []string{"container ", "image ", "volume ", "network "} {
+		if strings.Contains(message, resource) {
+			return true
+		}
+	}
+	return false
 }
