@@ -73,6 +73,14 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 	input.Host = strings.TrimSpace(input.Host)
 	input.Database = strings.TrimSpace(input.Database)
 	input.Username = strings.TrimSpace(input.Username)
+	if input.HostAccessOnly && input.Mode == DatabaseModeExternal {
+		input.Engine = "mysql"
+		input.Host = dockerHostInternal
+		input.Database = ""
+		input.Username = ""
+		input.Password = ""
+		input.PasswordProvided = false
+	}
 	if input.Engine == "" {
 		input.Engine = "mysql"
 	}
@@ -112,6 +120,7 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 		Port:               input.Port,
 		Database:           input.Database,
 		Username:           input.Username,
+		HostAccessOnly:     input.HostAccessOnly,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
@@ -143,13 +152,32 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 		item.Database = ""
 		item.Username = ""
 		item.SecretRef = ""
-	case DatabaseModeCompose, DatabaseModeExternal:
+	case DatabaseModeCompose:
 		if input.Password != "" || input.PasswordProvided {
 			item.SecretRef = newID()
 			if err := s.secrets.Put(ctx, bindingSecretScope(projectID), item.SecretRef, []byte(input.Password)); err != nil {
 				return DatabaseBinding{}, fmt.Errorf("store database binding credential: %w", err)
 			}
-		} else if err == nil && existing.SecretRef != "" && (existing.Mode == DatabaseModeCompose || existing.Mode == DatabaseModeExternal) {
+		} else if err == nil && existing.SecretRef != "" && existing.Mode == DatabaseModeCompose {
+			item.SecretRef = existing.SecretRef
+		} else {
+			return DatabaseBinding{}, errors.New("database credentials are unavailable")
+		}
+	case DatabaseModeExternal:
+		if input.HostAccessOnly {
+			item.Host = dockerHostInternal
+			item.Engine = "mysql"
+			item.Database = ""
+			item.Username = ""
+			item.SecretRef = ""
+			break
+		}
+		if input.Password != "" || input.PasswordProvided {
+			item.SecretRef = newID()
+			if err := s.secrets.Put(ctx, bindingSecretScope(projectID), item.SecretRef, []byte(input.Password)); err != nil {
+				return DatabaseBinding{}, fmt.Errorf("store database binding credential: %w", err)
+			}
+		} else if err == nil && existing.SecretRef != "" && existing.Mode == DatabaseModeExternal && !existing.HostAccessOnly {
 			item.SecretRef = existing.SecretRef
 		} else {
 			return DatabaseBinding{}, errors.New("database credentials are unavailable")
@@ -165,7 +193,7 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 	if err == nil && existing.SecretRef != "" && existing.SecretRef != item.SecretRef {
 		_ = s.secrets.Delete(ctx, bindingSecretScope(projectID), existing.SecretRef)
 	}
-	s.recordAudit(ctx, actor, "database_binding.update", "project", &projectID, map[string]any{"mode": item.Mode}, remote)
+	s.recordAudit(ctx, actor, "database_binding.update", "project", &projectID, map[string]any{"mode": item.Mode, "host_access_only": item.HostAccessOnly}, remote)
 	return s.decorateBinding(ctx, item)
 }
 
@@ -282,6 +310,10 @@ func (s *Service) ResolveRuntimeDatabase(ctx context.Context, projectID string) 
 	}
 	result.ApplicationService = binding.ApplicationService
 	result.DatabaseService = binding.ComposeService
+	result.HostAccessOnly = binding.HostAccessOnly
+	if result.HostAccessOnly {
+		return result, nil
+	}
 	switch connection.Mode {
 	case DatabaseModeManaged:
 		if err := s.ensureManagedReady(ctx); err != nil {
@@ -308,6 +340,9 @@ func (s *Service) TestApplicationConnection(ctx context.Context, projectID strin
 	}
 	if runtime.Connection.Mode == DatabaseModeNone {
 		return errors.New("project does not use a database")
+	}
+	if runtime.HostAccessOnly {
+		return errors.New("host MySQL access only configures container-to-host networking; database credentials are not configured")
 	}
 	defer clear(runtime.Secret)
 	if runtime.Connection.Mode == DatabaseModeCompose {
@@ -441,6 +476,9 @@ func validateBindingInput(input DatabaseBindingInput) error {
 	default:
 		return fmt.Errorf("invalid database mode %q", input.Mode)
 	}
+	if input.HostAccessOnly && input.Mode != DatabaseModeExternal {
+		return errors.New("host-only MySQL access requires external database mode")
+	}
 	if input.ApplicationService != "" && !databaseServiceName.MatchString(input.ApplicationService) {
 		return errors.New("invalid Compose application service")
 	}
@@ -462,6 +500,15 @@ func validateBindingInput(input DatabaseBindingInput) error {
 			return errors.New("invalid database username")
 		}
 	case DatabaseModeExternal:
+		if input.HostAccessOnly {
+			if !strings.EqualFold(strings.TrimSpace(input.Host), dockerHostInternal) {
+				return errors.New("host-only MySQL access must use host.docker.internal")
+			}
+			if input.Database != "" || input.Username != "" || input.Password != "" || input.PasswordProvided {
+				return errors.New("host-only MySQL access does not accept database credentials")
+			}
+			break
+		}
 		if err := validateExternalDatabaseHost(input.Host); err != nil {
 			return err
 		}
