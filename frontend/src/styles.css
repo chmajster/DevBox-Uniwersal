@@ -172,6 +172,134 @@ input:disabled { opacity: .65; cursor: not-allowed; }
 .status-invalid { color: #ff7b72; }
 .status-pill.status-invalid { background: #3a171b; border: 1px solid #77343c; }
 .runtime-section { display: grid; gap: 18px; }
+
+.port-settings-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.port-mapping-editor {
+  display: grid;
+  gap: 14px;
+  width: min(760px, 100%);
+}
+.port-mapping-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.port-mapping-toolbar > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.port-mapping-toolbar small {
+  line-height: 1.45;
+}
+.port-mapping-toggle {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+}
+.port-mapping-table-wrap {
+  width: min(760px, 100%);
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.port-mapping-table {
+  width: 100%;
+  min-width: 520px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  background: var(--panel);
+}
+.port-mapping-table th {
+  padding: 8px 10px;
+  background: var(--panel-alt);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: none;
+}
+.port-mapping-table th:nth-child(1),
+.port-mapping-table th:nth-child(2) {
+  width: 39%;
+}
+.port-mapping-table th:nth-child(3) {
+  width: 22%;
+}
+.port-mapping-table td {
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+.port-mapping-table input,
+.port-mapping-table select {
+  min-width: 0;
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 5px;
+  background: var(--panel-alt);
+}
+.port-mapping-cell {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.port-map-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel-alt);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.port-mapping-help {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.port-mapping-help strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.port-compose-setting {
+  display: grid;
+  gap: 5px;
+}
+.port-compose-setting input {
+  margin-top: 0;
+}
+.port-compose-setting small {
+  line-height: 1.45;
+}
+.port-mapping-applied {
+  margin-top: -8px;
+}
+.port-mapping-applied .port-mapping-table td:nth-child(2),
+.port-mapping-applied .port-mapping-table td:nth-child(3) {
+  font-weight: 700;
+}
+
+@media (max-width: 620px) {
+  .port-mapping-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .port-mapping-toggle {
+    align-self: flex-start;
+  }
+}
 .section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
 .section-heading h2 { margin: 0; }
 .runtime-summary {
