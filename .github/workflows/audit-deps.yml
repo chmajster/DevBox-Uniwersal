@@ -1,0 +1,31 @@
+name: Audit test dependencies
+on:
+  push:
+    branches: [agent/92-audit-completion]
+    paths: [.github/workflows/audit-deps.yml]
+permissions:
+  contents: read
+jobs:
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare locked dependencies
+        run: |
+          (cd backend && go mod vendor)
+          (cd frontend && npm ci --ignore-scripts)
+          tar -czf "$RUNNER_TEMP/devbox-audit-deps.tar.gz" backend/vendor frontend/node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devbox-audit-deps
+          path: ${{ runner.temp }}/devbox-audit-deps.tar.gz
+          retention-days: 1
