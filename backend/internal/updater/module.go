@@ -134,6 +134,7 @@ type Progress struct {
 	UpdatedAt      string   `json:"updated_at,omitempty"`
 	FinishedAt     string   `json:"finished_at,omitempty"`
 	Error          string   `json:"error,omitempty"`
+	FailureDetail  string   `json:"failure_detail,omitempty"`
 	ExitCode       *int     `json:"exit_code,omitempty"`
 	LogPath        string   `json:"log_path,omitempty"`
 	LogTail        []string `json:"log_tail,omitempty"`
@@ -208,6 +209,7 @@ func (s *Service) Progress(ctx context.Context) Progress {
 			progress.LogPath = s.updateLogFile
 			if logTail, tailErr := readUpdateLogTail(s.updateLogFile, updateLogTailLines, updateLogTailBytes); tailErr == nil {
 				progress.LogTail = logTail
+				progress.FailureDetail = failureDetailFromLogTail(logTail)
 			}
 		}
 		return progress
@@ -355,6 +357,20 @@ func readUpdateLogTail(path string, maxLines, maxBytes int) ([]string, error) {
 		return nil, fmt.Errorf("read update log tail: %w", err)
 	}
 	return lines, nil
+}
+
+func failureDetailFromLogTail(lines []string) string {
+	for index := len(lines) - 1; index >= 0; index-- {
+		line := strings.TrimSpace(lines[index])
+		if line == "" {
+			continue
+		}
+		if strings.Contains(line, "Aktualizacja nie powiodła się na etapie:") {
+			continue
+		}
+		return line
+	}
+	return ""
 }
 
 func sanitizeUpdateLogLine(line string) string {
