@@ -493,7 +493,7 @@ export function PluginsPage() {
             <p className="muted">Webowy panel do zarządzania MySQL/MariaDB. Uruchamiany jako niezależny kontener Docker.</p>
           </div>
         </div>
-        <p className="muted small">Plugin korzysta z istniejącej konfiguracji DevBox i nie jest powiązany z lifecycle pojedynczej aplikacji.</p>
+        <p className="muted small">Plugin korzysta z istniejącej konfiguracji DevBox i nie jest powiązany z lifecycle pojedynczej aplikacji. Gdy plugin MySQL / MariaDB jest zainstalowany, phpMyAdmin używa jego konta administracyjnego automatycznie i otwiera się bez ekranu logowania.</p>
       </div>
 
       <div className="phpmyadmin-status">
