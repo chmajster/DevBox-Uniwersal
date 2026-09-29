@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { request } from '../api/client'
-import { DirectoryPicker } from '../components/DirectoryPicker'
+import { DirectoryPathField } from '../components/DirectoryPathField'
 import type { CentralCredential, Project, ProjectSourceType } from '../api/types'
 import { repositoryNameFromURL } from './projectWizardHelpers'
 
@@ -56,7 +56,6 @@ export function ProjectWizardPage() {
   const [form, setForm] = useState<FormState>(initial)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [directoryBrowserOpen, setDirectoryBrowserOpen] = useState(false)
   const [credentials, setCredentials] = useState<CentralCredential[]>([])
   const [nameEdited, setNameEdited] = useState(false)
 
@@ -133,7 +132,6 @@ export function ProjectWizardPage() {
           onChange={(event) => {
             const source = event.target.value as ProjectSourceType
             set('source_type', source)
-            if (source !== 'local') setDirectoryBrowserOpen(false)
           }}
         >
           <option value="git">Git repository</option>
@@ -182,24 +180,14 @@ export function ProjectWizardPage() {
         </div>}
       </>}
 
-      {form.source_type === 'local' && <>
-        <div className="span-2 path-picker-field">
-          <label htmlFor="local-path">Pełna ścieżka katalogu</label>
-          <div className="path-picker-row">
-            <input id="local-path" value={form.local_path} onChange={(event) => set('local_path', event.target.value)} required />
-            <button type="button" className="secondary" onClick={() => setDirectoryBrowserOpen((open) => !open)}>
-              {directoryBrowserOpen ? 'Ukryj drzewko' : 'Przeglądaj…'}
-            </button>
-          </div>
-        </div>
-        {directoryBrowserOpen && <div className="span-2">
-          <DirectoryPicker
-            value={form.local_path}
-            onSelect={(path) => set('local_path', path)}
-            onClose={() => setDirectoryBrowserOpen(false)}
-          />
-        </div>}
-      </>}
+      {form.source_type === 'local' && <DirectoryPathField
+        id="local-path"
+        label="Pełna ścieżka katalogu"
+        value={form.local_path}
+        onChange={(path) => set('local_path', path)}
+        required
+        helpText="Wpisuj ścieżkę ręcznie lub wybierz katalog z drzewa. Podpowiedzi pochodzą z rzeczywistego filesystemu dostępnego dla backendu."
+      />}
     </div>}
 
     {step === 2 && <div className="panel form-grid">
