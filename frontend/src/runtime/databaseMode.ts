@@ -1,5 +1,22 @@
 import type { DatabaseMode } from '../api/types'
 
+export const dockerHostDatabaseHost = 'host.docker.internal'
+export type DatabaseModeChoice = DatabaseMode | 'host'
+
+export function isDockerHostDatabaseHost(host?: string): boolean {
+  const normalized = (host ?? '').trim().toLowerCase()
+  return normalized === dockerHostDatabaseHost ||
+    normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '::1' ||
+    normalized === '[::1]'
+}
+
+export function databaseModeChoice(mode: DatabaseMode, host?: string): DatabaseModeChoice {
+  if (mode === 'external' && isDockerHostDatabaseHost(host)) return 'host'
+  return mode
+}
+
 export type DatabaseModeField =
   | 'application_service'
   | 'compose_service'
