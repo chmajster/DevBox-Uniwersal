@@ -204,6 +204,9 @@ func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
 	}
 	if out, versionErr := exec.CommandContext(ctx, versionBinary, "--version").CombinedOutput(); versionErr == nil {
 		status.Version = firstLine(string(out))
+		if strings.Contains(strings.ToLower(status.Version), "mariadb") {
+			status.Engine = "mariadb"
+		}
 	}
 
 	address := net.JoinHostPort(status.Host, strconv.Itoa(status.Port))
