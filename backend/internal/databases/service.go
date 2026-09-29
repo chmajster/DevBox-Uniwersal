@@ -478,8 +478,12 @@ func (s *Service) CreateUser(ctx context.Context, databaseID, username string, r
 		_ = s.secrets.Delete(ctx, "database-user", user.SecretRef)
 		return DatabaseUser{}, "", err
 	}
+	created, err := s.repo.UserByID(ctx, user.ID)
+	if err != nil {
+		return DatabaseUser{}, "", err
+	}
 	s.recordAudit(ctx, actor, "database_user.create", "database_user", &user.ID, map[string]any{"database_id": database.ID, "username": username}, remote)
-	return user, password, nil
+	return created, password, nil
 }
 
 func (s *Service) DatabaseUserConnection(ctx context.Context, userID, password string) (ConnectionConfig, error) {
