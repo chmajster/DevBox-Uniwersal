@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	JobInstallHostMySQL      = "plugin.mysql.install"
-	JobInstallHostPostgreSQL = "plugin.postgresql.install"
+	JobInstallMySQLContainer      = "plugin.mysql.install"
+	JobInstallPostgreSQLContainer = "plugin.postgresql.install"
 )
 
 type MySQLInstallJobHandler struct {
@@ -22,7 +22,7 @@ func NewMySQLInstallJobHandler(service *Service) *MySQLInstallJobHandler {
 }
 
 func (h *MySQLInstallJobHandler) Type() string {
-	return JobInstallHostMySQL
+	return JobInstallMySQLContainer
 }
 
 func (h *MySQLInstallJobHandler) Run(ctx context.Context, _ domain.Job) (map[string]any, error) {
@@ -53,7 +53,7 @@ func NewPostgreSQLInstallJobHandler(service *Service) *PostgreSQLInstallJobHandl
 }
 
 func (h *PostgreSQLInstallJobHandler) Type() string {
-	return JobInstallHostPostgreSQL
+	return JobInstallPostgreSQLContainer
 }
 
 func (h *PostgreSQLInstallJobHandler) Run(ctx context.Context, _ domain.Job) (map[string]any, error) {
@@ -88,18 +88,15 @@ func (s *Service) QueueMySQLInstall(ctx context.Context, actor *string) (domain.
 	}
 	status := s.MySQLStatus(ctx)
 	if status.Installed {
-		return domain.Job{}, errors.New("host MySQL/MariaDB is already installed")
-	}
-	if conflict := s.mysqlInstallConflict(); conflict != "" {
-		return domain.Job{}, errors.New(conflict)
+		return domain.Job{}, errors.New("MySQL/MariaDB Docker server is already installed")
 	}
 	if !status.Installable {
-		return domain.Job{}, errors.New("host MySQL/MariaDB installation is unavailable")
+		return domain.Job{}, errors.New("MySQL/MariaDB Docker installation is unavailable")
 	}
 	return s.jobs.Enqueue(ctx, jobs.Request{
-		Type:        JobInstallHostMySQL,
+		Type:        JobInstallMySQLContainer,
 		RequestedBy: actor,
-		Payload:     map[string]any{"purpose": "application_database"},
+		Payload:     map[string]any{"purpose": "application_database", "runtime": "docker"},
 	})
 }
 
@@ -109,14 +106,14 @@ func (s *Service) QueuePostgreSQLInstall(ctx context.Context, actor *string) (do
 	}
 	status := s.PostgreSQLStatus(ctx)
 	if status.Installed {
-		return domain.Job{}, errors.New("host PostgreSQL is already installed")
+		return domain.Job{}, errors.New("PostgreSQL Docker server is already installed")
 	}
 	if !status.Installable {
-		return domain.Job{}, errors.New("host PostgreSQL installation is unavailable")
+		return domain.Job{}, errors.New("PostgreSQL Docker installation is unavailable")
 	}
 	return s.jobs.Enqueue(ctx, jobs.Request{
-		Type:        JobInstallHostPostgreSQL,
+		Type:        JobInstallPostgreSQLContainer,
 		RequestedBy: actor,
-		Payload:     map[string]any{"purpose": "application_database"},
+		Payload:     map[string]any{"purpose": "application_database", "runtime": "docker"},
 	})
 }
