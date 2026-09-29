@@ -325,7 +325,7 @@ export function PluginsPage() {
       </div>
 
       <div className="application-database-grid">
-        <label className="application-database-card" data-selected={mysqlSelected ? 'true' : 'false'}>
+        <div className="application-database-card" data-selected={mysqlSelected ? 'true' : 'false'}>
           <div className="application-database-card-header">
             <input
               type="checkbox"
@@ -355,9 +355,9 @@ export function PluginsPage() {
           <p className="muted small">Adres z kontenera: <code>{mysql?.container_host ?? 'host.docker.internal'}:{mysqlPort}</code></p>
           {mysql?.version && <p className="muted small">Wersja: <code>{mysql.version}</code></p>}
           {mysql?.message && <p className="muted small">{mysql.message}</p>}
-        </label>
+        </div>
 
-        <label className="application-database-card" data-selected={postgresqlSelected ? 'true' : 'false'}>
+        <div className="application-database-card" data-selected={postgresqlSelected ? 'true' : 'false'}>
           <div className="application-database-card-header">
             <input
               type="checkbox"
@@ -387,7 +387,7 @@ export function PluginsPage() {
           <p className="muted small">Adres z kontenera: <code>{postgresql?.container_host ?? 'host.docker.internal'}:{postgresqlPort}</code></p>
           {postgresql?.version && <p className="muted small">Wersja: <code>{postgresql.version}</code></p>}
           {postgresql?.message && <p className="muted small">{postgresql.message}</p>}
-        </label>
+        </div>
       </div>
 
       <div className="actions application-database-actions">
