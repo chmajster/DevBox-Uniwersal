@@ -361,14 +361,14 @@ func (p *PostgreSQLProvider) runPSQL(ctx context.Context, database, statement st
 
 func normalizePostgreSQLPrivileges(privileges []string) ([]string, error) {
 	allowed := map[string]bool{
-		"SELECT": true,
-		"INSERT": true,
-		"UPDATE": true,
-		"DELETE": true,
-		"CREATE": true,
+		"SELECT":     true,
+		"INSERT":     true,
+		"UPDATE":     true,
+		"DELETE":     true,
+		"CREATE":     true,
 		"REFERENCES": true,
-		"TRIGGER": true,
-		"EXECUTE": true,
+		"TRIGGER":    true,
+		"EXECUTE":    true,
 	}
 	seen := make(map[string]bool)
 	out := make([]string, 0, len(privileges))
@@ -387,12 +387,12 @@ func normalizePostgreSQLPrivileges(privileges []string) ([]string, error) {
 
 func pgTablePrivileges(privileges []string) []string {
 	tableAllowed := map[string]bool{
-		"SELECT": true,
-		"INSERT": true,
-		"UPDATE": true,
-		"DELETE": true,
+		"SELECT":     true,
+		"INSERT":     true,
+		"UPDATE":     true,
+		"DELETE":     true,
 		"REFERENCES": true,
-		"TRIGGER": true,
+		"TRIGGER":    true,
 	}
 	out := make([]string, 0, len(privileges))
 	for _, privilege := range privileges {
