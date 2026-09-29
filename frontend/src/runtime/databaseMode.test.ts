@@ -24,13 +24,13 @@ describe('project database mode field contract', () => {
     ])
   })
 
-  it('recognizes Docker-host MySQL as a dedicated UI choice', () => {
+  it('recognizes Docker-host MySQL as a dedicated access-only UI choice', () => {
     expect(dockerHostDatabaseHost).toBe('host.docker.internal')
     for (const host of ['host.docker.internal', 'HOST.DOCKER.INTERNAL', 'localhost', '127.0.0.1', '::1', '[::1]']) {
       expect(isDockerHostDatabaseHost(host)).toBe(true)
-      expect(databaseModeChoice('external', host)).toBe('host')
     }
-    expect(databaseModeChoice('external', 'mysql.example.internal')).toBe('external')
-    expect(databaseModeChoice('managed')).toBe('managed')
+    expect(databaseModeChoice('external', true)).toBe('host')
+    expect(databaseModeChoice('external', false)).toBe('external')
+    expect(databaseModeChoice('managed', true)).toBe('managed')
   })
 })
