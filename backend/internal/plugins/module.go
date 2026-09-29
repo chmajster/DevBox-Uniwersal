@@ -331,7 +331,11 @@ func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
 	status.ServerPath = instance.Source
 	status.Version = instance.Version
 	status.Port = instance.Port
-	status.SuggestedPort = instance.Port
+	if _, reserved := s.reservedHostPorts[instance.Port]; reserved {
+		status.SuggestedPort = s.suggestedApplicationDatabasePort(instance.Port + 1)
+	} else {
+		status.SuggestedPort = instance.Port
+	}
 	status.ContainerHost = instance.Host
 
 	switch {
