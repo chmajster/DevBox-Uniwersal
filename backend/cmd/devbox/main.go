@@ -211,6 +211,13 @@ func serve() error {
 		Volume:    cfg.ManagedPostgreSQLVolume,
 	})
 	mysqlProvider := databases.NewMySQLProvider(mysqlConfig, secretStore)
+	postgresqlProvider := databases.NewPostgreSQLProvider(databases.PostgreSQLConfig{
+		DockerBinary:    cfg.PHPMyAdminDockerBinary,
+		Container:       cfg.ManagedPostgreSQLContainer,
+		ApplicationHost: cfg.ManagedPostgreSQLContainer,
+		ApplicationPort: 5432,
+		AdminUser:       "postgres",
+	}, secretStore)
 	phpMyAdmin := databases.NewPHPMyAdminManager(databases.PHPMyAdminConfig{
 		DockerBinary: cfg.PHPMyAdminDockerBinary,
 		Image:        cfg.PHPMyAdminImage,
@@ -228,6 +235,7 @@ func serve() error {
 	databaseOptions := []databases.ServiceOption{
 		databases.WithComposeDatabaseProvider(dockerProvider),
 		databases.WithManagedMySQL(managedMySQL),
+		databases.WithDatabaseEngine("postgresql", postgresqlProvider),
 	}
 	databaseService, err := databases.NewService(databaseRepo, mysqlProvider, secretStore, jobRunner, auditService, phpMyAdmin, cfg.MySQLBackupDir, databaseOptions...)
 	if err != nil {
