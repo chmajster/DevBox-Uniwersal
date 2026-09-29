@@ -86,7 +86,7 @@ func TestConfigureApplicationDatabaseUsesControlledSystemdRun(t *testing.T) {
 }
 
 func TestConfigureApplicationDatabaseRejectsUnsafeInput(t *testing.T) {
-	h := NewPrivilegedHelperWithRunner(helperRecordingRunner{paths: map[string]string{"systemd-run": "/usr/bin/systemd-run"}})
+	h := NewPrivilegedHelperWithRunner(&helperRecordingRunner{paths: map[string]string{"systemd-run": "/usr/bin/systemd-run"}})
 	if err := h.ConfigureApplicationDatabase(context.Background(), "mysql;rm", 3307); !errors.Is(err, ErrOperationNotAllowed) {
 		t.Fatalf("unsafe engine error = %v", err)
 	}
