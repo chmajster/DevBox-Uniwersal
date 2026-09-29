@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
@@ -15,6 +16,7 @@ const (
 	DefaultManagedMySQLNetwork   = "devbox-apps"
 	DefaultManagedMySQLVolume    = "devbox-mysql-data"
 	DefaultManagedMySQLImage     = "mysql:8.4"
+	DefaultManagedMySQLAdminPort = 13306
 
 	managedMySQLSecretScope = "managed-mysql"
 	managedMySQLSecretName  = "root-password"
@@ -53,7 +55,7 @@ func NewManagedMySQLManager(dockerProvider providers.DockerInfrastructureProvide
 		cfg.AdminHost = "127.0.0.1"
 	}
 	if cfg.AdminPort == 0 {
-		cfg.AdminPort = 3306
+		cfg.AdminPort = DefaultManagedMySQLAdminPort
 	}
 	return &ManagedMySQLManager{docker: dockerProvider, secrets: secretStore, cfg: cfg}
 }
@@ -91,6 +93,10 @@ func (m *ManagedMySQLManager) Ensure(ctx context.Context) error {
 		SensitiveEnvironment: map[string]string{
 			"MYSQL_ROOT_PASSWORD": string(password),
 			"MYSQL_ROOT_HOST":     "%",
+		},
+		Labels: map[string]string{
+			"io.devbox.managed-mysql":            "true",
+			"io.devbox.managed-mysql.admin-port": strconv.Itoa(m.cfg.AdminPort),
 		},
 	}
 	item, err := m.docker.EnsureContainer(ctx, spec)
