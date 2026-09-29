@@ -375,6 +375,26 @@ func (s *Service) CreateUser(ctx context.Context, databaseID, username string, r
 	return user, password, nil
 }
 
+func (s *Service) DatabaseUserConnection(ctx context.Context, userID, password string) (ConnectionConfig, error) {
+	user, err := s.repo.UserByID(ctx, userID)
+	if err != nil {
+		return ConnectionConfig{}, err
+	}
+	database, err := s.repo.DatabaseByID(ctx, user.DatabaseID)
+	if err != nil {
+		return ConnectionConfig{}, err
+	}
+	host, port := s.engine.Endpoint()
+	if endpointEngine, ok := s.engine.(endpointDatabaseEngine); ok {
+		endpoint := endpointEngine.ApplicationEndpoint()
+		host, port = endpoint.Host, endpoint.Port
+	}
+	return ConnectionConfig{
+		Engine: database.Engine, Host: host, Port: port, Database: database.Name,
+		Username: user.Username, Password: password,
+	}, nil
+}
+
 func (s *Service) DeleteUser(ctx context.Context, id string, actor *string, remote *string) error {
 	user, err := s.repo.UserByID(ctx, id)
 	if err != nil {
