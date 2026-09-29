@@ -347,6 +347,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
                 type="radio"
                 name={`database-service-${projectId}`}
                 checked={serviceSelection === value}
+                disabled={readOnly || busy !== ''}
                 onChange={() => setServiceSelection(value)}
               />
               <span className="database-mode-copy"><strong>{title}</strong><small>{description}</small></span>
