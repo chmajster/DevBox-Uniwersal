@@ -275,6 +275,21 @@ func serve() error {
 			os.Exit(1)
 		}
 	}
+	pluginOptions := []plugins.ServiceOption{plugins.WithJobRunner(jobRunner)}
+	if cfg.ManagedMySQLEnabled {
+		pluginOptions = append(pluginOptions, plugins.WithReservedHostPort(
+			cfg.MySQLPort,
+			fmt.Sprintf("zarządzany MySQL DevBox (%s)", cfg.ManagedMySQLContainer),
+		))
+	}
+	pluginService := plugins.NewService(cfg.NginxHelperBinary, cfg.SudoBinary, pluginOptions...)
+	for _, handler := range pluginService.Handlers() {
+		if err := jobRunner.Register(handler); err != nil {
+			logger.Error("plugin job handler registration failed", "type", handler.Type(), "error", err)
+			os.Exit(1)
+		}
+	}
+
 	workerCtx, stopWorkers := context.WithCancel(context.Background())
 	defer stopWorkers()
 	if err := jobRunner.Start(workerCtx); err != nil {
@@ -292,7 +307,7 @@ func serve() error {
 	}
 	projectModule := projects.NewModule(projectService, auditService)
 	updaterModule := updater.NewModule(updater.NewService(cfg.AppVersion, cfg.NginxHelperBinary, cfg.SudoBinary), auditService)
-	pluginModule := plugins.NewModule(plugins.NewService(cfg.NginxHelperBinary, cfg.SudoBinary), auditService)
+	pluginModule := plugins.NewModule(pluginService, auditService)
 
 	scriptAppRepo := scriptapps.NewRepository(db)
 	scriptAppService := scriptapps.NewService(scriptAppRepo, jobRunner)
