@@ -15,7 +15,11 @@ export function PluginsPage() {
   const [mysql, setMySQL] = useState<MySQLPluginStatus | null>(null)
   const [postgresql, setPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'mysql-install' | 'postgresql-install' | null>(null)
+  const [mysqlSelected, setMySQLSelected] = useState(false)
+  const [postgresqlSelected, setPostgreSQLSelected] = useState(false)
+  const [mysqlPort, setMySQLPort] = useState(3307)
+  const [postgresqlPort, setPostgreSQLPort] = useState(5432)
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'database-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
@@ -34,6 +38,8 @@ export function PluginsPage() {
     setMySQL(mySQLStatus)
     setPostgreSQL(postgreSQLStatus)
     setPHPMyAdmin(phpMyAdminStatus)
+    setMySQLPort(mySQLStatus.port ?? mySQLStatus.suggested_port ?? 3307)
+    setPostgreSQLPort(postgreSQLStatus.port ?? postgreSQLStatus.suggested_port ?? 5432)
   }, [])
 
   useEffect(() => {
@@ -82,43 +88,48 @@ export function PluginsPage() {
       }
       await new Promise((resolve) => window.setTimeout(resolve, 1000))
     }
-    throw new Error('Instalacja MySQL/MariaDB nadal trwa. Sprawdź status zadania w zakładce Zadania.')
+    throw new Error('Instalacja bazy nadal trwa. Sprawdź status zadania w zakładce Zadania.')
   }
 
-  async function installMySQL() {
-    setBusyAction('mysql-install')
+  async function installSelectedDatabases() {
+    if (!mysqlSelected && !postgresqlSelected) {
+      setError('Wybierz MySQL/MariaDB, PostgreSQL albo oba silniki.')
+      return
+    }
+    setBusyAction('database-install')
     setError('')
     setMessage('')
     try {
-      const job = await request<Job>('/plugins/mysql/install', { method: 'POST' })
-      setMessage(`Instalacja MySQL/MariaDB została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
-      await waitForJob(job.id)
+      const jobs: Array<{ engine: string; job: Job }> = []
+      if (mysqlSelected) {
+        const job = await request<Job>('/plugins/mysql/install', {
+          method: 'POST',
+          body: JSON.stringify({ port: mysqlPort }),
+        })
+        jobs.push({ engine: 'MySQL/MariaDB', job })
+      }
+      if (postgresqlSelected) {
+        const job = await request<Job>('/plugins/postgresql/install', {
+          method: 'POST',
+          body: JSON.stringify({ port: postgresqlPort }),
+        })
+        jobs.push({ engine: 'PostgreSQL', job })
+      }
+      setMessage('Uruchomiono ' + jobs.length + ' zadanie' + (jobs.length === 1 ? '' : 'a') + ' instalacji baz dla aplikacji.')
+      for (const item of jobs) {
+        await waitForJob(item.job.id)
+      }
       await load()
-      setMessage('Hostowy MySQL/MariaDB został zainstalowany i zweryfikowany.')
+      setMessage('Wybrane bazy danych zostały zainstalowane/skonfigurowane i są gotowe do użycia przez aplikacje.')
+      setMySQLSelected(false)
+      setPostgreSQLSelected(false)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Instalacja MySQL/MariaDB nie powiodła się')
+      setError(cause instanceof Error ? cause.message : 'Instalacja baz danych dla aplikacji nie powiodła się')
       await load().catch(() => undefined)
     } finally {
       setBusyAction(null)
     }
   }
-
-  async function installPostgreSQL() {
-    setBusyAction('postgresql-install')
-    setError('')
-    setMessage('')
-    try {
-      const status = await request<PostgreSQLPluginStatus>('/plugins/postgresql/install', { method: 'POST' })
-      setPostgreSQL(status)
-      setMessage('PostgreSQL został zainstalowany.')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Instalacja PostgreSQL nie powiodła się')
-      await load().catch(() => undefined)
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
   async function openPHPMyAdmin() {
     setBusyAction('start')
     setError('')
