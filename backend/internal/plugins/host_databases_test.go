@@ -52,6 +52,35 @@ func (r *recordingPluginJobRunner) Retry(context.Context, string) (domain.Job, e
 	return domain.Job{}, errors.New("not implemented")
 }
 
+func TestQueuePostgreSQLInstallUsesJobEngine(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	runner := &recordingPluginJobRunner{}
+	service := NewService(
+		"/usr/local/lib/devbox/devbox-helper",
+		"/usr/bin/sudo",
+		WithJobRunner(runner),
+	)
+	actor := "admin-user"
+
+	job, err := service.QueuePostgreSQLInstall(context.Background(), &actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.ID != "job-1" || len(runner.requests) != 1 {
+		t.Fatalf("unexpected queued job: %#v requests=%#v", job, runner.requests)
+	}
+	request := runner.requests[0]
+	if request.Type != JobInstallHostPostgreSQL {
+		t.Fatalf("job type = %q, want %q", request.Type, JobInstallHostPostgreSQL)
+	}
+	if request.RequestedBy == nil || *request.RequestedBy != actor {
+		t.Fatalf("requested_by = %#v", request.RequestedBy)
+	}
+	if request.Payload["purpose"] != "application_database" {
+		t.Fatalf("unexpected purpose payload: %#v", request.Payload)
+	}
+}
+
 func TestQueueMySQLInstallUsesJobEngine(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	runner := &recordingPluginJobRunner{}
