@@ -261,15 +261,17 @@ export function PluginsPage() {
           </span>}
         </div>
 
-        <div className="database-plugin-meta">
-          <div><span>Kontener</span><strong><code>{mysql?.container_name ?? 'devbox-mysql'}</code></strong></div>
-          <div><span>Obraz</span><strong><code>{mysql?.image ?? 'mysql:8.4'}</code></strong></div>
-          <div><span>Adres dla aplikacji</span><strong><code>{mysql?.container_host ?? 'devbox-mysql'}:{mysql?.port ?? 3306}</code></strong></div>
-          <div><span>Sieć Docker</span><strong><code>{mysql?.network ?? 'devbox-apps'}</code></strong></div>
-          <div><span>Wolumen danych</span><strong><code>{mysql?.volume ?? 'devbox-mysql-data'}</code></strong></div>
-          <div><span>Bazy / aplikacje</span><strong>Wiele / wiele</strong></div>
-          <div><span>PHP</span><strong>mysqli / PDO MySQL</strong></div>
-        </div>
+        {mysql?.installed && (
+          <div className="database-plugin-meta">
+            <div><span>Kontener</span><strong><code>{mysql.container_name ?? 'devbox-mysql'}</code></strong></div>
+            <div><span>Obraz</span><strong><code>{mysql.image ?? 'mysql:8.4'}</code></strong></div>
+            <div><span>Adres dla aplikacji</span><strong><code>{mysql.container_host ?? 'devbox-mysql'}:{mysql.port ?? 3306}</code></strong></div>
+            <div><span>Sieć Docker</span><strong><code>{mysql.network ?? 'devbox-apps'}</code></strong></div>
+            <div><span>Wolumen danych</span><strong><code>{mysql.volume ?? 'devbox-mysql-data'}</code></strong></div>
+            <div><span>Bazy / aplikacje</span><strong>Wiele / wiele</strong></div>
+            <div><span>PHP</span><strong>mysqli / PDO MySQL</strong></div>
+          </div>
+        )}
 
         <div className="actions">
           {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
