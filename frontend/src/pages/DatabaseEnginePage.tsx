@@ -7,13 +7,11 @@ import type {
   DatabaseRecord,
   DatabaseUser,
   DatabaseUserCreateResult,
-  DatabaseUserPasswordResult,
   Job,
   MySQLPluginStatus,
   PostgreSQLPluginStatus,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
-import { Modal } from '../components/Modal'
 
 const MYSQL_PRIVILEGES = [
   'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'INDEX', 'ALTER',
@@ -49,6 +47,10 @@ function belongsToEngine(item: DatabaseRecord, engine: 'mysql' | 'postgresql') {
   return engine === 'mysql' ? value === 'mysql' || value === 'mariadb' : value === 'postgresql' || value === 'postgres'
 }
 
+function accountBelongsToEngine(item: DatabaseUser, engine: 'mysql' | 'postgresql') {
+  return engine === 'mysql' ? item.engine === 'mysql' || item.engine === 'mariadb' : item.engine === 'postgresql' || item.engine === 'postgres'
+}
+
 export function DatabaseEnginePage() {
   const { user } = useAuth()
   const canMutate = user?.role !== 'viewer'
@@ -70,11 +72,6 @@ export function DatabaseEnginePage() {
   const [password, setPassword] = useState('')
   const [generatePassword, setGeneratePassword] = useState(true)
   const [privileges, setPrivileges] = useState<string[]>([])
-  const [editingUser, setEditingUser] = useState<DatabaseUser | null>(null)
-  const [editingPrivileges, setEditingPrivileges] = useState<string[]>([])
-  const [newPassword, setNewPassword] = useState('')
-  const [editorMessage, setEditorMessage] = useState('')
-  const [editorError, setEditorError] = useState('')
   const [credential, setCredential] = useState<DatabaseConnectionCredential | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -100,29 +97,26 @@ export function DatabaseEnginePage() {
     ])
     const engineDatabases = (dbs ?? []).filter((item) => belongsToEngine(item, engine))
     setDatabases(engineDatabases)
-    setUsers(dbUsers ?? [])
+    setUsers((dbUsers ?? []).filter((item) => accountBelongsToEngine(item, engine)))
     setServerInstalled(Boolean(status.installed))
     setServerRunning(Boolean(status.running))
     setServerMessage(status.message ?? '')
-    setDatabaseId((current) => {
-      if (current && engineDatabases.some((item) => item.id === current)) return current
-      return engineDatabases[0]?.id ?? ''
-    })
+    setDatabaseId((current) => current && engineDatabases.some((item) => item.id === current) ? current : '')
   }, [engine])
 
   useEffect(() => {
     load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Nie udało się pobrać danych serwera baz danych'))
   }, [load])
 
-  const databaseById = useMemo(() => new Map(databases.map((item) => [item.id, item])), [databases])
-  const engineDatabaseIds = useMemo(() => new Set(databases.map((item) => item.id)), [databases])
-  const engineUsers = useMemo(() => users.filter((item) => engineDatabaseIds.has(item.database_id)), [users, engineDatabaseIds])
-  const filteredUsers = useMemo(() => databaseId ? engineUsers.filter((item) => item.database_id === databaseId) : engineUsers, [engineUsers, databaseId])
+  const filteredUsers = useMemo(
+    () => databaseId ? users.filter((item) => item.databases.some((grant) => grant.database_id === databaseId)) : users,
+    [users, databaseId],
+  )
   const userCountByDatabase = useMemo(() => {
     const counts = new Map<string, number>()
-    engineUsers.forEach((item) => counts.set(item.database_id, (counts.get(item.database_id) ?? 0) + 1))
+    users.forEach((item) => item.databases.forEach((grant) => counts.set(grant.database_id, (counts.get(grant.database_id) ?? 0) + 1)))
     return counts
-  }, [engineUsers])
+  }, [users])
 
   if (!engine) return <Navigate to="/databases" replace />
 
@@ -172,7 +166,7 @@ export function DatabaseEnginePage() {
   }
 
   async function removeDatabase(item: DatabaseRecord) {
-    if (!window.confirm(`Usunąć bazę ${item.name}? Zarządzani użytkownicy tej bazy zostaną również usunięci.`)) return
+    if (!window.confirm(`Usunąć bazę ${item.name}? Dostępy użytkowników do tej bazy zostaną usunięte.`)) return
     await run(async () => {
       await request<{ status: string }>(`/databases/${item.id}`, { method: 'DELETE' })
       if (selectedDatabase?.id === item.id) {
@@ -218,25 +212,8 @@ export function DatabaseEnginePage() {
     })
   }
 
-  function togglePrivilege(value: string, mode: 'create' | 'edit') {
-    const setter = mode === 'create' ? setPrivileges : setEditingPrivileges
-    setter((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value])
-  }
-
-  function openEditor(item: DatabaseUser) {
-    setEditingUser(item)
-    setEditingPrivileges(item.privileges)
-    setNewPassword('')
-    setEditorMessage('')
-    setEditorError('')
-  }
-
-  function closeEditor() {
-    if (busy) return
-    setEditingUser(null)
-    setNewPassword('')
-    setEditorMessage('')
-    setEditorError('')
+  function togglePrivilege(value: string) {
+    setPrivileges((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value])
   }
 
   async function createUser(event: FormEvent) {
@@ -257,75 +234,18 @@ export function DatabaseEnginePage() {
       setPassword('')
       setGeneratePassword(true)
       setPrivileges([...defaultPrivileges])
-      setMessage(`Użytkownik ${result.user.username} został utworzony dla bazy ${databaseById.get(databaseId)?.name ?? databaseId}.`)
+      setMessage(`Użytkownik ${result.user.username} został utworzony. Kolejne bazy i uprawnienia ustawisz po otwarciu jego konta.`)
       await load()
     })
   }
 
   async function removeUser(item: DatabaseUser) {
-    if (!window.confirm(`Usunąć użytkownika ${item.username}?`)) return
+    if (!window.confirm(`Usunąć konto ${item.username} ze wszystkich przypisanych baz?`)) return
     await run(async () => {
       await request<{ status: string }>(`/database-users/${item.id}`, { method: 'DELETE' })
-      if (editingUser?.id === item.id) setEditingUser(null)
       setMessage(`Użytkownik ${item.username} został usunięty.`)
       await load()
     })
-  }
-
-  async function savePassword(item: DatabaseUser, generate = false) {
-    setBusy(true)
-    setEditorMessage('')
-    setEditorError('')
-    try {
-      const result = await request<DatabaseUserPasswordResult>(`/database-users/${item.id}/password`, {
-        method: 'POST',
-        ...(generate ? {} : { body: JSON.stringify({ password: newPassword }) }),
-      })
-      setCredential(result.credential)
-      setNewPassword('')
-      setEditorMessage(generate
-        ? `Wygenerowano nowe hasło użytkownika ${item.username}.`
-        : `Hasło użytkownika ${item.username} zostało zmienione.`)
-    } catch (cause) {
-      setEditorError(cause instanceof Error ? cause.message : 'Nie udało się zmienić hasła.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function savePrivileges(event: FormEvent) {
-    event.preventDefault()
-    if (!editingUser) return
-    const current = new Set(editingUser.privileges)
-    const next = new Set(editingPrivileges)
-    const toGrant = editingPrivileges.filter((item) => !current.has(item))
-    const toRevoke = editingUser.privileges.filter((item) => !next.has(item))
-    setBusy(true)
-    setEditorMessage('')
-    setEditorError('')
-    try {
-      let updated = editingUser
-      if (toGrant.length) {
-        updated = await request<DatabaseUser>(`/database-users/${editingUser.id}/grants`, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'grant', privileges: toGrant }),
-        })
-      }
-      if (toRevoke.length) {
-        updated = await request<DatabaseUser>(`/database-users/${editingUser.id}/grants`, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'revoke', privileges: toRevoke }),
-        })
-      }
-      setEditingUser(updated)
-      setEditingPrivileges(updated.privileges)
-      setEditorMessage('Uprawnienia zostały zaktualizowane.')
-      await load()
-    } catch (cause) {
-      setEditorError(cause instanceof Error ? cause.message : 'Nie udało się zaktualizować uprawnień.')
-    } finally {
-      setBusy(false)
-    }
   }
 
   const managerPath = `/databases/${engine}`
@@ -337,7 +257,7 @@ export function DatabaseEnginePage() {
     <div className="page-heading">
       <div>
         <h1>{engineLabel}</h1>
-        <p className="muted">Zarządzanie bazami, użytkownikami, hasłami, grantami i backupami serwera {engineLabel}.</p>
+        <p className="muted">Zarządzanie bazami, użytkownikami, hasłami, dostępami i backupami serwera {engineLabel}.</p>
       </div>
       <div className="actions">
         <span className="status-chip" data-ok={serverRunning ? 'true' : 'false'}>
@@ -353,7 +273,7 @@ export function DatabaseEnginePage() {
     {credential && <section className="credential-card">
       <div>
         <strong>Dane dostępowe</strong>
-        <p className="muted">Hasło jest pokazywane po utworzeniu lub zmianie użytkownika.</p>
+        <p className="muted">Hasło jest pokazywane po utworzeniu użytkownika.</p>
       </div>
       <code>DB_DRIVER={credential.engine}<br />DB_HOST={credential.host}<br />DB_PORT={credential.port}<br />DB_DATABASE={credential.database}<br />DB_USERNAME={credential.username}<br />DB_PASSWORD={credential.password}</code>
       <button type="button" className="secondary" onClick={() => setCredential(null)}>Ukryj</button>
@@ -445,19 +365,19 @@ export function DatabaseEnginePage() {
       {canMutate && <form className="panel form-grid" onSubmit={createUser}>
         <div className="span-2">
           <h2>Utwórz użytkownika</h2>
-          <p className="muted">Konto zostanie utworzone rzeczywiście na serwerze {engineLabel} i przypisane do wybranej bazy.</p>
+          <p className="muted">Wybierz pierwszą bazę i jej uprawnienia. Po utworzeniu otwórz konto użytkownika, aby przypisać kolejne bazy i niezależne uprawnienia.</p>
         </div>
-        <label>Baza danych<select value={databaseId} onChange={(event) => changeDatabase(event.target.value)} required>
+        <label>Baza początkowa<select value={databaseId} onChange={(event) => changeDatabase(event.target.value)} required>
           <option value="">Wybierz bazę</option>
           {databases.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
-        <label>Nazwa użytkownika<input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="app_user" /></label>
-        <label className="span-2">Hasło<input type="password" value={password} disabled={generatePassword} onChange={(event) => setPassword(event.target.value)} placeholder={generatePassword ? 'Hasło zostanie wygenerowane automatycznie' : 'Wpisz hasło lub pozostaw puste'} /></label>
+        <label>Nazwa użytkownika<input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="app_user" required /></label>
+        <label className="span-2">Hasło<input type="password" value={password} disabled={generatePassword} onChange={(event) => setPassword(event.target.value)} placeholder={generatePassword ? 'Hasło zostanie wygenerowane automatycznie' : 'Może pozostać puste'} /></label>
         <label className="checkbox span-2"><input type="checkbox" checked={generatePassword} onChange={(event) => setGeneratePassword(event.target.checked)} /> Wygeneruj bezpieczne hasło automatycznie</label>
         <div className="span-2 database-privileges">
-          <span>Uprawnienia</span>
+          <span>Uprawnienia do bazy początkowej</span>
           <div className="database-privilege-grid">
-            {availablePrivileges.map((item) => <label className="checkbox" key={item}><input type="checkbox" checked={privileges.includes(item)} onChange={() => togglePrivilege(item, 'create')} />{item}</label>)}
+            {availablePrivileges.map((item) => <label className="checkbox" key={item}><input type="checkbox" checked={privileges.includes(item)} onChange={() => togglePrivilege(item)} />{item}</label>)}
           </div>
         </div>
         <div className="form-actions"><button type="submit" disabled={busy || !serverRunning || !databaseId || privileges.length === 0}>Utwórz użytkownika</button></div>
@@ -467,7 +387,7 @@ export function DatabaseEnginePage() {
         <div className="section-heading">
           <div>
             <h2>Lista użytkowników</h2>
-            <p className="muted">Konta zarządzane przez DevBox dla serwera {engineLabel}.</p>
+            <p className="muted">Wybierz użytkownika, aby otworzyć jego konto, zmienić hasło oraz zarządzać bazami i uprawnieniami.</p>
           </div>
           <label>Filtr bazy<select value={databaseId} onChange={(event) => changeDatabase(event.target.value)}>
             <option value="">Wszystkie bazy</option>
@@ -476,15 +396,15 @@ export function DatabaseEnginePage() {
         </div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Użytkownik</th><th>Baza</th><th>Uprawnienia</th><th>Utworzono</th><th>Akcje</th></tr></thead>
+            <thead><tr><th>Użytkownik</th><th>Przypisane bazy</th><th>Uprawnienia</th><th>Utworzono</th><th>Akcje</th></tr></thead>
             <tbody>
               {filteredUsers.map((item) => <tr key={item.id}>
-                <td><strong>{item.username}</strong></td>
-                <td>{databaseById.get(item.database_id)?.name ?? item.database_id}</td>
-                <td><div className="database-grants">{item.privileges.map((privilege) => <span className="badge badge-muted" key={privilege}>{privilege}</span>)}</div></td>
+                <td><strong>{item.username}</strong><div className="muted small">{item.engine}</div></td>
+                <td><div className="database-grants">{item.databases.map((grant) => <span className="badge badge-muted" key={grant.database_id}>{grant.database_name}</span>)}</div></td>
+                <td>{item.databases.length === 0 ? 'Brak dostępów' : item.databases.map((grant) => `${grant.database_name}: ${grant.privileges.length}`).join(' · ')}</td>
                 <td>{new Date(item.created_at).toLocaleString()}</td>
                 <td className="actions">
-                  {canMutate && <button type="button" className="secondary" onClick={() => openEditor(item)} disabled={!serverRunning}>Edytuj</button>}
+                  <Link className="button-link secondary" to={`/databases/${engine}/users/${item.id}`}>Otwórz konto</Link>
                   {canMutate && <button type="button" className="danger" onClick={() => removeUser(item)} disabled={busy || !serverRunning}>Usuń</button>}
                 </td>
               </tr>)}
@@ -494,42 +414,5 @@ export function DatabaseEnginePage() {
         </div>
       </section>
     </>}
-
-    <Modal open={editingUser !== null} onClose={closeEditor} labelId="database-engine-user-edit-title" className="database-user-edit-modal">
-      {editingUser && <div className="stack">
-        <div className="modal-heading">
-          <div>
-            <h2 id="database-engine-user-edit-title">Edytuj użytkownika: {editingUser.username}</h2>
-            <p className="muted">{databaseById.get(editingUser.database_id)?.name ?? editingUser.database_id} · {engineLabel}</p>
-          </div>
-          <button type="button" className="secondary" disabled={busy} onClick={closeEditor}>Zamknij</button>
-        </div>
-
-        {editorMessage && <div className="success-banner" role="status">{editorMessage}</div>}
-        {editorError && <div className="error-banner" role="alert">{editorError}</div>}
-
-        <form className="stack" onSubmit={savePrivileges}>
-          <div>
-            <h3>Uprawnienia</h3>
-            <div className="database-privilege-grid">
-              {availablePrivileges.map((item) => <label className="checkbox" key={item}><input type="checkbox" checked={editingPrivileges.includes(item)} onChange={() => togglePrivilege(item, 'edit')} />{item}</label>)}
-            </div>
-          </div>
-          <div className="form-actions"><button type="submit" disabled={busy || editingPrivileges.length === 0}>Zapisz uprawnienia</button></div>
-        </form>
-
-        <div className="form-grid database-password-editor">
-          <div className="span-2">
-            <h3>Zmiana hasła</h3>
-            <p className="muted small">Zmiana jest wykonywana bezpośrednio na serwerze {engineLabel}, a sekret DevBox jest aktualizowany po sukcesie.</p>
-          </div>
-          <label className="span-2">Nowe hasło<input type="password" value={newPassword} onChange={(event) => { setNewPassword(event.target.value); setEditorMessage(''); setEditorError('') }} placeholder="Nowe hasło" /></label>
-          <div className="form-actions span-2">
-            <button type="button" className="secondary" disabled={busy} onClick={() => void savePassword(editingUser)}>Ustaw hasło</button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => void savePassword(editingUser, true)}>Wygeneruj nowe hasło</button>
-          </div>
-        </div>
-      </div>}
-    </Modal>
   </>
 }
