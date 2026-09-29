@@ -6,10 +6,8 @@ describe('project database mode field contract', () => {
     expect(databaseModeFields('none')).toEqual([])
   })
 
-  it('renders managed DevBox database identity and Docker endpoint fields', () => {
-    expect(databaseModeFields('managed')).toEqual([
-      'application_service', 'database', 'username', 'application_host', 'application_port', 'status',
-    ])
+  it('renders shared DevBox service details through the dedicated service selector', () => {
+    expect(databaseModeFields('managed')).toEqual([])
   })
 
   it('renders Compose application and database service configuration', () => {

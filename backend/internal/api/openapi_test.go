@@ -25,6 +25,7 @@ func TestOpenAPISpecContainsCoreAndModuleRoutes(t *testing.T) {
 		"/api/v1/plugins/postgresql/{action}",
 		"/api/v1/database-users/{id}",
 		"/api/v1/database-users/{id}/databases/{database_id}",
+		"/api/v1/projects/{id}/database-services",
 		"/api/v1/health-checks",
 		"/api/v1/logs/export",
 	} {
@@ -89,5 +90,22 @@ func TestOpenAPIDatabasePluginRoles(t *testing.T) {
 	post, ok = postgresActionPath["post"].(map[string]any)
 	if !ok || post["x-devbox-min-role"] != "admin" {
 		t.Fatalf("POST Docker PostgreSQL lifecycle role = %#v", post["x-devbox-min-role"])
+	}
+}
+
+func TestOpenAPIProjectDatabaseServicesMethodsAndRoles(t *testing.T) {
+	spec := buildOpenAPISpec("test")
+	paths := spec["paths"].(map[string]any)
+	item, ok := paths["/api/v1/projects/{id}/database-services"].(map[string]any)
+	if !ok {
+		t.Fatal("project database services path missing")
+	}
+	get, ok := item["get"].(map[string]any)
+	if !ok || get["x-devbox-min-role"] != "viewer" {
+		t.Fatalf("GET project database services role = %#v", get["x-devbox-min-role"])
+	}
+	put, ok := item["put"].(map[string]any)
+	if !ok || put["x-devbox-min-role"] != "operator" {
+		t.Fatalf("PUT project database services role = %#v", put["x-devbox-min-role"])
 	}
 }

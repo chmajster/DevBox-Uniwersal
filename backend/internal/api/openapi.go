@@ -108,6 +108,8 @@ var documentedRoutes = []documentedRoute{
 	{"POST", "/api/v1/projects/{id}/database-binding/test", "Run a real database connectivity test", "operator"},
 	{"POST", "/api/v1/projects/{id}/database-binding/password", "Rotate managed project database password", "operator"},
 	{"GET", "/api/v1/projects/{id}/database-binding/compose-services", "List project Compose services for database binding", "viewer"},
+	{"GET", "/api/v1/projects/{id}/database-services", "Get shared DevBox database services selected for a project", "viewer"},
+	{"PUT", "/api/v1/projects/{id}/database-services", "Select shared DevBox database services for a project", "operator"},
 	{"POST", "/api/v1/projects/{id}/database/provision", "Provision project managed database", "operator"},
 	{"POST", "/api/v1/databases/{id}/backup", "Backup database", "operator"},
 	{"GET", "/api/v1/databases/{id}/backups", "List database backups", "viewer"},

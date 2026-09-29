@@ -6,8 +6,9 @@ import type {
   DatabaseBindingInput,
   DatabaseMode,
   MySQLPluginStatus,
+  PostgreSQLPluginStatus,
+  ProjectDatabaseServices,
   Job,
-  PHPMyAdminStatus,
   ProjectRuntimeInfo,
   RuntimeContainerConfig,
 } from '../api/types'
@@ -51,7 +52,7 @@ function bindingToDraft(binding: DatabaseBinding): DatabaseBindingInput {
 
 function modeLabel(mode: DatabaseMode) {
   switch (mode) {
-    case 'managed': return 'MySQL/MariaDB DevBox'
+    case 'managed': return 'Bazy danych DevBox'
     case 'compose': return 'Baza z Docker Compose'
     case 'external': return 'Zewnętrzny MySQL/MariaDB'
     default: return 'Brak bazy'
@@ -66,8 +67,8 @@ const databaseModeOptions: Array<{ mode: DatabaseMode; title: string; descriptio
   },
   {
     mode: 'managed',
-    title: 'MySQL / MariaDB DevBox',
-    description: 'Utwórz bazę i użytkownika na wspólnym serwerze Docker devbox-mysql:3306 w sieci devbox-apps.',
+    title: 'Bazy danych DevBox',
+    description: 'Wybierz MySQL/MariaDB, PostgreSQL albo oba serwery. Dane połączenia są stałe; bazy, konta i uprawnienia zarządzasz w module Bazy danych.',
   },
   {
     mode: 'external',
@@ -81,6 +82,21 @@ const databaseModeOptions: Array<{ mode: DatabaseMode; title: string; descriptio
   },
 ]
 
+type DatabaseServiceSelection = 'mysql' | 'postgresql' | 'both'
+
+function serviceSelectionFromEngines(engines: string[] | undefined, fallbackEngine = 'mysql'): DatabaseServiceSelection {
+  const normalized = new Set((engines ?? []).map((engine) => engine.toLowerCase()))
+  if (normalized.has('mysql') && normalized.has('postgresql')) return 'both'
+  if (normalized.has('postgresql')) return 'postgresql'
+  if (normalized.has('mysql')) return 'mysql'
+  return fallbackEngine.toLowerCase() === 'postgresql' || fallbackEngine.toLowerCase() === 'postgres' ? 'postgresql' : 'mysql'
+}
+
+function serviceEngines(selection: DatabaseServiceSelection): Array<'mysql' | 'postgresql'> {
+  if (selection === 'both') return ['mysql', 'postgresql']
+  return [selection]
+}
+
 export function ProjectDatabaseSection({ projectId }: Props) {
   const { user } = useAuth()
   const readOnly = user?.role === 'viewer'
@@ -88,6 +104,8 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const [draft, setDraft] = useState<DatabaseBindingInput>(emptyDraft)
   const [composeServices, setComposeServices] = useState<string[]>([])
   const [managedMySQL, setManagedMySQL] = useState<MySQLPluginStatus | null>(null)
+  const [managedPostgreSQL, setManagedPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
+  const [serviceSelection, setServiceSelection] = useState<DatabaseServiceSelection>('mysql')
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeContainerConfig | null>(null)
   const [runtimeInfo, setRuntimeInfo] = useState<ProjectRuntimeInfo | null>(null)
   const [backups, setBackups] = useState<DatabaseBackup[]>([])
@@ -97,17 +115,24 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
-    const [currentBinding, config, runtime, mysqlStatus] = await Promise.all([
+    const [currentBinding, config, runtime, mysqlStatus, postgresqlStatus, selectedServices] = await Promise.all([
       request<DatabaseBinding>(`/projects/${encodeURIComponent(projectId)}/database-binding`),
       request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`).catch(() => null),
       request<ProjectRuntimeInfo>(`/projects/${encodeURIComponent(projectId)}/runtime`).catch(() => null),
       request<MySQLPluginStatus>('/plugins/mysql/status').catch(() => null),
+      request<PostgreSQLPluginStatus>('/plugins/postgresql/status').catch(() => null),
+      request<ProjectDatabaseServices>(`/projects/${encodeURIComponent(projectId)}/database-services`).catch(() => null),
     ])
+    const savedServices = selectedServices?.engines ?? []
+    const currentDraft = bindingToDraft(currentBinding)
+    if (savedServices.length > 0) currentDraft.mode = 'managed'
     setBinding(currentBinding)
-    setDraft(bindingToDraft(currentBinding))
+    setDraft(currentDraft)
     setRuntimeConfig(config)
     setRuntimeInfo(runtime)
     setManagedMySQL(mysqlStatus)
+    setManagedPostgreSQL(postgresqlStatus)
+    setServiceSelection(serviceSelectionFromEngines(savedServices, currentBinding.engine ?? 'mysql'))
   }, [projectId])
 
   const loadComposeServices = useCallback(async () => {
@@ -130,10 +155,15 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const effectiveRuntime = effectiveRuntimeName(runtimeConfig?.runtime, runtimeInfo?.runtime)
   const phpModules = useMemo(() => new Set((runtimeConfig?.modules ?? []).map((item) => item.name.toLowerCase())), [runtimeConfig])
   const selectedEngine = (draft.engine || binding?.engine || 'mysql').toLowerCase()
-  const needsPHPMySQLDriver = draft.mode !== 'none' && effectiveRuntime === 'php' &&
-    (selectedEngine === 'mysql' || selectedEngine === 'mariadb') &&
-    !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
-  const managedServerKnownMissing = managedMySQL !== null && !managedMySQL.installed
+  const selectedServices = serviceEngines(serviceSelection)
+  const usesMySQL = draft.mode === 'managed'
+    ? selectedServices.includes('mysql')
+    : draft.mode !== 'none' && (selectedEngine === 'mysql' || selectedEngine === 'mariadb')
+  const usesPostgreSQL = draft.mode === 'managed' && selectedServices.includes('postgresql')
+  const needsPHPMySQLDriver = effectiveRuntime === 'php' && usesMySQL && !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
+  const needsPHPPostgreSQLDriver = effectiveRuntime === 'php' && usesPostgreSQL && !phpModules.has('pgsql') && !phpModules.has('pdo_pgsql')
+  const managedMySQLMissing = managedMySQL !== null && !managedMySQL.installed
+  const managedPostgreSQLMissing = managedPostgreSQL !== null && !managedPostgreSQL.installed
 
 
   async function perform(name: string, action: () => Promise<void>) {
@@ -151,6 +181,23 @@ export function ProjectDatabaseSection({ projectId }: Props) {
 
   async function saveBinding() {
     await perform('save', async () => {
+      if (draft.mode === 'managed') {
+        await request<ProjectDatabaseServices>(`/projects/${encodeURIComponent(projectId)}/database-services`, {
+          method: 'PUT',
+          body: JSON.stringify({ engines: serviceEngines(serviceSelection) }),
+        })
+        if (binding?.mode !== 'none') {
+          await request<DatabaseBinding>(`/projects/${encodeURIComponent(projectId)}/database-binding`, { method: 'DELETE' })
+        }
+        await load()
+        setMessage(`Zapisano dostęp do serwerów DevBox: ${serviceSelection === 'both' ? 'MySQL/MariaDB i PostgreSQL' : serviceSelection === 'postgresql' ? 'PostgreSQL' : 'MySQL/MariaDB'}.`)
+        return
+      }
+
+      await request<ProjectDatabaseServices>(`/projects/${encodeURIComponent(projectId)}/database-services`, {
+        method: 'PUT',
+        body: JSON.stringify({ engines: [] }),
+      })
       if (draft.mode === 'none') {
         await request<DatabaseBinding>(`/projects/${encodeURIComponent(projectId)}/database-binding`, { method: 'DELETE' })
       } else {
@@ -161,21 +208,6 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       }
       await load()
       setMessage(`Tryb bazy został zapisany: ${modeLabel(draft.mode)}.`)
-    })
-  }
-
-  async function provisionManaged() {
-    await perform('provision', async () => {
-      await request<unknown>(`/projects/${encodeURIComponent(projectId)}/database/provision`, {
-        method: 'POST',
-        body: JSON.stringify({
-          engine: draft.engine || 'mysql',
-          charset: 'utf8mb4',
-          application_service: draft.application_service || '',
-        }),
-      })
-      await load()
-      setMessage('Baza, użytkownik i ograniczone granty zostały utworzone. Poświadczenia zapisano w SecretStore.')
     })
   }
 
@@ -190,19 +222,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     })
   }
 
-  async function rotatePassword() {
-    if (!window.confirm('Zmienić hasło zarządzanego użytkownika bazy? Kolejny deploy otrzyma nowe hasło z SecretStore.')) return
-    await perform('password', async () => {
-      await request<{ status: string }>(`/projects/${encodeURIComponent(projectId)}/database-binding/password`, {
-        method: 'POST',
-        body: '{}',
-      })
-      setMessage('Hasło użytkownika bazy zostało zmienione i zapisane w SecretStore.')
-      await load()
-    })
-  }
-
-  async function addPHPDatabaseDriver(driver: 'pdo_mysql') {
+  async function addPHPDatabaseDriver(driver: 'pdo_mysql' | 'pgsql') {
     if (!runtimeConfig) {
       setError('Nie udało się pobrać konfiguracji runtime projektu. Odśwież widok i spróbuj ponownie.')
       return
@@ -218,18 +238,9 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         body: JSON.stringify(payload),
       })
       setRuntimeConfig(saved)
-      setMessage('PDO MySQL dodano do runtime PHP. Zostanie zainstalowane przy przebudowie obrazu.')
-    })
-  }
-
-  async function openPHPMyAdmin() {
-    await perform('phpmyadmin', async () => {
-      let status = await request<PHPMyAdminStatus>('/phpmyadmin/install', { method: 'POST', body: '{}' })
-      if (!status.running) {
-        status = await request<PHPMyAdminStatus>('/phpmyadmin/start', { method: 'POST', body: '{}' })
-      }
-      if (!status.url) throw new Error('phpMyAdmin nie zwrócił adresu aplikacji')
-      window.open(status.url, '_blank', 'noopener,noreferrer')
+      setMessage(driver === 'pgsql'
+        ? 'Sterownik PostgreSQL dodano do runtime PHP. Zostanie zainstalowany przy przebudowie obrazu.'
+        : 'PDO MySQL dodano do runtime PHP. Zostanie zainstalowane przy przebudowie obrazu.')
     })
   }
 
@@ -272,16 +283,16 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     ? composeServices
     : [draft.application_service, draft.compose_service].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
 
-  const managedExists = binding?.mode === 'managed' && Boolean(binding.database_id)
-
   return <section className="panel runtime-section">
     <div className="section-heading">
       <div>
         <h2>Baza danych</h2>
-        <p className="muted">Bazy instalowane z Pluginów działają jako trwałe kontenery Docker. Aplikacje łączą się z MySQL/MariaDB przez <code>devbox-mysql:3306</code> w sieci <code>devbox-apps</code>; nie używają hostowego MySQL ani adresów IP hosta.</p>
+        <p className="muted">Wybierz, z którego serwera SQL DevBox ma korzystać aplikacja. MySQL/MariaDB i PostgreSQL mają stałe adresy DNS w sieci <code>devbox-apps</code>. Bazy, konta użytkowników, hasła i uprawnienia są zarządzane osobno w module Bazy danych.</p>
       </div>
-      <span className="status-chip" data-ok={binding?.status === 'ready' || binding?.status === 'configured' ? 'true' : 'false'}>
-        {binding?.mode ? modeLabel(binding.mode) : 'Ładowanie'}
+      <span className="status-chip" data-ok={draft.mode === 'managed'
+        ? ((selectedServices.includes('mysql') ? managedMySQL?.running === true : true) && (selectedServices.includes('postgresql') ? managedPostgreSQL?.running === true : true) ? 'true' : 'false')
+        : binding?.status === 'ready' || binding?.status === 'configured' ? 'true' : 'false'}>
+        {draft.mode ? modeLabel(draft.mode) : 'Ładowanie'}
       </span>
     </div>
 
@@ -322,18 +333,53 @@ export function ProjectDatabaseSection({ projectId }: Props) {
 
       {draft.mode === 'managed' && <>
         <div className="validation-box span-2">
-          <strong>Wspólny MySQL/MariaDB DevBox działa w osobnym kontenerze Docker.</strong>
-          <span>Aplikacja otrzyma adres <code>{managedMySQL?.container_host ?? binding?.application_host ?? 'devbox-mysql'}:{managedMySQL?.port ?? binding?.application_port ?? 3306}</code> i połączy się przez sieć <code>{managedMySQL?.network ?? 'devbox-apps'}</code>. DevBox utworzy tylko bazę, użytkownika i hasło; serwer SQL jest współdzielony przez wiele aplikacji.</span>
+          <strong>Wybierz serwer SQL dla tej aplikacji.</strong>
+          <span>Ten widok zapisuje wyłącznie wybór MySQL/MariaDB, PostgreSQL albo obu serwerów i pokazuje stałe dane połączenia. Nie tworzy baz, kont, haseł ani grantów.</span>
         </div>
-        <label>Serwer SQL<input readOnly value={managedMySQL === null ? 'status niedostępny' : !managedMySQL.installed ? 'niezainstalowany — użyj Pluginów' : managedMySQL.running ? 'zainstalowany i uruchomiony' : 'zainstalowany — zostanie uruchomiony przy użyciu'} /></label>
-        <label>Adres dla aplikacji<input readOnly value={`${managedMySQL?.container_host ?? binding?.application_host ?? 'devbox-mysql'}:${managedMySQL?.port ?? binding?.application_port ?? 3306}`} /></label>
-        <label>Sieć Docker<input readOnly value={managedMySQL?.network ?? 'devbox-apps'} /></label>
-        <label>Nazwa bazy<input readOnly value={binding?.database || 'zostanie utworzona automatycznie'} /></label>
-        <label>Użytkownik<input readOnly value={binding?.username || 'zostanie utworzony automatycznie'} /></label>
-        <label>Status bazy<input readOnly value={binding?.status || 'jeszcze nie utworzono'} /></label>
-        {managedServerKnownMissing && <div className="validation-box span-2">
-          <strong>Serwer MySQL/MariaDB DevBox nie jest zainstalowany.</strong>
-          <span>Zainstaluj go w zakładce Pluginy. DevBox nie instaluje już MySQL/MariaDB jako usługi systemowej hosta.</span>
+        <div className="database-mode-options span-2">
+          {([
+            ['mysql', 'MySQL / MariaDB', 'devbox-mysql:3306'],
+            ['postgresql', 'PostgreSQL', 'devbox-postgresql:5432'],
+            ['both', 'Oba serwery', 'MySQL/MariaDB + PostgreSQL'],
+          ] as Array<[DatabaseServiceSelection, string, string]>).map(([value, title, description]) =>
+            <label className="database-mode-option" data-selected={serviceSelection === value ? 'true' : 'false'} key={value}>
+              <input
+                type="radio"
+                name={`database-service-${projectId}`}
+                checked={serviceSelection === value}
+                disabled={readOnly || busy !== ''}
+                onChange={() => setServiceSelection(value)}
+              />
+              <span className="database-mode-copy"><strong>{title}</strong><small>{description}</small></span>
+            </label>
+          )}
+        </div>
+
+        {selectedServices.includes('mysql') && <div className="validation-box span-2">
+          <strong>MySQL / MariaDB</strong>
+          <span>Domena / DNS Docker: <code>{managedMySQL?.container_host ?? 'devbox-mysql'}</code></span>
+          <span>Port: <code>{managedMySQL?.port ?? 3306}</code></span>
+          <span>Adres połączenia: <code>{managedMySQL?.container_host ?? 'devbox-mysql'}:{managedMySQL?.port ?? 3306}</code></span>
+          <span>Sieć Docker: <code>{managedMySQL?.network ?? 'devbox-apps'}</code></span>
+          <span>Status: {managedMySQL === null ? 'status niedostępny' : !managedMySQL.installed ? 'niezainstalowany' : managedMySQL.running ? 'uruchomiony' : 'zatrzymany'}</span>
+        </div>}
+
+        {selectedServices.includes('postgresql') && <div className="validation-box span-2">
+          <strong>PostgreSQL</strong>
+          <span>Domena / DNS Docker: <code>{managedPostgreSQL?.container_host ?? 'devbox-postgresql'}</code></span>
+          <span>Port: <code>{managedPostgreSQL?.port ?? 5432}</code></span>
+          <span>Adres połączenia: <code>{managedPostgreSQL?.container_host ?? 'devbox-postgresql'}:{managedPostgreSQL?.port ?? 5432}</code></span>
+          <span>Sieć Docker: <code>{managedPostgreSQL?.network ?? 'devbox-apps'}</code></span>
+          <span>Status: {managedPostgreSQL === null ? 'status niedostępny' : !managedPostgreSQL.installed ? 'niezainstalowany' : managedPostgreSQL.running ? 'uruchomiony' : 'zatrzymany'}</span>
+        </div>}
+
+        {managedMySQLMissing && selectedServices.includes('mysql') && <div className="validation-box span-2">
+          <strong>MySQL/MariaDB nie jest zainstalowany.</strong>
+          <span>Zainstaluj serwer w zakładce Pluginy. Adres aplikacyjny pozostaje z góry określony jako <code>devbox-mysql:3306</code>.</span>
+        </div>}
+        {managedPostgreSQLMissing && selectedServices.includes('postgresql') && <div className="validation-box span-2">
+          <strong>PostgreSQL nie jest zainstalowany.</strong>
+          <span>Zainstaluj serwer w zakładce Pluginy. Adres aplikacyjny pozostaje z góry określony jako <code>devbox-postgresql:5432</code>.</span>
         </div>}
       </>}
 
@@ -385,18 +431,18 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       {!readOnly && <div className="actions"><button type="button" className="secondary" disabled={busy !== '' || !runtimeConfig} onClick={() => void addPHPDatabaseDriver('pdo_mysql')}>Dodaj PDO MySQL</button></div>}
     </div>}
 
-
-    {!readOnly && <div className="actions">
-      {draft.mode === 'managed' && !managedExists
-        ? <button type="button" disabled={busy !== '' || managedServerKnownMissing} onClick={() => void provisionManaged()}>{busy === 'provision' ? 'Tworzenie bazy…' : 'Utwórz bazę i połącz z aplikacją'}</button>
-        : <button type="button" disabled={busy !== ''} onClick={() => void saveBinding()}>{busy === 'save' ? 'Zapisywanie…' : 'Zapisz konfigurację bazy'}</button>}
-      {binding?.mode !== 'none' && !binding?.host_access_only && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void testConnection()}>{busy === 'test' ? 'Testowanie…' : 'Testuj połączenie'}</button>}
-      {binding?.mode === 'managed' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void openPHPMyAdmin()}>Otwórz phpMyAdmin</button>}
-      {binding?.mode === 'managed' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void rotatePassword()}>Zmień hasło</button>}
-      {binding?.database_id && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void perform('backups', loadBackups)}>Kopie zapasowe</button>}
+    {needsPHPPostgreSQLDriver && <div className="validation-box">
+      <strong>Projekt korzysta z PostgreSQL, ale kontener PHP nie posiada wybranego sterownika.</strong>
+      {!readOnly && <div className="actions"><button type="button" className="secondary" disabled={busy !== '' || !runtimeConfig} onClick={() => void addPHPDatabaseDriver('pgsql')}>Dodaj PostgreSQL</button></div>}
     </div>}
 
-    {showBackups && binding?.database_id && <div className="backup-panel">
+    {!readOnly && <div className="actions">
+      <button type="button" disabled={busy !== ''} onClick={() => void saveBinding()}>{busy === 'save' ? 'Zapisywanie…' : 'Zapisz konfigurację bazy'}</button>
+      {draft.mode !== 'managed' && binding?.mode !== 'none' && !binding?.host_access_only && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void testConnection()}>{busy === 'test' ? 'Testowanie…' : 'Testuj połączenie'}</button>}
+      {draft.mode !== 'managed' && binding?.database_id && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void perform('backups', loadBackups)}>Kopie zapasowe</button>}
+    </div>}
+
+    {draft.mode !== 'managed' && showBackups && binding?.database_id && <div className="backup-panel">
       <div className="section-heading">
         <div><h3>Kopie zapasowe przypisanej bazy</h3><p className="muted">{binding.database || binding.database_id}</p></div>
         {!readOnly && <button type="button" disabled={busy !== ''} onClick={() => void queueBackup()}>Utwórz kopię</button>}

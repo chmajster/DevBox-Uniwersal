@@ -278,6 +278,12 @@ export interface DatabaseBindingInput {
   host_access_only?: boolean
 }
 
+export interface ProjectDatabaseServices {
+  project_id: string
+  engines: Array<'mysql' | 'postgresql'>
+  updated_at?: string
+}
+
 export interface DatabaseRecord {
   id: string
   project_id?: string

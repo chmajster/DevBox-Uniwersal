@@ -62,8 +62,8 @@ DevBox Universal is an integrated local development control plane.
 
 ## Databases
 
-- Project database mode selection now exposes four application-oriented choices: no database, DevBox-managed MySQL/MariaDB, a database service from the project's Compose definition, or an external credentialed MySQL/MariaDB server. The obsolete dedicated host-database discovery/access card is no longer exposed.
-- The managed project mode is Docker-native: the SQL server is the persistent `devbox-mysql` container, applications use `devbox-mysql:3306` over `devbox-apps`, and the project UI shows the actual container endpoint/network instead of host IP addresses or host SQL service details.
+- Project database mode selection keeps no-database, shared DevBox services, project Compose and external-server workflows. In the shared DevBox mode the application can select MySQL/MariaDB, PostgreSQL or both; the project screen shows only non-editable Docker DNS/port/network/status data and does not expose database/user/password/grant forms.
+- Shared-service choices are persisted independently in `project_database_service_access`. MySQL/MariaDB uses `devbox-mysql:3306`, PostgreSQL uses `devbox-postgresql:5432`, and both use `devbox-apps`. Database creation, SQL accounts, passwords and per-database grants remain managed in the Databases module.
 - The backend still accepts previously persisted `host_access_only` bindings and explicit external loopback targets for compatibility, but new project UI configuration does not create host-access-only bindings or auto-discover SQL packages/services on the host.
 - External and Compose bindings can explicitly represent an empty database password in SecretStore; omitting the password continues to preserve an existing secret instead of silently replacing it.
 - MySQL/MariaDB and PostgreSQL are installed from Plugins as persistent Docker database servers. MySQL uses `devbox-mysql` + `devbox-mysql-data`; PostgreSQL uses `devbox-postgresql` + `devbox-postgresql-data`. Both join the shared `devbox-apps` network and use `unless-stopped` restart policy.
@@ -74,9 +74,9 @@ DevBox Universal is an integrated local development control plane.
 - SQL users are server-level accounts. One MySQL/MariaDB or PostgreSQL account can be assigned to multiple managed databases on the same server, with an independent privilege set for each database. The engine Users tab opens a dedicated account page for password changes, database assignment/removal and per-database grants.
 - phpMyAdmin is reconciled against the current MySQL target before it is opened. In the standard managed setup it joins `devbox-apps` and connects directly to `devbox-mysql:3306`; it no longer adds host MySQL as a second automatic target or performs host-MySQL reachability checks.
 - Project Compose files remain untouched; DevBox creates a mode-0600 override outside the repository for environment/network additions and detects or explicitly selects the application service.
-- Connection tests execute real `SELECT 1`; managed tests traverse Docker DNS on `devbox-apps`, Compose tests use the selected database service and external tests run from the Docker execution boundary.
-- Generated PHP runtimes validate MySQL/MariaDB database bindings for `pdo_mysql` or `mysqli`. The project database UI can add `pdo_mysql` to the application container before rebuild; MySQLi remains a PHP driver, not a database server.
-- Database backup/restore jobs remain unchanged and the project database tab exposes assigned backups; phpMyAdmin uses `devbox-mysql` over `devbox-apps` in managed mode.
+- Credential-bearing binding tests execute real `SELECT 1`; legacy managed tests traverse Docker DNS on `devbox-apps`, Compose tests use the selected database service and external tests run from the Docker execution boundary. The credential-free shared-service selector intentionally does not manufacture an account just to test connectivity.
+- Generated PHP runtimes surface missing database drivers for the selected shared services: MySQL/MariaDB can add `pdo_mysql`, while PostgreSQL can add `pgsql`/PDO PostgreSQL through the existing runtime module mechanism.
+- Database backup/restore jobs and phpMyAdmin remain managed in the central database/plugin workflows; the shared-service project view no longer duplicates account/password/backup administration.
 - Admin-only full control-plane backup/import/download/restore workflow with SQLite snapshot, checksum, encrypted-secret state, managed Nginx files and controlled Docker/Compose manifests. Restore is validated and applied before database open on the next service start.
 
 ## Networking
