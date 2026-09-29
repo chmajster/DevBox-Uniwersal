@@ -23,6 +23,7 @@ const projectDetailTabs: Array<{ id: Tab; label: string }> = [
 ]
 
 function tabFromParam(value: string | null): Tab {
+  if (value === 'configuration') return 'settings'
   return projectDetailTabs.some((item) => item.id === value) ? value as Tab : 'overview'
 }
 
