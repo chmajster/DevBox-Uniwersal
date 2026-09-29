@@ -56,7 +56,6 @@ func TestProgressActive(t *testing.T) {
 	}
 }
 
-
 func TestUpdateServiceStateRunning(t *testing.T) {
 	for _, item := range []struct {
 		state string
