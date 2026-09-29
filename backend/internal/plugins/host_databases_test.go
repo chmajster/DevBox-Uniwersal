@@ -117,7 +117,6 @@ func TestMySQLInstallRejectedWhenManagedPortIsReserved(t *testing.T) {
 	}
 }
 
-
 func TestQueuePostgreSQLInstallUsesRequestedPort(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	runner := &recordingPluginJobRunner{}
@@ -145,6 +144,27 @@ func TestJobPayloadPortAcceptsPersistedJSONNumber(t *testing.T) {
 	}
 	if port != 5432 {
 		t.Fatalf("port = %d, want 5432", port)
+	}
+}
+
+func TestLegacyControlPlaneMySQLIsNotExposedAsApplicationDatabase(t *testing.T) {
+	service := NewService(
+		"/usr/local/lib/devbox/devbox-helper",
+		"/usr/bin/sudo",
+		WithHostMySQLControlPlane(true),
+		withMySQLDetector(func(context.Context) (HostDatabaseInstance, bool) {
+			return HostDatabaseInstance{
+				Engine: "mysql", Host: "host.docker.internal", Port: 3306,
+				Installed: true, Running: true, ApplicationReady: true,
+			}, true
+		}),
+	)
+	status := service.MySQLStatus(context.Background())
+	if status.Purpose != "control-plane" || status.ApplicationReady || status.Installable {
+		t.Fatalf("legacy control-plane MySQL must be isolated from applications: %#v", status)
+	}
+	if items := service.HostDatabases(context.Background()); len(items) != 0 {
+		t.Fatalf("legacy control-plane MySQL must not be discoverable as app DB: %#v", items)
 	}
 }
 
