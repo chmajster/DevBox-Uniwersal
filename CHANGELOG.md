@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+
+### Port management UI
+
+- Rebuilt the per-project Docker port editor into a compact table matching Docker-style port mapping: host port, container port and TCP type are visible in one row.
+- HTTP keeps automatic internal-port detection through an Auto field, while HTTPS is added or removed as a second mapping row without changing the existing backend contract.
+- Applied mappings use the same compact table layout, and Compose service selection plus save/deploy semantics remain unchanged.
+
+
 ### Project detail navigation
 
 - Split the application detail configuration into dedicated top-level tabs for Runtime, Baza danych, Porty and Ustawienia instead of stacking all configuration panels under one page.
