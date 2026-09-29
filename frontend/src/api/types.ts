@@ -256,6 +256,7 @@ export interface DatabaseBinding {
   database?: string
   username?: string
   has_secret: boolean
+  host_access_only?: boolean
   application_host?: string
   application_port?: number
   status?: string
@@ -274,6 +275,7 @@ export interface DatabaseBindingInput {
   username?: string
   password?: string
   password_provided?: boolean
+  host_access_only?: boolean
 }
 
 export interface DatabaseRecord {

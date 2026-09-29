@@ -93,7 +93,7 @@ Host ports continue to come from the central PortAllocator and successful deploy
 
 ## Project database connectivity
 
-Database connectivity is resolved per project through a persisted database binding with modes `none`, `managed`, `compose` and `external`. The database subsystem separates the control-plane/admin endpoint from the application endpoint. Managed MySQL administration uses loopback TCP, while application containers use Docker DNS `devbox-mysql:3306` over the external `devbox-apps` network.
+Database connectivity is resolved per project through a persisted database binding with modes `none`, `managed`, `compose` and `external`. External bindings can opt into credential-free host access, which only injects the Docker host-gateway mapping and does not inject database identity or secrets. The database subsystem separates the control-plane/admin endpoint from the application endpoint. Managed MySQL administration uses loopback TCP, while application containers use Docker DNS `devbox-mysql:3306` over the external `devbox-apps` network.
 
 Managed MySQL is a persistent Docker service with the `devbox-mysql-data` volume and an `unless-stopped` restart policy. Its root credential and all project database passwords are SecretStore-backed. Managed/container deployments pass sensitive runtime variables through protected temporary env files; project-owned Compose receives a private mode-0600 override outside the source tree. Project Compose files and generated Dockerfiles never receive stored secret plaintext.
 

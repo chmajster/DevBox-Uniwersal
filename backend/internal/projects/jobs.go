@@ -315,7 +315,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 		if databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
 			_ = h.logger.Log(ctx, job.ID, "info", "deployment.database.resolved", databaseLogFields(databaseRuntime))
-			if databaseRuntime.Connection.Mode != providers.DatabaseModeCompose {
+			if !databaseRuntime.HostAccessOnly && databaseRuntime.Connection.Mode != providers.DatabaseModeCompose {
 				if err := h.integrations.Database.TestApplicationConnection(ctx, p.ID); err != nil {
 					return nil, err
 				}
@@ -558,7 +558,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		for _, module := range config.Modules {
 			modules = append(modules, containerspec.Module{Name: module.Name, Version: module.Version})
 		}
-		if databaseRuntime.Connection.Mode != providers.DatabaseModeNone && runtimeName == "php" && !hasPHPMySQLDriver(config.Modules) {
+		if databaseRuntime.Connection.Mode != providers.DatabaseModeNone && !databaseRuntime.HostAccessOnly && runtimeName == "php" && !hasPHPMySQLDriver(config.Modules) {
 			return nil, errors.New("project PHP runtime does not contain pdo_mysql or mysqli")
 		}
 		spec, err = containerspec.GenerateManaged(p.ID, workDir, runtimeName, config.RuntimeVersion, modules, commitAfter, port)
@@ -569,9 +569,11 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 
 	mergeProjectEnvironment(&spec, projectEnvironment)
 	if databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
-		mergeDatabaseEnvironment(&spec, projectDatabaseEnvironment(databaseRuntime))
-		if databaseRuntime.Network != "" {
-			spec.Networks = append(spec.Networks, databaseRuntime.Network)
+		if !databaseRuntime.HostAccessOnly {
+			mergeDatabaseEnvironment(&spec, projectDatabaseEnvironment(databaseRuntime))
+			if databaseRuntime.Network != "" {
+				spec.Networks = append(spec.Networks, databaseRuntime.Network)
+			}
 		}
 		if databaseRuntime.HostGateway {
 			if spec.ExtraHosts == nil {
@@ -817,7 +819,7 @@ func mergedComposeEnvironment(environment runtimes.ResolvedEnvironment, database
 	for key, value := range environment.Sensitive {
 		result[key] = value
 	}
-	if database.Connection.Mode != providers.DatabaseModeNone {
+	if database.Connection.Mode != providers.DatabaseModeNone && !database.HostAccessOnly {
 		for key, value := range projectDatabaseEnvironment(database) {
 			result[key] = value
 		}
@@ -855,11 +857,12 @@ func mergeDatabaseEnvironment(spec *containerspec.DeploymentSpec, database map[s
 func databaseLogFields(runtime providers.ProjectDatabaseRuntime) map[string]any {
 	connection := runtime.Connection
 	return map[string]any{
-		"mode":     connection.Mode,
-		"host":     connection.Host,
-		"port":     connection.Port,
-		"database": connection.Database,
-		"username": connection.Username,
+		"mode":             connection.Mode,
+		"host":             connection.Host,
+		"port":             connection.Port,
+		"database":         connection.Database,
+		"username":         connection.Username,
+		"host_access_only": runtime.HostAccessOnly,
 	}
 }
 

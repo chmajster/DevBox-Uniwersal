@@ -136,6 +136,21 @@ func TestRenderComposeOverrideAddsHostGateway(t *testing.T) {
 	}
 }
 
+func TestRenderComposeOverrideHostGatewayWithoutDatabaseEnvironment(t *testing.T) {
+	override, err := renderComposeDatabaseOverride("web", map[string]string{}, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(override)
+	if strings.Contains(text, "environment:") {
+		t.Fatalf("host-access-only override must not create an empty database environment block:\n%s", text)
+	}
+	if !strings.Contains(text, "extra_hosts:") ||
+		!strings.Contains(text, `"host.docker.internal:host-gateway"`) {
+		t.Fatalf("host gateway mapping missing from access-only Compose override:\n%s", text)
+	}
+}
+
 func TestRenderManagedComposeOverrideDeclaresExternalDevBoxNetwork(t *testing.T) {
 	override, err := renderComposeDatabaseOverride("web", map[string]string{"DB_HOST": "devbox-mysql"}, "devbox-apps", false)
 	if err != nil {

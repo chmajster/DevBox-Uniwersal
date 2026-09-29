@@ -21,7 +21,9 @@ Each project has at most one `project_database_bindings` row with one of four tr
 
 Managed bindings reference the existing `databases` row. Database name, managed username and managed user SecretRef remain authoritative in `databases` / `database_users`; the binding does not duplicate them. Compose/external bindings persist connection metadata and an opaque SecretRef only.
 
-Migration `009_project_database_bindings.sql` is additive and backfills existing per-project databases as `managed` bindings without rotating users or passwords.
+An external binding may additionally set `host_access_only`. In that variant the binding is not a database credential configuration: DevBox stores only the Docker-host target, injects the host-gateway mapping at deployment time, does not persist a database name/user/password, does not resolve SecretStore credentials and does not inject `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` or their `DATABASE_*` aliases. Application code remains responsible for its own database configuration.
+
+Migration `009_project_database_bindings.sql` is additive and backfills existing per-project databases as `managed` bindings without rotating users or passwords. Migration `010_project_database_host_access.sql` adds the access-only flag without changing the released mode constraint.
 
 ### Admin and application endpoints
 
@@ -96,7 +98,7 @@ A generated PHP runtime with an active database binding must include either `pdo
 
 No WSL host IP or Docker subnet is persisted. Application-to-managed-MySQL communication uses Docker DNS and the shared network, so WSL address changes do not change project bindings.
 
-For an external MySQL/MariaDB server running on the Docker host, DevBox uses the stable application hostname `host.docker.internal`. User input of `127.0.0.1`, `localhost` or `::1` is normalized for application traffic, while managed/custom containers and generated Compose overrides receive the explicit Docker mapping `host.docker.internal:host-gateway`. This avoids persisting a bridge or WSL IP. The host database still has to listen on an interface reachable from Docker and its database account/grants must allow the container-side connection.
+For an external MySQL/MariaDB server running on the Docker host, DevBox uses the stable application hostname `host.docker.internal`. User input of `127.0.0.1`, `localhost` or `::1` is normalized for application traffic, while managed/custom containers and generated Compose overrides receive the explicit Docker mapping `host.docker.internal:host-gateway`. The dedicated host-access-only UI uses the same mapping but deliberately does not collect or inject database credentials. This avoids persisting a bridge or WSL IP. The host database still has to listen on an interface reachable from Docker and, when the application authenticates to it, the database account/grants must allow the container-side connection.
 
 ## Consequences
 
