@@ -37,6 +37,17 @@ func main() {
 			os.Exit(2)
 		}
 		err = helper.RestartService(ctx, os.Args[2])
+	case "configure-app-database":
+		if len(os.Args) != 4 {
+			usage()
+			os.Exit(2)
+		}
+		port, parseErr := devsystem.ParseApplicationDatabasePort(os.Args[3])
+		if parseErr != nil {
+			err = parseErr
+		} else {
+			err = helper.ConfigureApplicationDatabase(ctx, os.Args[2], port)
+		}
 	case "validate-nginx":
 		if len(os.Args) != 2 {
 			usage()
@@ -75,7 +86,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: devbox-helper install-package <component> | restart-service <service> | validate-nginx | reload-nginx | start-update | write-config devbox-env")
+	fmt.Fprintln(os.Stderr, "usage: devbox-helper install-package <component> | restart-service <service> | configure-app-database <mysql|postgresql> <port> | validate-nginx | reload-nginx | start-update | write-config devbox-env")
 }
 
 func fatal(message string) {
