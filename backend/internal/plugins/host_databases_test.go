@@ -6,11 +6,11 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 )
 
 func TestNormalizeHostIPsReturnsUsableNonLoopbackAddresses(t *testing.T) {
@@ -75,89 +75,83 @@ func (r *recordingPluginJobRunner) Retry(context.Context, string) (domain.Job, e
 	return domain.Job{}, errors.New("not implemented")
 }
 
-func TestQueuePostgreSQLInstallUsesJobEngine(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
+type fakeDockerDatabaseServer struct {
+	installed bool
+	running   bool
+	endpoint  providers.DatabaseEndpoint
+	network   string
+	container string
+	image     string
+	volume    string
+}
+
+func (f *fakeDockerDatabaseServer) Action(_ context.Context, action string) error {
+	if action == "install" || action == "start" {
+		f.installed = true
+		f.running = true
+	}
+	if action == "stop" {
+		f.running = false
+	}
+	return nil
+}
+
+func (f *fakeDockerDatabaseServer) ContainerState(context.Context) (bool, bool, error) {
+	return f.installed, f.running, nil
+}
+
+func (f *fakeDockerDatabaseServer) ApplicationEndpoint() providers.DatabaseEndpoint {
+	return f.endpoint
+}
+func (f *fakeDockerDatabaseServer) Network() string       { return f.network }
+func (f *fakeDockerDatabaseServer) ContainerName() string { return f.container }
+func (f *fakeDockerDatabaseServer) Image() string         { return f.image }
+func (f *fakeDockerDatabaseServer) Volume() string        { return f.volume }
+
+func TestQueueDockerDatabaseInstallsUseJobEngine(t *testing.T) {
 	runner := &recordingPluginJobRunner{}
-	service := NewService(
-		"/usr/local/lib/devbox/devbox-helper",
-		"/usr/bin/sudo",
-		WithJobRunner(runner),
-	)
+	mysqlServer := &fakeDockerDatabaseServer{
+		endpoint: providers.DatabaseEndpoint{Host: "devbox-mysql", Port: 3306},
+		network: "devbox-apps", container: "devbox-mysql", image: "mysql:8.4", volume: "devbox-mysql-data",
+	}
+	postgresServer := &fakeDockerDatabaseServer{
+		endpoint: providers.DatabaseEndpoint{Host: "devbox-postgresql", Port: 5432},
+		network: "devbox-apps", container: "devbox-postgresql", image: "postgres:17", volume: "devbox-postgresql-data",
+	}
+	service := NewService("", "", WithJobRunner(runner), WithMySQLDatabaseServer(mysqlServer), WithPostgreSQLDatabaseServer(postgresServer))
 	actor := "admin-user"
 
-	job, err := service.QueuePostgreSQLInstall(context.Background(), &actor)
+	mysqlJob, err := service.QueueMySQLInstall(context.Background(), &actor)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.ID != "job-1" || len(runner.requests) != 1 {
-		t.Fatalf("unexpected queued job: %#v requests=%#v", job, runner.requests)
-	}
-	request := runner.requests[0]
-	if request.Type != JobInstallHostPostgreSQL {
-		t.Fatalf("job type = %q, want %q", request.Type, JobInstallHostPostgreSQL)
-	}
-	if request.RequestedBy == nil || *request.RequestedBy != actor {
-		t.Fatalf("requested_by = %#v", request.RequestedBy)
-	}
-	if request.Payload["purpose"] != "application_database" {
-		t.Fatalf("unexpected purpose payload: %#v", request.Payload)
-	}
-}
-
-func TestQueueMySQLInstallUsesJobEngine(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	runner := &recordingPluginJobRunner{}
-	service := NewService(
-		"/usr/local/lib/devbox/devbox-helper",
-		"/usr/bin/sudo",
-		WithJobRunner(runner),
-		withMySQLDetector(func(context.Context) (HostDatabaseInstance, bool) {
-			return HostDatabaseInstance{}, false
-		}),
-	)
-	actor := "admin-user"
-
-	job, err := service.QueueMySQLInstall(context.Background(), &actor)
+	postgresJob, err := service.QueuePostgreSQLInstall(context.Background(), &actor)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.ID != "job-1" || len(runner.requests) != 1 {
-		t.Fatalf("unexpected queued job: %#v requests=%#v", job, runner.requests)
+	if mysqlJob.Type != JobInstallMySQLContainer || postgresJob.Type != JobInstallPostgreSQLContainer {
+		t.Fatalf("unexpected job types: %q %q", mysqlJob.Type, postgresJob.Type)
 	}
-	request := runner.requests[0]
-	if request.Type != JobInstallHostMySQL {
-		t.Fatalf("job type = %q, want %q", request.Type, JobInstallHostMySQL)
+	if len(runner.requests) != 2 {
+		t.Fatalf("expected two jobs, got %#v", runner.requests)
 	}
-	if request.RequestedBy == nil || *request.RequestedBy != actor {
-		t.Fatalf("requested_by = %#v", request.RequestedBy)
+	for _, request := range runner.requests {
+		if request.Payload["runtime"] != "docker" || request.Payload["purpose"] != "application_database" {
+			t.Fatalf("unexpected job payload: %#v", request.Payload)
+		}
 	}
 }
 
-func TestMySQLInstallRejectedWhenManagedPortIsReserved(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	runner := &recordingPluginJobRunner{}
-	service := NewService(
-		"/usr/local/lib/devbox/devbox-helper",
-		"/usr/bin/sudo",
-		WithJobRunner(runner),
-		WithReservedHostPort(3306, "zarządzany MySQL DevBox (devbox-mysql)"),
-		withMySQLDetector(func(context.Context) (HostDatabaseInstance, bool) {
-			return HostDatabaseInstance{}, false
-		}),
-	)
-
+func TestDockerDatabasePluginStatusUsesContainerDNS(t *testing.T) {
+	mysqlServer := &fakeDockerDatabaseServer{
+		installed: true, running: true,
+		endpoint: providers.DatabaseEndpoint{Host: "devbox-mysql", Port: 3306},
+		network: "devbox-apps", container: "devbox-mysql", image: "mysql:8.4", volume: "devbox-mysql-data",
+	}
+	service := NewService("", "", WithMySQLDatabaseServer(mysqlServer))
 	status := service.MySQLStatus(context.Background())
-	if status.Installable {
-		t.Fatalf("reserved port must make host MySQL unavailable for installation: %#v", status)
-	}
-	if !strings.Contains(status.Message, "zarezerwowany") || !strings.Contains(status.Message, "devbox-mysql") {
-		t.Fatalf("conflict message = %q", status.Message)
-	}
-	if _, err := service.QueueMySQLInstall(context.Background(), nil); err == nil {
-		t.Fatal("expected queueing to fail for reserved port")
-	}
-	if len(runner.requests) != 0 {
-		t.Fatalf("conflicting installation must not enqueue a job: %#v", runner.requests)
+	if !status.Installed || !status.Running || status.ContainerHost != "devbox-mysql" || status.Network != "devbox-apps" {
+		t.Fatalf("unexpected Docker MySQL status: %#v", status)
 	}
 }
 
@@ -173,26 +167,10 @@ func writeFakeDatabaseExecutable(t *testing.T, name, output string) string {
 	return path
 }
 
-func TestMySQLPluginStatusDetectsHostMySQL(t *testing.T) {
-	server := writeFakeDatabaseExecutable(t, "mysqld", "mysqld  Ver 8.4.0 for Linux on x86_64 (MySQL Community Server)")
-	service := NewService("/usr/local/bin/devbox-helper", "sudo")
-	status := service.MySQLStatus(context.Background())
-	if !status.Installed || status.Engine != "mysql" {
-		t.Fatalf("unexpected MySQL plugin status: %#v", status)
-	}
-	if status.ServerPath != server || status.Port != 3306 || status.ContainerHost != "host.docker.internal" {
-		t.Fatalf("unexpected MySQL endpoint: %#v", status)
-	}
-	if !status.Installable {
-		t.Fatal("configured privileged helper should make MySQL installable")
-	}
-}
-
-func TestMySQLPluginStatusDetectsMariaDB(t *testing.T) {
-	writeFakeDatabaseExecutable(t, "mysqld", "mysqld  Ver 11.8.3-MariaDB for debian-linux-gnu on x86_64")
-	service := NewService("", "")
-	status := service.MySQLStatus(context.Background())
-	if !status.Installed || status.Engine != "mariadb" {
-		t.Fatalf("expected MariaDB detection, got %#v", status)
+func TestHostMySQLDiscoveryRemainsAvailableForExternalBindings(t *testing.T) {
+	server := writeFakeDatabaseExecutable(t, "mysqld", "mysqld Ver 8.4.0 MySQL Community Server")
+	instance, ok := detectHostMySQL(context.Background())
+	if !ok || instance.Engine != "mysql" || instance.Source != server {
+		t.Fatalf("unexpected host MySQL discovery: ok=%v instance=%#v", ok, instance)
 	}
 }
