@@ -11,7 +11,7 @@ import type {
   RuntimeContainerConfig,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
-import { databaseModeFields } from './databaseMode'
+import { databaseModeChoice, databaseModeFields, dockerHostDatabaseHost, type DatabaseModeChoice } from './databaseMode'
 import { effectiveRuntimeName, preparePHPModuleConfig, updatePHPModuleSelection } from './phpModuleConfig'
 
 interface Props {
@@ -46,7 +46,8 @@ function bindingToDraft(binding: DatabaseBinding): DatabaseBindingInput {
   }
 }
 
-function modeLabel(mode: DatabaseMode) {
+function modeLabel(mode: DatabaseMode, host?: string) {
+  if (databaseModeChoice(mode, host) === 'host') return 'MySQL na hoście'
   switch (mode) {
     case 'managed': return 'Nowa baza w DevBox'
     case 'compose': return 'Baza z Docker Compose'
@@ -62,23 +63,33 @@ function formatDatabaseTimestamp(value?: string) {
   return parsed.toLocaleString('pl-PL')
 }
 
-const databaseModeOptions: Array<{ mode: DatabaseMode; title: string; description: string }> = [
+const databaseModeOptions: Array<{ choice: DatabaseModeChoice; mode: DatabaseMode; title: string; description: string }> = [
   {
+    choice: 'none',
     mode: 'none',
     title: 'Brak bazy danych',
     description: 'Aplikacja nie otrzyma konfiguracji połączenia do bazy.',
   },
   {
+    choice: 'managed',
     mode: 'managed',
     title: 'Utwórz nową bazę w DevBox',
     description: 'DevBox utworzy bazę, użytkownika i hasło na wspólnym MySQL devbox-mysql:3306.',
   },
   {
+    choice: 'host',
     mode: 'external',
-    title: 'Użyj istniejącej bazy MySQL/MariaDB',
-    description: 'Podaj host, port, nazwę istniejącej bazy, użytkownika i hasło.',
+    title: 'Połącz z MySQL na hoście',
+    description: 'Kontener aplikacji połączy się z MySQL/MariaDB uruchomionym na hoście przez host.docker.internal.',
   },
   {
+    choice: 'external',
+    mode: 'external',
+    title: 'Użyj istniejącej bazy MySQL/MariaDB',
+    description: 'Podaj adres zewnętrznego serwera, port, nazwę istniejącej bazy, użytkownika i hasło.',
+  },
+  {
+    choice: 'compose',
     mode: 'compose',
     title: 'Użyj bazy z Docker Compose projektu',
     description: 'Połącz aplikację z service bazy zdefiniowanym w Compose, np. db:3306.',
@@ -128,6 +139,8 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   }, [load, loadComposeServices])
 
   const modeFields = databaseModeFields(draft.mode)
+  const selectedModeChoice = databaseModeChoice(draft.mode, draft.host)
+  const hostMySQLSelected = selectedModeChoice === 'host'
   const effectiveRuntime = effectiveRuntimeName(runtimeConfig?.runtime, runtimeInfo?.runtime)
   const phpModules = useMemo(() => new Set((runtimeConfig?.modules ?? []).map((item) => item.name.toLowerCase())), [runtimeConfig])
   const needsPHPMySQLDriver = draft.mode !== 'none' && effectiveRuntime === 'php' && !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
@@ -156,7 +169,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         })
       }
       await load()
-      setMessage(`Tryb bazy został zapisany: ${modeLabel(draft.mode)}.`)
+      setMessage(`Tryb bazy został zapisany: ${modeLabel(draft.mode, draft.host)}.`)
     })
   }
 
@@ -277,7 +290,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         <p className="muted">Wybierz, czy DevBox ma utworzyć nową bazę dla aplikacji, czy aplikacja ma korzystać z już istniejącego hosta MySQL/MariaDB.</p>
       </div>
       <span className="status-chip" data-ok={binding?.status === 'ready' || binding?.status === 'configured' ? 'true' : 'false'}>
-        {binding?.mode ? modeLabel(binding.mode) : 'Ładowanie'}
+        {binding?.mode ? modeLabel(binding.mode, binding.host || binding.application_host) : 'Ładowanie'}
       </span>
     </div>
 
@@ -287,9 +300,20 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     <fieldset disabled={readOnly || busy !== ''} className="database-mode-selector">
       <legend>Tryb bazy danych</legend>
       <div className="database-mode-options">
-        {databaseModeOptions.map(({ mode, title, description }) =>
-          <label className="database-mode-option" data-selected={draft.mode === mode ? 'true' : 'false'} key={mode}>
-            <input type="radio" name={`database-mode-${projectId}`} checked={draft.mode === mode} onChange={() => setDraft({ ...emptyDraft, mode, application_service: draft.application_service })} />
+        {databaseModeOptions.map(({ choice, mode, title, description }) =>
+          <label className="database-mode-option" data-selected={selectedModeChoice === choice ? 'true' : 'false'} key={choice}>
+            <input
+              type="radio"
+              name={`database-mode-${projectId}`}
+              checked={selectedModeChoice === choice}
+              onChange={() => setDraft({
+                ...emptyDraft,
+                mode,
+                host: choice === 'host' ? dockerHostDatabaseHost : '',
+                port: 3306,
+                application_service: draft.application_service,
+              })}
+            />
             <span className="database-mode-copy"><strong>{title}</strong><small>{description}</small></span>
           </label>
         )}
@@ -334,19 +358,29 @@ export function ProjectDatabaseSection({ projectId }: Props) {
 
       {modeFields.includes('host') && draft.mode === 'external' && <>
         <div className="validation-box span-2">
-          <strong>Użyj istniejącej bazy.</strong>
-          <span>DevBox nie utworzy bazy ani użytkownika. Dla MySQL/MariaDB uruchomionego na hoście wybierz <code>host.docker.internal</code>; DevBox doda mapowanie <code>host-gateway</code> do kontenera lub Compose override.</span>
+          {hostMySQLSelected ? <>
+            <strong>Połączenie z MySQL/MariaDB na hoście.</strong>
+            <span>DevBox ustawi aplikacji <code>DB_HOST=host.docker.internal</code> i doda mapowanie <code>host.docker.internal:host-gateway</code> do kontenera lub Compose override. Dzięki temu aplikacja działająca wewnątrz Dockera łączy się z bazą uruchomioną na hoście, a nie z własnym <code>localhost</code>.</span>
+          </> : <>
+            <strong>Użyj istniejącej bazy na innym serwerze.</strong>
+            <span>DevBox nie utworzy bazy ani użytkownika. Podaj osiągalny z kontenera adres DNS lub IP serwera MySQL/MariaDB.</span>
+          </>}
         </div>
-        <label>Host MySQL/MariaDB<input disabled={readOnly || busy !== ''} value={draft.host ?? ''} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="host.docker.internal lub mysql.example.internal" /></label>
-        <label>Port<input disabled={readOnly || busy !== ''} type="number" min={1} max={65535} value={draft.port ?? 3306} onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })} /></label>
+        {hostMySQLSelected
+          ? <label>Host używany przez kontener<input readOnly value={dockerHostDatabaseHost} /></label>
+          : <label>Host MySQL/MariaDB<input disabled={readOnly || busy !== ''} value={draft.host ?? ''} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="np. mysql.example.internal" /></label>}
+        <label>{hostMySQLSelected ? 'Port MySQL na hoście' : 'Port'}<input disabled={readOnly || busy !== ''} type="number" min={1} max={65535} value={draft.port ?? 3306} onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })} /></label>
         <label>Nazwa istniejącej bazy<input disabled={readOnly || busy !== ''} value={draft.database ?? ''} onChange={(event) => setDraft({ ...draft, database: event.target.value })} placeholder="np. wordpress" /></label>
         <label>Użytkownik bazy<input disabled={readOnly || busy !== ''} value={draft.username ?? ''} onChange={(event) => setDraft({ ...draft, username: event.target.value })} /></label>
         <label className="span-2">Hasło / Secret
           <input disabled={readOnly || busy !== '' || draft.password_provided} type="password" autoComplete="new-password" value={draft.password ?? ''} onChange={(event) => setDraft({ ...draft, password: event.target.value, password_provided: false })} placeholder={draft.password_provided ? 'połączenie bez hasła' : binding?.has_secret ? 'pozostaw puste, aby zachować obecny SecretStore secret' : 'hasło do istniejącej bazy'} />
         </label>
         <label className="checkbox span-2"><input disabled={readOnly || busy !== ''} type="checkbox" checked={Boolean(draft.password_provided)} onChange={(event) => setDraft({ ...draft, password: '', password_provided: event.target.checked })} /> Użytkownik bazy nie ma hasła</label>
-        {!readOnly && <div className="actions span-2">
-          <button type="button" className="secondary" disabled={busy !== ''} onClick={() => setDraft({ ...draft, host: 'host.docker.internal', port: 3306 })}>MySQL na hoście — host.docker.internal:3306</button>
+        {hostMySQLSelected && <div className="validation-box span-2">
+          <strong>Wymaganie po stronie hosta.</strong>
+          <span>MySQL/MariaDB musi nasłuchiwać na interfejsie osiągalnym z Dockera, a wskazany użytkownik musi mieć grant pozwalający na połączenie z kontenera. Samo <code>bind-address=127.0.0.1</code> może blokować takie połączenie.</span>
+        </div>}
+        {!readOnly && !hostMySQLSelected && <div className="actions span-2">
           <button type="button" className="secondary" disabled={busy !== ''} onClick={() => setDraft({ ...draft, host: 'devbox-mysql', port: 3306 })}>Wspólny MySQL DevBox — devbox-mysql:3306</button>
         </div>}
       </>}
