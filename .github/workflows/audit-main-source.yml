@@ -1,0 +1,22 @@
+name: Audit merged main snapshot
+on:
+  push:
+    branches: [agent/92-audit-completion]
+    paths: [.github/workflows/audit-main-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: f69cdc18bfa888cf2cbc2505a541ae2f9ad68828
+          persist-credentials: false
+      - run: git archive --format=tar HEAD -o "$RUNNER_TEMP/devbox-main-source.tar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devbox-main-source
+          path: ${{ runner.temp }}/devbox-main-source.tar
+          retention-days: 1
