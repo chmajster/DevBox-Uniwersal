@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Project detail navigation
+
+- Split the application detail configuration into dedicated top-level tabs for Runtime, Baza danych, Porty and Ustawienia instead of stacking all configuration panels under one page.
+- Reworked the application navigation into a continuous responsive tab strip with a clear active indicator and horizontal scrolling on narrow screens; legacy `?tab=configuration` links now open Ustawienia.
+- Runtime no longer duplicates the port panel when rendered inside application details, while the standalone runtime page keeps its previous combined behavior.
+
 ### Live updater progress
 
 - Added persistent live update state with percentage, current stage, source/target versions and timestamps, exposed through `GET /api/v1/update/progress`.
