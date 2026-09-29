@@ -29,6 +29,7 @@ type DatabaseBinding struct {
 	Username           string       `json:"username,omitempty"`
 	SecretRef          string       `json:"-"`
 	HasSecret          bool         `json:"has_secret"`
+	HostAccessOnly     bool         `json:"host_access_only,omitempty"`
 	ApplicationHost    string       `json:"application_host,omitempty"`
 	ApplicationPort    int          `json:"application_port,omitempty"`
 	Status             string       `json:"status,omitempty"`
@@ -47,4 +48,5 @@ type DatabaseBindingInput struct {
 	Username           string       `json:"username,omitempty"`
 	Password           string       `json:"password,omitempty"`
 	PasswordProvided   bool         `json:"password_provided,omitempty"`
+	HostAccessOnly     bool         `json:"host_access_only,omitempty"`
 }
