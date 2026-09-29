@@ -1,0 +1,39 @@
+name: Audit workspace
+on:
+  push:
+    branches: ['agent/90-audit-reliability']
+    paths: ['.github/workflows/audit-workspace.yml']
+permissions:
+  contents: read
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Archive tracked audit inputs
+        run: |
+          mkdir -p /tmp/devbox-audit
+          git archive HEAD > /tmp/devbox-audit/source.tar
+          git fetch https://github.com/chmajster/DevBox-Uniwersal.git 2508d5d4389fc9955a5ecf83a6c6aba350946eda
+          git diff 733eb37ef82ca1e81522e66efef9247fb1821402...2508d5d4389fc9955a5ecf83a6c6aba350946eda > /tmp/devbox-audit/pr89.patch
+      - name: Prepare offline test dependencies
+        run: |
+          (cd backend && go mod vendor)
+          (cd frontend && npm ci --ignore-scripts)
+          tar -czf /tmp/devbox-audit/dependencies.tgz backend/vendor frontend/node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audit-workspace
+          path: /tmp/devbox-audit/
+          retention-days: 1
+          if-no-files-found: error
