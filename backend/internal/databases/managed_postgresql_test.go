@@ -2,6 +2,7 @@ package databases
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -41,5 +42,25 @@ func TestManagedPostgreSQLApplicationEndpointUsesContainerDNS(t *testing.T) {
 	endpoint := manager.ApplicationEndpoint()
 	if endpoint.Host != DefaultManagedPostgreSQLContainer || endpoint.Port != 5432 {
 		t.Fatalf("unexpected PostgreSQL application endpoint: %+v", endpoint)
+	}
+}
+
+func TestManagedPostgreSQLUninstallRemovesContainerButKeepsPersistentVolume(t *testing.T) {
+	store := &fakeSecretStore{values: map[string][]byte{}}
+	docker := &managedDockerFake{state: "running", exists: true}
+	manager := NewManagedPostgreSQLManager(docker, store, ManagedPostgreSQLConfig{})
+
+	if err := manager.Action(context.Background(), "uninstall"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(docker.calls, "\n")
+	if !strings.Contains(joined, "stop:"+DefaultManagedPostgreSQLContainer) {
+		t.Fatalf("running PostgreSQL container was not stopped before uninstall: %s", joined)
+	}
+	if !strings.Contains(joined, "remove:"+DefaultManagedPostgreSQLContainer) {
+		t.Fatalf("PostgreSQL container was not removed: %s", joined)
+	}
+	if strings.Contains(joined, "ensure-volume:") {
+		t.Fatalf("uninstall must not recreate or delete the persistent volume: %s", joined)
 	}
 }
