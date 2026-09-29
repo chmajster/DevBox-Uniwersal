@@ -112,11 +112,11 @@ func TestQueueDockerDatabaseInstallsUseJobEngine(t *testing.T) {
 	runner := &recordingPluginJobRunner{}
 	mysqlServer := &fakeDockerDatabaseServer{
 		endpoint: providers.DatabaseEndpoint{Host: "devbox-mysql", Port: 3306},
-		network: "devbox-apps", container: "devbox-mysql", image: "mysql:8.4", volume: "devbox-mysql-data",
+		network:  "devbox-apps", container: "devbox-mysql", image: "mysql:8.4", volume: "devbox-mysql-data",
 	}
 	postgresServer := &fakeDockerDatabaseServer{
 		endpoint: providers.DatabaseEndpoint{Host: "devbox-postgresql", Port: 5432},
-		network: "devbox-apps", container: "devbox-postgresql", image: "postgres:17", volume: "devbox-postgresql-data",
+		network:  "devbox-apps", container: "devbox-postgresql", image: "postgres:17", volume: "devbox-postgresql-data",
 	}
 	service := NewService("", "", WithJobRunner(runner), WithMySQLDatabaseServer(mysqlServer), WithPostgreSQLDatabaseServer(postgresServer))
 	actor := "admin-user"
@@ -146,7 +146,7 @@ func TestDockerDatabasePluginStatusUsesContainerDNS(t *testing.T) {
 	mysqlServer := &fakeDockerDatabaseServer{
 		installed: true, running: true,
 		endpoint: providers.DatabaseEndpoint{Host: "devbox-mysql", Port: 3306},
-		network: "devbox-apps", container: "devbox-mysql", image: "mysql:8.4", volume: "devbox-mysql-data",
+		network:  "devbox-apps", container: "devbox-mysql", image: "mysql:8.4", volume: "devbox-mysql-data",
 	}
 	service := NewService("", "", WithMySQLDatabaseServer(mysqlServer))
 	status := service.MySQLStatus(context.Background())
