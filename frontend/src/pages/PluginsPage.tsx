@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { request } from '../api/client'
-import type { DockerComposePluginStatus, Job, MySQLPluginStatus, PHPFPMStatus, PHPMyAdminStatus, PostgreSQLPluginStatus } from '../api/types'
+import type { DockerComposePluginStatus, Job, MySQLPluginStatus, PHPMyAdminStatus, PostgreSQLPluginStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 
@@ -11,26 +11,23 @@ export function PluginsPage() {
   const canMutate = user?.role !== 'viewer'
   const canInstallSystemPackages = user?.role === 'admin'
   const [dockerCompose, setDockerCompose] = useState<DockerComposePluginStatus | null>(null)
-  const [phpFPM, setPHPFPM] = useState<PHPFPMStatus | null>(null)
   const [mysql, setMySQL] = useState<MySQLPluginStatus | null>(null)
   const [postgresql, setPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'mysql-install' | 'postgresql-install' | null>(null)
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'mysql-install' | 'postgresql-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
-    const [dockerComposeStatus, phpFPMStatus, mySQLStatus, postgreSQLStatus, phpMyAdminStatus] = await Promise.all([
+    const [dockerComposeStatus, mySQLStatus, postgreSQLStatus, phpMyAdminStatus] = await Promise.all([
       request<DockerComposePluginStatus>('/plugins/docker-compose/status'),
-      request<PHPFPMStatus>('/plugins/php-fpm/status'),
       request<MySQLPluginStatus>('/plugins/mysql/status'),
       request<PostgreSQLPluginStatus>('/plugins/postgresql/status'),
       request<PHPMyAdminStatus>('/phpmyadmin/status'),
     ])
     setDockerCompose(dockerComposeStatus)
-    setPHPFPM(phpFPMStatus)
     setMySQL(mySQLStatus)
     setPostgreSQL(postgreSQLStatus)
     setPHPMyAdmin(phpMyAdminStatus)
@@ -56,22 +53,6 @@ export function PluginsPage() {
     }
   }
 
-  async function installPHPFPM() {
-    setBusyAction('php-fpm-install')
-    setError('')
-    setMessage('')
-    try {
-      const status = await request<PHPFPMStatus>('/plugins/php-fpm/install', { method: 'POST' })
-      setPHPFPM(status)
-      setMessage('PHP-FPM został zainstalowany i jest gotowy do użycia.')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Instalacja PHP-FPM nie powiodła się')
-      await load().catch(() => undefined)
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
   async function waitForJob(jobId: string): Promise<Job> {
     const deadline = Date.now() + 5 * 60 * 1000
     while (Date.now() < deadline) {
@@ -91,10 +72,10 @@ export function PluginsPage() {
     setMessage('')
     try {
       const job = await request<Job>('/plugins/mysql/install', { method: 'POST' })
-      setMessage(`Instalacja MySQL/MariaDB została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
+      setMessage(`Instalacja serwera MySQL/MariaDB w Dockerze została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
       await waitForJob(job.id)
       await load()
-      setMessage('Serwer MySQL/MariaDB został zainstalowany i jest gotowy dla wielu baz oraz aplikacji.')
+      setMessage('Serwer MySQL/MariaDB działa w Dockerze i jest dostępny dla kontenerów aplikacji.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Instalacja MySQL/MariaDB nie powiodła się')
       await load().catch(() => undefined)
@@ -109,10 +90,10 @@ export function PluginsPage() {
     setMessage('')
     try {
       const job = await request<Job>('/plugins/postgresql/install', { method: 'POST' })
-      setMessage(`Instalacja PostgreSQL została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
+      setMessage(`Instalacja serwera PostgreSQL w Dockerze została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
       await waitForJob(job.id)
       await load()
-      setMessage('Serwer PostgreSQL został zainstalowany i jest gotowy dla wielu baz oraz aplikacji.')
+      setMessage('Serwer PostgreSQL działa w Dockerze i jest dostępny dla kontenerów aplikacji.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Instalacja PostgreSQL nie powiodła się')
       await load().catch(() => undefined)
@@ -258,57 +239,14 @@ export function PluginsPage() {
     <section className="panel phpmyadmin-panel">
       <div>
         <div className="actions">
-          <Icon name="cpu" size={24} />
-          <div>
-            <h2>PHP-FPM na hoście</h2>
-            <p className="muted">Opcjonalny komponent systemowy hosta. Zarządzane aplikacje PHP DevBox uruchamiają własny runtime wewnątrz kontenera Docker.</p>
-          </div>
-        </div>
-        <p className="muted small">
-          {phpFPM?.installed
-            ? 'PHP-FPM został wykryty na hoście. Nie zmienia to konfiguracji PHP wewnątrz kontenerów aplikacji.'
-            : 'Brak hostowego PHP-FPM nie blokuje zarządzanych aplikacji PHP. Instaluj go tylko wtedy, gdy potrzebuje go inne narzędzie lub ręczna konfiguracja hosta.'}
-        </p>
-      </div>
-
-      <div className="phpmyadmin-status">
-        <div className="actions">
-          <span className="status-chip" data-ok={phpFPM?.installed ? 'true' : 'false'}>
-            {phpFPM?.installed ? 'Zainstalowany' : 'Wymagana instalacja'}
-          </span>
-          {phpFPM?.version && <span className="status-chip" data-ok="true">{phpFPM.version}</span>}
-        </div>
-
-        {phpFPM?.path && <p className="muted small">Ścieżka: <code>{phpFPM.path}</code></p>}
-        {phpFPM?.message && <p className="muted small">{phpFPM.message}</p>}
-
-        <div className="actions">
-          {!phpFPM?.installed && canInstallSystemPackages && phpFPM?.installable && (
-            <button type="button" onClick={installPHPFPM} disabled={busy}>
-              {busyAction === 'php-fpm-install' ? 'Instalowanie…' : 'Zainstaluj PHP-FPM'}
-            </button>
-          )}
-          {!phpFPM?.installed && !canInstallSystemPackages && (
-            <span className="muted small">Instalacja pakietu systemowego wymaga roli administratora.</span>
-          )}
-          {!phpFPM?.installed && canInstallSystemPackages && phpFPM && !phpFPM.installable && (
-            <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
-          )}
-        </div>
-      </div>
-    </section>
-
-    <section className="panel phpmyadmin-panel">
-      <div>
-        <div className="actions">
           <Icon name="database" size={24} />
           <div>
             <h2>MySQL / MariaDB</h2>
-            <p className="muted">Trwały serwer MySQL/MariaDB uruchamiany w osobnym kontenerze Docker. Jeden serwer może przechowywać wiele baz, wielu użytkowników i obsługiwać wiele aplikacji jednocześnie.</p>
+            <p className="muted">Trwały serwer baz danych uruchamiany w osobnym kontenerze Docker. Jeden serwer może przechowywać wiele baz i obsługiwać wiele aplikacji.</p>
           </div>
         </div>
         <p className="muted small">
-          MySQLi i PDO MySQL są sterownikami PHP używanymi przez aplikację do połączenia z tym serwerem. Nie są osobnymi serwerami bazodanowymi.
+          MySQLi i PDO MySQL są sterownikami PHP do tego serwera. Kontenery aplikacji DevBox łączą się z nim przez wspólną sieć Docker.
         </p>
         {mysql?.message && <p className="muted small">{mysql.message}</p>}
       </div>
@@ -321,20 +259,16 @@ export function PluginsPage() {
           {mysql?.installed && <span className="status-chip" data-ok={mysql.running ? 'true' : 'false'}>
             {mysql.running ? 'Działa' : 'Nie odpowiada'}
           </span>}
-          {mysql?.engine && <span className="status-chip" data-ok="true">{mysql.engine === 'mariadb' ? 'MariaDB' : 'MySQL'}</span>}
         </div>
 
         <div className="database-plugin-meta">
-          <div><span>Port</span><strong><code>{mysql?.port ?? 3306}</code></strong></div>
-          <div><span>Adres dla aplikacji</span><strong><code>{mysql?.container_host ?? 'host.docker.internal'}:{mysql?.port ?? 3306}</code></strong></div>
-          <div><span>Bazy</span><strong>Wiele</strong></div>
-          <div><span>Aplikacje</span><strong>Wiele</strong></div>
-          <div><span>PHP</span><strong>mysqli / PDO MySQL</strong></div>
           <div><span>Kontener</span><strong><code>{mysql?.container_name ?? 'devbox-mysql'}</code></strong></div>
+          <div><span>Obraz</span><strong><code>{mysql?.image ?? 'mysql:8.4'}</code></strong></div>
+          <div><span>Adres dla aplikacji</span><strong><code>{mysql?.container_host ?? 'devbox-mysql'}:{mysql?.port ?? 3306}</code></strong></div>
           <div><span>Sieć Docker</span><strong><code>{mysql?.network ?? 'devbox-apps'}</code></strong></div>
           <div><span>Wolumen danych</span><strong><code>{mysql?.volume ?? 'devbox-mysql-data'}</code></strong></div>
-          <div><span>Obraz</span><strong><code>{mysql?.image ?? 'mysql:8.4'}</code></strong></div>
-          {mysql?.version && <div><span>Wersja</span><strong><code>{mysql.version}</code></strong></div>}
+          <div><span>Bazy / aplikacje</span><strong>Wiele / wiele</strong></div>
+          <div><span>PHP</span><strong>mysqli / PDO MySQL</strong></div>
         </div>
 
         <div className="actions">
@@ -344,7 +278,7 @@ export function PluginsPage() {
             </button>
           )}
           {!mysql?.installed && !canInstallSystemPackages && (
-            <span className="muted small">Instalacja MySQL/MariaDB wymaga roli administratora.</span>
+            <span className="muted small">Instalacja serwera wymaga roli administratora DevBox.</span>
           )}
           {!mysql?.installed && canInstallSystemPackages && mysql && !mysql.installable && (
             <span className="muted small">{mysql.message || 'Instalacja z panelu jest obecnie niedostępna.'}</span>
@@ -359,10 +293,12 @@ export function PluginsPage() {
           <Icon name="database" size={24} />
           <div>
             <h2>PostgreSQL</h2>
-            <p className="muted">Trwały serwer PostgreSQL uruchamiany w osobnym kontenerze Docker. Jeden serwer może przechowywać wiele baz, wielu użytkowników i obsługiwać wiele aplikacji jednocześnie.</p>
+            <p className="muted">Trwały serwer PostgreSQL uruchamiany w osobnym kontenerze Docker. Jeden serwer może przechowywać wiele baz i obsługiwać wiele aplikacji.</p>
           </div>
         </div>
-        <p className="muted small">Aplikacje PHP korzystają z modułu <code>pgsql</code> lub <code>PDO PostgreSQL</code> do połączenia z tym serwerem.</p>
+        <p className="muted small">
+          Kontenery aplikacji DevBox łączą się z nim przez wspólną sieć Docker. Aplikacje PHP używają sterownika <code>pgsql</code> lub <code>PDO PostgreSQL</code>.
+        </p>
         {postgresql?.message && <p className="muted small">{postgresql.message}</p>}
       </div>
 
@@ -377,16 +313,13 @@ export function PluginsPage() {
         </div>
 
         <div className="database-plugin-meta">
-          <div><span>Port</span><strong><code>{postgresql?.port ?? 5432}</code></strong></div>
-          <div><span>Adres dla aplikacji</span><strong><code>{postgresql?.container_host ?? 'host.docker.internal'}:{postgresql?.port ?? 5432}</code></strong></div>
-          <div><span>Bazy</span><strong>Wiele</strong></div>
-          <div><span>Aplikacje</span><strong>Wiele</strong></div>
-          <div><span>PHP</span><strong>pgsql / PDO PostgreSQL</strong></div>
           <div><span>Kontener</span><strong><code>{postgresql?.container_name ?? 'devbox-postgresql'}</code></strong></div>
+          <div><span>Obraz</span><strong><code>{postgresql?.image ?? 'postgres:17'}</code></strong></div>
+          <div><span>Adres dla aplikacji</span><strong><code>{postgresql?.container_host ?? 'devbox-postgresql'}:{postgresql?.port ?? 5432}</code></strong></div>
           <div><span>Sieć Docker</span><strong><code>{postgresql?.network ?? 'devbox-apps'}</code></strong></div>
           <div><span>Wolumen danych</span><strong><code>{postgresql?.volume ?? 'devbox-postgresql-data'}</code></strong></div>
-          <div><span>Obraz</span><strong><code>{postgresql?.image ?? 'postgres:17'}</code></strong></div>
-          {postgresql?.version && <div><span>Wersja</span><strong><code>{postgresql.version}</code></strong></div>}
+          <div><span>Bazy / aplikacje</span><strong>Wiele / wiele</strong></div>
+          <div><span>PHP</span><strong>pgsql / PDO PostgreSQL</strong></div>
         </div>
 
         <div className="actions">
@@ -396,10 +329,10 @@ export function PluginsPage() {
             </button>
           )}
           {!postgresql?.installed && !canInstallSystemPackages && (
-            <span className="muted small">Instalacja PostgreSQL wymaga roli administratora.</span>
+            <span className="muted small">Instalacja serwera wymaga roli administratora DevBox.</span>
           )}
           {!postgresql?.installed && canInstallSystemPackages && postgresql && !postgresql.installable && (
-            <span className="muted small">Instalacja z panelu jest obecnie niedostępna.</span>
+            <span className="muted small">{postgresql.message || 'Instalacja z panelu jest obecnie niedostępna.'}</span>
           )}
         </div>
       </div>
@@ -454,8 +387,8 @@ export function PluginsPage() {
         </div>
 
         <p className="muted small">
-          phpMyAdmin ma dostęp do hostowego MySQL/MariaDB przez <code>{phpMyAdmin?.host_database_host ?? 'host.docker.internal'}:{phpMyAdmin?.host_database_port ?? 3306}</code>.
-          Na ekranie logowania możesz wybrać serwer hostowy albo wpisać inny serwer dzięki trybowi arbitrary server.
+          phpMyAdmin działa na tej samej sieci Docker co serwer MySQL i aplikacje. Domyślny serwer to <code>{mysql?.container_host ?? 'devbox-mysql'}:{mysql?.port ?? 3306}</code>.
+          Tryb arbitrary server nadal pozwala wskazać inny serwer MySQL/MariaDB.
         </p>
 
         <div className="actions">
