@@ -301,12 +301,23 @@ export interface DatabaseUser {
   updated_at: string
 }
 
+export interface DatabaseConnectionCredential {
+  engine: string
+  host: string
+  port: number
+  database: string
+  username: string
+  password: string
+}
+
 export interface DatabaseUserCreateResult {
   user: DatabaseUser
-  credential: {
-    username: string
-    password: string
-  }
+  credential: DatabaseConnectionCredential
+}
+
+export interface DatabaseUserPasswordResult {
+  password: string
+  credential: DatabaseConnectionCredential
 }
 
 export interface DatabaseBackup {
