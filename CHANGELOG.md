@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Directory picker parser fix
+
+- Removed accidental escape characters from JSX/TypeScript template literals in `DirectoryPicker.tsx`, restoring ESLint parsing and frontend compilation after the tree-view UI merge.
+
 ### Directory picker UI
 
 - Rebuilt the project directory chooser into an Explorer-style folder tree with expandable chevrons, yellow folder icons and a compact selected-row treatment.
