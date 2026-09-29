@@ -65,15 +65,16 @@ type PostgreSQLStatus struct {
 }
 
 type HostDatabaseInstance struct {
-	ID        string `json:"id"`
-	Engine    string `json:"engine"`
-	Label     string `json:"label"`
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	Installed bool   `json:"installed"`
-	Running   bool   `json:"running"`
-	Version   string `json:"version,omitempty"`
-	Source    string `json:"source,omitempty"`
+	ID        string   `json:"id"`
+	Engine    string   `json:"engine"`
+	Label     string   `json:"label"`
+	Host      string   `json:"host"`
+	HostIPs   []string `json:"host_ips,omitempty"`
+	Port      int      `json:"port"`
+	Installed bool     `json:"installed"`
+	Running   bool     `json:"running"`
+	Version   string   `json:"version,omitempty"`
+	Source    string   `json:"source,omitempty"`
 }
 
 type Service struct {
@@ -392,6 +393,10 @@ func (s *Service) HostDatabases(ctx context.Context) []HostDatabaseInstance {
 		instances = append(instances, mysql)
 	}
 	instances = append(instances, detectHostPostgreSQL(ctx)...)
+	hostIPs := hostInterfaceIPs()
+	for i := range instances {
+		instances[i].HostIPs = append([]string(nil), hostIPs...)
+	}
 	sort.Slice(instances, func(i, j int) bool {
 		if instances[i].Engine == instances[j].Engine {
 			return instances[i].Port < instances[j].Port
@@ -399,6 +404,50 @@ func (s *Service) HostDatabases(ctx context.Context) []HostDatabaseInstance {
 		return instances[i].Engine < instances[j].Engine
 	})
 	return instances
+}
+
+func hostInterfaceIPs() []string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	return normalizeHostIPs(addrs)
+}
+
+func normalizeHostIPs(addrs []net.Addr) []string {
+	seen := make(map[string]struct{})
+	result := make([]string, 0, len(addrs))
+	for _, addr := range addrs {
+		if addr == nil {
+			continue
+		}
+		value := strings.TrimSpace(addr.String())
+		if value == "" {
+			continue
+		}
+		if ip, _, err := net.ParseCIDR(value); err == nil {
+			value = ip.String()
+		}
+		ip := net.ParseIP(strings.Trim(value, "[]"))
+		if ip == nil || !ip.IsGlobalUnicast() || ip.IsLoopback() || ip.IsUnspecified() {
+			continue
+		}
+		normalized := ip.String()
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		left4 := net.ParseIP(result[i]).To4() != nil
+		right4 := net.ParseIP(result[j]).To4() != nil
+		if left4 != right4 {
+			return left4
+		}
+		return result[i] < result[j]
+	})
+	return result
 }
 
 func detectHostMySQL(ctx context.Context) (HostDatabaseInstance, bool) {

@@ -66,6 +66,11 @@ function formatDatabaseTimestamp(value?: string) {
   return parsed.toLocaleString('pl-PL')
 }
 
+function formatHostPort(host: string, port: number) {
+  const value = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+  return `${value}:${port}`
+}
+
 const databaseModeOptions: Array<{ choice: DatabaseModeChoice; mode: DatabaseMode; title: string; description: string }> = [
   {
     choice: 'none',
@@ -168,6 +173,11 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const needsPHPPostgreSQLDriver = hostDatabaseSelected && effectiveRuntime === 'php' &&
     selectedEngine === 'postgresql' && !phpModules.has('pgsql')
   const selectedHostDatabase = hostDatabases.find((item) => item.engine === selectedEngine && item.port === (draft.port || 0))
+  const hostDatabasePort = draft.port || (selectedEngine === 'postgresql' ? 5432 : 3306)
+  const detectedHostIPs = selectedHostDatabase?.host_ips ??
+    hostDatabases.find((item) => (item.host_ips?.length ?? 0) > 0)?.host_ips ??
+    []
+  const hostIPEndpoints = detectedHostIPs.map((ip) => formatHostPort(ip, hostDatabasePort))
 
   async function perform(name: string, action: () => Promise<void>) {
     setBusy(name)
@@ -430,31 +440,33 @@ export function ProjectDatabaseSection({ projectId }: Props) {
               value={draft.port ?? (selectedEngine === 'postgresql' ? 5432 : 3306)}
               onChange={(event) => setDraft({ ...draft, port: Number(event.target.value), host: dockerHostDatabaseHost, host_access_only: true })} />
           </label>
-          <label>Adres używany w kontenerze<input readOnly value={`${dockerHostDatabaseHost}:${draft.port || (selectedEngine === 'postgresql' ? 5432 : 3306)}`} /></label>
+          <label>Adres DNS używany w kontenerze<input readOnly value={formatHostPort(dockerHostDatabaseHost, hostDatabasePort)} /></label>
+          <label>Adresy IP hosta<input readOnly value={hostIPEndpoints.length > 0 ? hostIPEndpoints.join(', ') : 'nie wykryto'} /></label>
           <label>Status wykrytej usługi<input readOnly value={selectedHostDatabase ? (selectedHostDatabase.running ? 'działa' : 'zainstalowana, ale nie odpowiada') : 'port ustawiony ręcznie'} /></label>
           {selectedHostDatabase?.version && <label className="span-2">Wersja<input readOnly value={selectedHostDatabase.version} /></label>}
           <div className="database-host-help span-2">
             <div>
               <strong>Jak ustawić połączenie wewnątrz aplikacji</strong>
-              <p>Jako host bazy wpisz <code>host.docker.internal</code>, a nie <code>localhost</code> ani <code>127.0.0.1</code>. W kontenerze adresy loopback wskazują na sam kontener, nie na host DevBox.</p>
+              <p>Jako host bazy najlepiej wpisz <code>host.docker.internal</code>, a nie <code>localhost</code> ani <code>127.0.0.1</code>. W kontenerze adresy loopback wskazują na sam kontener, nie na host DevBox.</p>
+              {detectedHostIPs.length > 0 && <p>Wykryte adresy IP hosta: {detectedHostIPs.map((ip, index) => <span key={ip}>{index > 0 ? ', ' : ''}<code>{formatHostPort(ip, hostDatabasePort)}</code></span>)}.</p>}
             </div>
             <div className="database-host-help-grid">
               <div>
                 <span className="database-host-help-label">Przykład .env / konfiguracji aplikacji</span>
                 <pre><code>{`DB_HOST=host.docker.internal
-DB_PORT=${draft.port || (selectedEngine === 'postgresql' ? 5432 : 3306)}
-DB_DATABASE=moja_baza
+DB_PORT=${hostDatabasePort}
+${detectedHostIPs.map((ip) => `# alternatywnie: DB_HOST=${ip}`).join('\n')}${detectedHostIPs.length > 0 ? '\n' : ''}DB_DATABASE=moja_baza
 DB_USERNAME=moj_uzytkownik
 DB_PASSWORD=moje_haslo`}</code></pre>
               </div>
               <div>
                 <span className="database-host-help-label">Sterownik PHP</span>
                 <pre><code>{selectedEngine === 'postgresql'
-                  ? 'Moduł: pgsql / pdo_pgsql\nHost: host.docker.internal'
-                  : 'Moduł: mysqli lub pdo_mysql\nHost: host.docker.internal'}</code></pre>
+                  ? `Moduł: pgsql / pdo_pgsql\nHost DNS: host.docker.internal${detectedHostIPs.length > 0 ? `\nHost IP: ${detectedHostIPs.join(', ')}` : ''}`
+                  : `Moduł: mysqli lub pdo_mysql\nHost DNS: host.docker.internal${detectedHostIPs.length > 0 ? `\nHost IP: ${detectedHostIPs.join(', ')}` : ''}`}</code></pre>
               </div>
             </div>
-            <p className="database-host-warning"><strong>Wymagane po stronie hosta:</strong> wybrany serwer musi nasłuchiwać na interfejsie dostępnym z Dockera. MySQL/MariaDB wymaga odpowiednich grantów, a PostgreSQL odpowiedniego <code>listen_addresses</code> i reguły <code>pg_hba.conf</code>.</p>
+            <p className="database-host-warning"><strong>Wymagane po stronie hosta:</strong> wybrany serwer musi nasłuchiwać na interfejsie dostępnym z Dockera. MySQL/MariaDB wymaga odpowiednich grantów, a PostgreSQL odpowiedniego <code>listen_addresses</code> i reguły <code>pg_hba.conf</code>. Wykryte IP pochodzą z interfejsów hosta; ich osiągalność z konkretnego kontenera zależy od routingu, firewalla i konfiguracji nasłuchiwania serwera.</p>
           </div>
         </> : <>
           <div className="validation-box span-2">
