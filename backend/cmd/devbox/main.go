@@ -218,7 +218,7 @@ func serve() error {
 		ApplicationPort: 5432,
 		AdminUser:       "postgres",
 	}, secretStore)
-	phpMyAdminConfig := databases.PHPMyAdminConfig{
+	phpMyAdmin := databases.NewPHPMyAdminManager(databases.PHPMyAdminConfig{
 		DockerBinary: cfg.PHPMyAdminDockerBinary,
 		Image:        cfg.PHPMyAdminImage,
 		Container:    cfg.PHPMyAdminContainer,
@@ -226,11 +226,8 @@ func serve() error {
 		MySQLHost:    phpMySQLHost,
 		MySQLPort:    phpMySQLPort,
 		Network:      phpMySQLNetwork,
-	}
-	if cfg.ManagedMySQLEnabled {
-		phpMyAdminConfig.ManagedMySQL = managedMySQL
-	}
-	phpMyAdmin := databases.NewPHPMyAdminManager(phpMyAdminConfig)
+		ManagedMySQL: managedMySQL,
+	})
 	phpMyAdminReconcileCtx, phpMyAdminReconcileCancel := context.WithTimeout(context.Background(), 60*time.Second)
 	if _, err := phpMyAdmin.Reconcile(phpMyAdminReconcileCtx); err != nil {
 		logger.Warn("phpMyAdmin reconciliation failed; it will retry when opened", "error", err)
