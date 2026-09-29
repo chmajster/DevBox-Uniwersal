@@ -479,10 +479,9 @@ func (s *Service) postgresInstallConflict(ctx context.Context, port int) string 
 		}
 		return fmt.Sprintf("Port %d jest zarezerwowany przez %s. Wybierz inny port dla PostgreSQL.", port, owner)
 	}
-	for _, current := range detectHostPostgreSQL(ctx) {
-		if current.Port == port {
-			return ""
-		}
+	current := detectHostPostgreSQL(ctx)
+	if len(current) > 0 && current[0].Port == port {
+		return ""
 	}
 	if hostTCPPortOpen(port) {
 		return fmt.Sprintf("Port %d jest już zajęty przez inny listener. Wybierz inny port dla PostgreSQL.", port)
