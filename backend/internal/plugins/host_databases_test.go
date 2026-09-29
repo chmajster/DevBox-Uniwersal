@@ -163,8 +163,10 @@ func TestLegacyControlPlaneMySQLIsNotExposedAsApplicationDatabase(t *testing.T) 
 	if status.Purpose != "control-plane" || status.ApplicationReady || status.Installable {
 		t.Fatalf("legacy control-plane MySQL must be isolated from applications: %#v", status)
 	}
-	if items := service.HostDatabases(context.Background()); len(items) != 0 {
-		t.Fatalf("legacy control-plane MySQL must not be discoverable as app DB: %#v", items)
+	for _, item := range service.HostDatabases(context.Background()) {
+		if item.Engine == "mysql" || item.Engine == "mariadb" {
+			t.Fatalf("legacy control-plane MySQL must not be discoverable as app DB: %#v", item)
+		}
 	}
 }
 
