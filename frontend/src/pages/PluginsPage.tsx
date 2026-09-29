@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { request } from '../api/client'
-import type { DockerComposePluginStatus, PHPFPMStatus, PHPMyAdminStatus, PostgreSQLPluginStatus } from '../api/types'
+import type { DockerComposePluginStatus, Job, MySQLPluginStatus, PHPFPMStatus, PHPMyAdminStatus, PostgreSQLPluginStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 
@@ -12,23 +12,26 @@ export function PluginsPage() {
   const canInstallSystemPackages = user?.role === 'admin'
   const [dockerCompose, setDockerCompose] = useState<DockerComposePluginStatus | null>(null)
   const [phpFPM, setPHPFPM] = useState<PHPFPMStatus | null>(null)
+  const [mysql, setMySQL] = useState<MySQLPluginStatus | null>(null)
   const [postgresql, setPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'postgresql-install' | null>(null)
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'mysql-install' | 'postgresql-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
   const load = useCallback(async () => {
-    const [dockerComposeStatus, phpFPMStatus, postgreSQLStatus, phpMyAdminStatus] = await Promise.all([
+    const [dockerComposeStatus, phpFPMStatus, mySQLStatus, postgreSQLStatus, phpMyAdminStatus] = await Promise.all([
       request<DockerComposePluginStatus>('/plugins/docker-compose/status'),
       request<PHPFPMStatus>('/plugins/php-fpm/status'),
+      request<MySQLPluginStatus>('/plugins/mysql/status'),
       request<PostgreSQLPluginStatus>('/plugins/postgresql/status'),
       request<PHPMyAdminStatus>('/phpmyadmin/status'),
     ])
     setDockerCompose(dockerComposeStatus)
     setPHPFPM(phpFPMStatus)
+    setMySQL(mySQLStatus)
     setPostgreSQL(postgreSQLStatus)
     setPHPMyAdmin(phpMyAdminStatus)
   }, [])
@@ -63,6 +66,37 @@ export function PluginsPage() {
       setMessage('PHP-FPM został zainstalowany i jest gotowy do użycia.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Instalacja PHP-FPM nie powiodła się')
+      await load().catch(() => undefined)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function waitForJob(jobId: string): Promise<Job> {
+    const deadline = Date.now() + 5 * 60 * 1000
+    while (Date.now() < deadline) {
+      const job = await request<Job>(`/jobs/${encodeURIComponent(jobId)}`)
+      if (job.status === 'succeeded') return job
+      if (job.status === 'failed' || job.status === 'cancelled') {
+        throw new Error(job.error || `Zadanie ${job.status}.`)
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 1000))
+    }
+    throw new Error('Instalacja MySQL/MariaDB nadal trwa. Sprawdź status zadania w zakładce Zadania.')
+  }
+
+  async function installMySQL() {
+    setBusyAction('mysql-install')
+    setError('')
+    setMessage('')
+    try {
+      const job = await request<Job>('/plugins/mysql/install', { method: 'POST' })
+      setMessage(`Instalacja MySQL/MariaDB została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
+      await waitForJob(job.id)
+      await load()
+      setMessage('Hostowy MySQL/MariaDB został zainstalowany i zweryfikowany.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Instalacja MySQL/MariaDB nie powiodła się')
       await load().catch(() => undefined)
     } finally {
       setBusyAction(null)
@@ -267,6 +301,57 @@ export function PluginsPage() {
         <div className="actions">
           <Icon name="database" size={24} />
           <div>
+            <h2>MySQL / MariaDB na hoście</h2>
+            <p className="muted">Opcjonalny serwer MySQL/MariaDB instalowany bezpośrednio w systemie hosta przez manager pakietów.</p>
+          </div>
+        </div>
+        <p className="muted small">
+          {mysql?.installed
+            ? 'Serwer hostowy został wykryty. Jest niezależny od zarządzanego kontenera devbox-mysql.'
+            : 'Zainstaluj hostowy MySQL/MariaDB, jeżeli aplikacje mają łączyć się z bazą działającą bezpośrednio na hoście.'}
+        </p>
+      </div>
+
+      <div className="phpmyadmin-status">
+        <div className="actions">
+          <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
+            {mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
+          </span>
+          {mysql?.installed && <span className="status-chip" data-ok={mysql.running ? 'true' : 'false'}>
+            {mysql.running ? 'Usługa działa' : 'Usługa nie odpowiada'}
+          </span>}
+          {mysql?.engine && <span className="status-chip" data-ok="true">{mysql.engine === 'mariadb' ? 'MariaDB' : 'MySQL'}</span>}
+        </div>
+
+        {mysql?.version && <p className="muted small">Wersja: <code>{mysql.version}</code></p>}
+        {mysql?.client_path && <p className="muted small">Klient: <code>{mysql.client_path}</code></p>}
+        {mysql?.server_path && <p className="muted small">Serwer: <code>{mysql.server_path}</code></p>}
+        {mysql?.host && mysql?.port && <p className="muted small">Adres hosta: <code>{mysql.host}:{mysql.port}</code></p>}
+        {mysql?.container_host && mysql?.port && <p className="muted small">Adres z kontenera: <code>{mysql.container_host}:{mysql.port}</code></p>}
+        {mysql?.message && <p className="muted small">{mysql.message}</p>}
+        <p className="muted small">Instalacja hostowa nie zastępuje zarządzanego MySQL DevBox (<code>devbox-mysql</code>). DevBox blokuje instalację, jeżeli port 3306 jest już zarezerwowany przez zarządzany MySQL lub inny listener.</p>
+
+        <div className="actions">
+          {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
+            <button type="button" onClick={() => void installMySQL()} disabled={busy}>
+              {busyAction === 'mysql-install' ? 'Instalowanie…' : 'Zainstaluj MySQL / MariaDB'}
+            </button>
+          )}
+          {!mysql?.installed && !canInstallSystemPackages && (
+            <span className="muted small">Instalacja MySQL/MariaDB wymaga roli administratora.</span>
+          )}
+          {!mysql?.installed && canInstallSystemPackages && mysql && !mysql.installable && (
+            <span className="muted small">{mysql.message || 'Instalacja z panelu jest obecnie niedostępna.'}</span>
+          )}
+        </div>
+      </div>
+    </section>
+
+    <section className="panel phpmyadmin-panel">
+      <div>
+        <div className="actions">
+          <Icon name="database" size={24} />
+          <div>
             <h2>PostgreSQL</h2>
             <p className="muted">Opcjonalny lokalny serwer PostgreSQL instalowany przez systemowy manager pakietów.</p>
           </div>
@@ -349,7 +434,18 @@ export function PluginsPage() {
           <span className="status-chip" data-ok={phpMyAdmin?.running ? 'true' : 'false'}>
             {busyAction === 'install' ? 'installing' : phpMyAdmin?.running ? 'Uruchomiony' : phpMyAdmin?.state ?? 'Zatrzymany'}
           </span>
+          {phpMyAdmin?.installed && <span className="status-chip" data-ok={phpMyAdmin.host_database_access ? 'true' : 'false'}>
+            {phpMyAdmin.host_database_access ? 'Host gateway skonfigurowany' : 'Wymaga rekonfiguracji host MySQL'}
+          </span>}
+          {phpMyAdmin?.running && phpMyAdmin.host_database_access && <span className="status-chip" data-ok={phpMyAdmin.host_database_reachable ? 'true' : 'false'}>
+            {phpMyAdmin.host_database_reachable ? 'Host MySQL osiągalny' : 'Host MySQL nieosiągalny'}
+          </span>}
         </div>
+
+        <p className="muted small">
+          phpMyAdmin ma dostęp do hostowego MySQL/MariaDB przez <code>{phpMyAdmin?.host_database_host ?? 'host.docker.internal'}:{phpMyAdmin?.host_database_port ?? 3306}</code>.
+          Na ekranie logowania możesz wybrać serwer hostowy albo wpisać inny serwer dzięki trybowi arbitrary server.
+        </p>
 
         <div className="actions">
           {canMutate && !phpMyAdmin?.installed && (
