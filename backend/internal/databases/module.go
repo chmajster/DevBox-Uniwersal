@@ -44,9 +44,12 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 
 	mux.Handle("GET /api/v1/database-users", viewer(http.HandlerFunc(m.listUsers)))
 	mux.Handle("POST /api/v1/database-users", operator(http.HandlerFunc(m.createUser)))
+	mux.Handle("GET /api/v1/database-users/{id}", viewer(http.HandlerFunc(m.getUser)))
 	mux.Handle("DELETE /api/v1/database-users/{id}", operator(http.HandlerFunc(m.deleteUser)))
 	mux.Handle("POST /api/v1/database-users/{id}/password", operator(http.HandlerFunc(m.changePassword)))
 	mux.Handle("POST /api/v1/database-users/{id}/grants", operator(http.HandlerFunc(m.changeGrants)))
+	mux.Handle("PUT /api/v1/database-users/{id}/databases/{database_id}", operator(http.HandlerFunc(m.setUserDatabaseAccess)))
+	mux.Handle("DELETE /api/v1/database-users/{id}/databases/{database_id}", operator(http.HandlerFunc(m.removeUserDatabaseAccess)))
 
 	mux.Handle("GET /api/v1/projects/{id}/database-binding", viewer(http.HandlerFunc(m.getDatabaseBinding)))
 	mux.Handle("PUT /api/v1/projects/{id}/database-binding", operator(http.HandlerFunc(m.updateDatabaseBinding)))
@@ -125,6 +128,15 @@ func (m *Module) listUsers(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, items)
 }
 
+func (m *Module) getUser(w http.ResponseWriter, r *http.Request) {
+	item, err := m.service.GetUser(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, item)
+}
+
 func (m *Module) createUser(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		DatabaseID string   `json:"database_id"`
@@ -189,6 +201,7 @@ func (m *Module) changePassword(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) changeGrants(w http.ResponseWriter, r *http.Request) {
 	var input struct {
+		DatabaseID string   `json:"database_id"`
 		Action     string   `json:"action"`
 		Privileges []string `json:"privileges"`
 	}
@@ -197,7 +210,34 @@ func (m *Module) changeGrants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor, remote := requestIdentity(r)
-	user, err := m.service.ChangeGrants(r.Context(), r.PathValue("id"), input.Action, input.Privileges, actor, remote)
+	user, err := m.service.ChangeGrants(r.Context(), r.PathValue("id"), strings.TrimSpace(input.DatabaseID), input.Action, input.Privileges, actor, remote)
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, user)
+}
+
+func (m *Module) setUserDatabaseAccess(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Privileges []string `json:"privileges"`
+	}
+	if err := decodeBody(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+	actor, remote := requestIdentity(r)
+	user, err := m.service.SetUserDatabaseAccess(r.Context(), r.PathValue("id"), r.PathValue("database_id"), input.Privileges, actor, remote)
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, user)
+}
+
+func (m *Module) removeUserDatabaseAccess(w http.ResponseWriter, r *http.Request) {
+	actor, remote := requestIdentity(r)
+	user, err := m.service.RemoveUserDatabaseAccess(r.Context(), r.PathValue("id"), r.PathValue("database_id"), actor, remote)
 	if err != nil {
 		writeModuleError(w, err)
 		return
