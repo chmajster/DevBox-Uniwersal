@@ -2,9 +2,10 @@ import type { UpdateProgress } from '../api/types'
 
 export const UPDATE_STAGES = [
   { id: 'starting', label: 'Start', percent: 2, description: 'Uruchomienie usługi aktualizacji i inicjalizacja stanu.' },
-  { id: 'source_check', label: 'Sprawdzenie źródła', percent: 8, description: 'Weryfikacja Git i źródła aktualizacji.' },
-  { id: 'download', label: 'Pobieranie', percent: 15, description: 'Płytki clone wybranej gałęzi i odczyt docelowego commita.' },
-  { id: 'validation', label: 'Walidacja', percent: 30, description: 'Kontrola install.sh, backend/go.mod i lockfile frontendu.' },
+  { id: 'source_check', label: 'Sprawdzenie źródła', percent: 8, description: 'Weryfikacja konfiguracji i źródła aktualizacji.' },
+  { id: 'download', label: 'Pobieranie', percent: 15, description: 'Pobranie podpisanego wydania albo jawnie wybranych źródeł Git.' },
+  { id: 'validation', label: 'Walidacja', percent: 30, description: 'Podpis Ed25519, SHA-256 i bezpieczne archiwum w trybie signed; w trybie Git kontrola wymaganych plików.' },
+  { id: 'snapshot', label: 'Kopia przed migracją', percent: 32, description: 'Odmowa aktualizacji przy aktywnych zadaniach; szyfrowana kopia plików, konfiguracji i SQLite.' },
   { id: 'environment', label: 'System i WSL', percent: 38, description: 'Detekcja systemu, WSL i systemd.' },
   { id: 'dependencies', label: 'Komponenty', percent: 46, description: 'Weryfikacja pakietów, Dockera/Compose i źródeł.' },
   { id: 'backend', label: 'Build backendu', percent: 58, description: 'Budowanie binarek Go: devbox i devbox-helper.' },
@@ -13,7 +14,7 @@ export const UPDATE_STAGES = [
   { id: 'service', label: 'Usługi systemd', percent: 87, description: 'Aktualizacja unitów i uruchomienie bieżącej usługi.' },
   { id: 'healthcheck', label: 'Healthcheck', percent: 94, description: 'Kontrola API oraz diagnostyka devbox doctor.' },
   { id: 'summary', label: 'Finalizacja', percent: 98, description: 'Końcowe kroki instalatora i podsumowanie.' },
-  { id: 'restart', label: 'Restart', percent: 99, description: 'Końcowy restart devbox.service.' },
+  { id: 'restart', label: 'Restart', percent: 99, description: 'Końcowy restart i potwierdzenie wersji oraz gotowości SQLite przez API.' },
   { id: 'completed', label: 'Gotowe', percent: 100, description: 'Aktualizacja zakończona.' },
 ] as const
 
@@ -64,6 +65,7 @@ export function updateStageState(progress: UpdateProgress | null | undefined, st
   const stageIndex = UPDATE_STAGES.findIndex((stage) => stage.id === stageId)
   if (stageIndex < 0 || !progress || progress.state === 'idle' || progress.state === 'unknown') return 'pending'
 
+  if (progress.stage === 'rollback') return stageId === 'completed' ? 'pending' : 'skipped'
   if (progress.state === 'succeeded') return 'done'
   if (progress.state === 'no_update') {
     const downloadIndex = UPDATE_STAGES.findIndex((stage) => stage.id === 'download')

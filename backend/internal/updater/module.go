@@ -3,9 +3,11 @@ package updater
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/updatebundle"
 	"net/http"
 	"os"
 	"os/exec"
@@ -28,6 +30,10 @@ const (
 var gitRefPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 
 type Status struct {
+	Mode            string `json:"mode"`
+	Ready           bool   `json:"ready"`
+	TrustConfigured bool   `json:"trust_configured"`
+	ReleaseTag      string `json:"release_tag,omitempty"`
 	CurrentVersion  string `json:"current_version"`
 	LatestVersion   string `json:"latest_version,omitempty"`
 	LatestCommitAt  string `json:"latest_commit_at,omitempty"`
@@ -64,6 +70,10 @@ type Service struct {
 	repository     string
 	ref            string
 	progressFile   string
+	mode           string
+	allowUnsigned  bool
+	releaseBase    string
+	publicKey      string
 }
 
 func NewService(currentVersion, helperBinary, sudoBinary string) *Service {
@@ -75,14 +85,18 @@ func NewService(currentVersion, helperBinary, sudoBinary string) *Service {
 		currentVersion: strings.TrimSpace(currentVersion),
 		helperBinary:   strings.TrimSpace(helperBinary),
 		sudoBinary:     strings.TrimSpace(sudoBinary),
-		repository:     defaultRepository,
-		ref:            defaultRef,
+		repository:     envOr("DEVBOX_UPDATE_REPOSITORY", defaultRepository),
+		ref:            envOr("DEVBOX_UPDATE_REF", defaultRef),
 		progressFile:   progressFile,
+		mode:           envOr("DEVBOX_UPDATE_MODE", "signed"),
+		allowUnsigned:  os.Getenv("DEVBOX_UPDATE_ALLOW_UNSIGNED") == "true",
+		releaseBase:    envOr("DEVBOX_UPDATE_RELEASE_BASE", "https://github.com/chmajster/DevBox-Uniwersal/releases/latest/download"),
+		publicKey:      envOr("DEVBOX_UPDATE_PUBLIC_KEY", "/etc/devbox/update-public.key"),
 	}
 }
 
 func (s *Service) Status(ctx context.Context) Status {
-	status := Status{
+	status := Status{Mode: s.mode,
 		CurrentVersion: s.currentVersion,
 		Repository:     s.repository,
 		Ref:            s.ref,
@@ -93,6 +107,25 @@ func (s *Service) Status(ctx context.Context) Status {
 		status.CurrentVersion = "unknown"
 	}
 	status.AutoUpdate = timerEnabled(ctx)
+	key, trustErr := s.updateTrust()
+	status.Ready = trustErr == nil
+	status.TrustConfigured = key != nil
+	if trustErr != nil {
+		status.LastError = trustErr.Error()
+		return status
+	}
+	if s.mode == "signed" {
+		manifest, err := signedReleaseInfo(ctx, s.releaseBase, key)
+		if err != nil {
+			status.LastError = err.Error()
+			return status
+		}
+		status.ReleaseTag = manifest.Tag
+		status.LatestVersion = manifest.Version
+		status.LatestCommitAt = manifest.CreatedAt
+		status.UpdateAvailable = manifest.Version != status.CurrentVersion
+		return status
+	}
 	latest, commitAt, err := remoteCommitInfo(ctx, s.repository, s.ref)
 	if err != nil {
 		status.LastError = err.Error()
@@ -136,6 +169,9 @@ func (s *Service) Progress(ctx context.Context) Progress {
 }
 
 func (s *Service) Apply(ctx context.Context) error {
+	if _, err := s.updateTrust(); err != nil {
+		return err
+	}
 	if s.helperBinary == "" {
 		return errors.New("privileged helper is not configured")
 	}
@@ -322,4 +358,27 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": message}})
+}
+
+func envOr(name, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+		return v
+	}
+	return fallback
+}
+func (s *Service) updateTrust() (ed25519.PublicKey, error) {
+	if s.mode == "git" {
+		if !s.allowUnsigned {
+			return nil, fmt.Errorf("development Git updates require explicit DEVBOX_UPDATE_ALLOW_UNSIGNED=true")
+		}
+		return nil, nil
+	}
+	if s.mode != "signed" {
+		return nil, fmt.Errorf("update mode must be signed or git")
+	}
+	key, err := updatebundle.PublicKey(s.publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("configure the trusted public update key at %s before signed updates", s.publicKey)
+	}
+	return key, nil
 }

@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { request } from '../api/client'
 import type { DomainMutationResult, DomainRecord, ProxyStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { DomainTLS } from '../components/DomainTLS'
 
 export function DomainsPage() {
   const { user } = useAuth()
@@ -180,7 +181,7 @@ export function DomainsPage() {
 
     <div className="table-wrap">
       <table>
-        <thead><tr><th>Hostname</th><th>Aplikacja</th><th>Target</th><th>Status</th><th>Health</th><th>Port</th>{canMutate && <th>Akcje</th>}</tr></thead>
+        <thead><tr><th>Hostname</th><th>Aplikacja</th><th>Target</th><th>Status</th><th>Health</th><th>Port</th><th>HTTPS / certyfikat</th>{canMutate && <th>Akcje</th>}</tr></thead>
         <tbody>
           {domains.map((domain) => <tr key={domain.id}>
             <td><strong>{domain.hostname}</strong></td>
@@ -195,13 +196,14 @@ export function DomainsPage() {
                 : <span className="badge badge-muted">brak danych</span>}
             </td>
             <td>{domain.target_port}</td>
+            <td><DomainTLS id={domain.id} admin={user?.role === 'admin'} onChanged={() => { void refresh() }} /></td>
             {canMutate && <td><div className="row-actions">
               <button type="button" className="secondary" onClick={() => edit(domain)}>Edytuj</button>
               <button type="button" className="secondary" onClick={() => void checkHealth(domain)}>Health</button>
               <button type="button" className="danger" onClick={() => void remove(domain.id)}>Usuń</button>
             </div></td>}
           </tr>)}
-          {domains.length === 0 && <tr><td colSpan={canMutate ? 7 : 6} className="muted">Brak skonfigurowanych domen.</td></tr>}
+          {domains.length === 0 && <tr><td colSpan={canMutate ? 8 : 7} className="muted">Brak skonfigurowanych domen.</td></tr>}
         </tbody>
       </table>
     </div>

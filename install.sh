@@ -643,6 +643,9 @@ install_artifacts() {
   upsert_env_file "$ENV_FILE" DEVBOX_COOKIE_SECURE "false"
   local source_version
   source_version="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || printf 'local')"
+  if [[ "${DEVBOX_USE_CURRENT_SOURCE:-0}" == 1 && "${DEVBOX_UPDATE_TARGET_VERSION:-}" =~ ^[0-9a-f]{40}$ ]]; then
+    source_version="$DEVBOX_UPDATE_TARGET_VERSION"
+  fi
   upsert_env_file "$ENV_FILE" DEVBOX_VERSION "$source_version"
   upsert_env_file "$ENV_FILE" DEVBOX_UPDATE_REPOSITORY "$SOURCE_REPOSITORY"
   upsert_env_file "$ENV_FILE" DEVBOX_UPDATE_REF "$SOURCE_REF"
@@ -816,7 +819,7 @@ install_service() {
     systemctl restart devbox.service
     systemctl enable --now devbox-update.timer
   } >>"$LOG_FILE" 2>&1
-  emit " OK " "Usługa devbox.service została uruchomiona ponownie z aktualnym backendem; auto-update z Git działa co 12 godzin."
+  emit " OK " "Usługa devbox.service została uruchomiona ponownie z aktualnym backendem; timer aktualizacji działa co 12 godzin; podpisane wydania wymagają skonfigurowanego zaufanego klucza."
 }
 
 wait_for_health() {

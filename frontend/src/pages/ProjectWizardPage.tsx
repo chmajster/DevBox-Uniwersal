@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { request } from '../api/client'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import type { CentralCredential, Project, ProjectSourceType } from '../api/types'
+import { GitIntegrationBrowser } from '../git/GitIntegrationBrowser'
 import { repositoryNameFromURL } from './projectWizardHelpers'
 
 interface FormState {
@@ -147,6 +148,7 @@ export function ProjectWizardPage() {
       </label>
 
       {form.source_type === 'git' && <>
+        <GitIntegrationBrowser credentials={credentials} onSelect={(repo, branch, credentialId) => setForm((current) => ({ ...current, repository_url: repo.clone_url, branch, credential_id: credentialId, name: nameEdited ? current.name : repositoryNameFromURL(repo.clone_url) }))} />
         <label className="span-2">Git URL
           <input
             value={form.repository_url}
@@ -171,7 +173,7 @@ export function ProjectWizardPage() {
             <option value="">Brak / repo publiczne</option>
             {credentials.map((item) =>
               <option key={item.id} value={item.id}>
-                {item.name} · {item.kind === 'token' ? 'GitHub token' : 'SSH key'}
+                {item.name} · {item.kind === 'token' ? 'Token GitHub / GitLab' : 'SSH key'}
               </option>
             )}
           </select>
@@ -254,6 +256,7 @@ export function ProjectWizardPage() {
       <div><span>Runtime</span><strong>{form.runtime || 'automatyczne wykrywanie'}</strong></div>
       <div><span>Kontener</span><strong>{form.container_policy === 'auto' ? 'automatyczny' : 'własny Docker'}</strong></div>
       {form.source_type === 'git' && <>
+        <GitIntegrationBrowser credentials={credentials} onSelect={(repo, branch, credentialId) => setForm((current) => ({ ...current, repository_url: repo.clone_url, branch, credential_id: credentialId, name: nameEdited ? current.name : repositoryNameFromURL(repo.clone_url) }))} />
         <div className="span-2"><span>Repo</span><strong>{form.repository_url}</strong></div>
         <div><span>Branch</span><strong>{form.branch || 'domyślna gałąź repo'}</strong></div>
         <div><span>Operacja</span><strong>git clone</strong></div>

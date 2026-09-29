@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ProjectPortsSection } from './ProjectPortsSection'
 import { request } from '../api/client'
-import type { Job, ProjectRuntimeInfo, RuntimeContainerConfig, RuntimeModuleOption } from '../api/types'
+import type { Job, ProjectRuntimeInfo, RuntimeContainerConfig, RuntimeModuleOption, RuntimeExecutionOptions } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { effectiveRuntimeName, preparePHPModuleConfig, updatePHPModuleSelection } from './phpModuleConfig'
 
@@ -36,6 +36,9 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [writableText, setWritableText] = useState('')
+  const [outputsText, setOutputsText] = useState('')
+  const [statusesText, setStatusesText] = useState('')
 
   useEffect(() => {
     setError('')
@@ -47,6 +50,9 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
       .then(([runtimeInfo, runtimeConfig]) => {
         setRuntime(runtimeInfo)
         setConfig(runtimeConfig)
+        setWritableText((runtimeConfig.execution?.writable_paths ?? []).join(', '))
+        setOutputsText((runtimeConfig.execution?.build_outputs ?? []).join(', '))
+        setStatusesText((runtimeConfig.execution?.healthcheck?.expected_statuses ?? []).join(', '))
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Nie udało się wczytać konfiguracji runtime'))
   }, [projectId])
@@ -90,7 +96,11 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
     setError('')
     setMessage('')
     try {
-      const payload = effectiveRuntime === 'php' && config.modules.length > 0 ? preparePHPModuleConfig(config) : config
+      const parseList = (value: string) => value.split(',').map((entry) => entry.trim()).filter(Boolean)
+      const statuses = parseList(statusesText).map(Number)
+      if (statuses.some((status) => !Number.isInteger(status) || status < 100 || status > 599)) throw new Error('Kody HTTP muszą być liczbami całkowitymi od 100 do 599.')
+      const configured: RuntimeContainerConfig = { ...config, execution: { ...config.execution, writable_paths: parseList(writableText), build_outputs: outputsText.trim() ? parseList(outputsText) : undefined, healthcheck: { ...config.execution?.healthcheck, expected_statuses: statuses } } }
+      const payload = effectiveRuntime === 'php' && configured.modules.length > 0 ? preparePHPModuleConfig(configured) : configured
       const saved = await request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`, {
         method: 'PUT',
         body: JSON.stringify(payload),
@@ -108,6 +118,11 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
     }
   }
 
+  function updateExecution(patch: Partial<RuntimeExecutionOptions>) {
+    setConfig((current) => ({ ...current, execution: { ...current.execution, ...patch } }))
+  }
+  const execution = config.execution ?? {}
+  const health = execution.healthcheck ?? {}
   const readOnly = user?.role === 'viewer'
 
   return <><section className="runtime-section panel">
@@ -155,6 +170,29 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
         </select>
       </label>
     </div>
+
+    <fieldset disabled={readOnly || busy || config.container_policy === 'custom'}>
+      <legend>Wykonywanie generowanego kontenera</legend>
+      <div className="form-grid">
+        <label>Źródła aplikacji<select value={execution.source_mode || 'live'} onChange={(e) => updateExecution({ source_mode: e.target.value as 'live' | 'versioned' })}><option value="live">Live Code — katalog hosta</option><option value="versioned">Wersjonowane — kod w obrazie</option></select></label>
+        <p className="muted">Live Code pokazuje edycje od razu, lecz rollback kontenera nie cofa plików hosta. Tryb wersjonowany zachowuje kod w obrazie; nie cofa zmian w bazie ani danych aplikacji.</p>
+        <label>UID (0 = domyślny obrazu)<input type="number" min={0} max={2147483647} value={execution.uid ?? 0} onChange={(e) => updateExecution({ uid: Number(e.target.value) })} /></label>
+        <label>GID (0 = domyślny obrazu)<input type="number" min={0} max={2147483647} value={execution.gid ?? 0} onChange={(e) => updateExecution({ gid: Number(e.target.value) })} /></label>
+        <label>Katalogi wymagające zapisu<input value={writableText} onChange={(e) => setWritableText(e.target.value)} placeholder="storage, bootstrap/cache, uploads" /></label>
+        <label>Wyniki budowania chronione przed bind mountem<input value={outputsText} onChange={(e) => setOutputsText(e.target.value)} placeholder="Node: domyślnie dist, build, .next, .nuxt, .output, out" /></label>
+        {effectiveRuntime === 'go' && <label className="checkbox"><input type="checkbox" checked={execution.cgo ?? false} onChange={(e) => updateExecution({ cgo: e.target.checked })} /> Włącz CGO (obraz wykonawczy Debian)</label>}
+      </div>
+      <p className="muted small">UID i GID należy ustawić razem. DevBox sprawdza uprawnienia z wnętrza kontenera; nie zmienia właściciela ani praw całego katalogu hosta.</p>
+    </fieldset>
+    <fieldset disabled={readOnly || busy}>
+      <legend>Gotowość aplikacji</legend>
+      <div className="form-grid">
+        <label>Ścieżka HTTP lub TCP<input value={health.target ?? ''} onChange={(e) => updateExecution({ healthcheck: { ...health, target: e.target.value } })} placeholder="/health lub tcp; puste = ustawienie projektu" /></label>
+        <label>Czas rozruchu (sekundy)<input type="number" min={1} max={600} value={health.startup_seconds || 60} onChange={(e) => updateExecution({ healthcheck: { ...health, startup_seconds: Number(e.target.value) } })} /></label>
+        <label>Timeout pojedynczej próby (sekundy)<input type="number" min={1} max={30} value={health.timeout_seconds || 2} onChange={(e) => updateExecution({ healthcheck: { ...health, timeout_seconds: Number(e.target.value) } })} /></label>
+        <label>Oczekiwane kody HTTP<input value={statusesText} onChange={(e) => setStatusesText(e.target.value)} placeholder="Domyślnie 200–399; np. 200, 204" /></label>
+      </div>
+    </fieldset>
 
     {runtime && <dl className="runtime-summary" aria-label="Podsumowanie wykrytego runtime">
       <div><dt>Wykryty runtime</dt><dd>{runtime.runtime}</dd></div>

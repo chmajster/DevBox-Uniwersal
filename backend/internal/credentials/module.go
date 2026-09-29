@@ -109,7 +109,7 @@ func (r *Repository) Touch(ctx context.Context, id string, when time.Time) error
 
 func (r *Repository) CountUsage(ctx context.Context, id string) (int, error) {
 	var count int
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM project_sources WHERE credential_secret_id=?`, id).Scan(&count)
+	err := r.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM project_sources WHERE credential_secret_id=?) + (SELECT COUNT(*) FROM git_integrations WHERE credential_id=?)`, id, id).Scan(&count)
 	return count, err
 }
 
@@ -234,16 +234,21 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if usage > 0 {
-		return fmt.Errorf("%w: credential is assigned to %d project source(s)", ErrInUse, usage)
+		return fmt.Errorf("%w: credential is assigned to %d project source(s) or integration(s)", ErrInUse, usage)
 	}
 	_, scope, name, err := s.repo.SecretRef(ctx, id)
 	if err != nil {
 		return err
 	}
+	// Delete the reference first. A concurrent integration assignment must not
+	// cause an FK failure after its encrypted token has already been destroyed.
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
 	if s.secrets != nil {
 		_ = s.secrets.Delete(ctx, scope, name)
 	}
-	return s.repo.Delete(ctx, id)
+	return nil
 }
 
 func newID() string {
@@ -364,4 +369,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": message}})
+}
+
+// ReadToken is an internal consumer contract, never an HTTP endpoint.
+func (s *Service) ReadToken(ctx context.Context, id string) ([]byte, error) {
+	kind, scope, name, err := s.repo.SecretRef(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if kind != "token" {
+		return nil, fmt.Errorf("API integration requires a token credential, not an SSH key")
+	}
+	if s.secrets == nil {
+		return nil, fmt.Errorf("SecretStore is not configured")
+	}
+	return s.secrets.Get(ctx, scope, name)
 }

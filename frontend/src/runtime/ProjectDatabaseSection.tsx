@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiURL, request } from '../api/client'
 import type {
   DatabaseBackup,
+  DatabaseUser,
+  NetworkDiagnostic,
   DatabaseBinding,
   DatabaseBindingInput,
   DatabaseMode,
@@ -11,6 +13,7 @@ import type {
   ProjectRuntimeInfo,
   RuntimeContainerConfig,
 } from '../api/types'
+import { DurableJobNotice, readPendingJob, storePendingJob } from '../components/DurableJobNotice'
 import { useAuth } from '../auth/AuthContext'
 import { databaseModeChoice, databaseModeFields, dockerHostDatabaseHost, type DatabaseModeChoice } from './databaseMode'
 import { effectiveRuntimeName, preparePHPModuleConfig, updatePHPModuleSelection } from './phpModuleConfig'
@@ -36,6 +39,7 @@ const emptyDraft: DatabaseBindingInput = {
 function bindingToDraft(binding: DatabaseBinding): DatabaseBindingInput {
   return {
     mode: binding.mode,
+    database_user_id: binding.database_user_id,
     application_service: binding.application_service ?? '',
     compose_service: binding.compose_service ?? '',
     engine: binding.engine ?? 'mysql',
@@ -114,6 +118,11 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const pendingKey = `devbox.database-job.${projectId}`
+  const [jobId, setJobId] = useState(() => readPendingJob(pendingKey))
+  const [databaseUsers, setDatabaseUsers] = useState<DatabaseUser[]>([])
+  const [network, setNetwork] = useState<NetworkDiagnostic | null>(null)
+  const [pmaURL, setPmaURL] = useState('')
 
   const load = useCallback(async () => {
     const [currentBinding, config, runtime] = await Promise.all([
@@ -121,6 +130,10 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`).catch(() => null),
       request<ProjectRuntimeInfo>(`/projects/${encodeURIComponent(projectId)}/runtime`).catch(() => null),
     ])
+    const users = currentBinding.database_id
+      ? (await request<DatabaseUser[]>('/database-users')).filter((item) => item.database_id === currentBinding.database_id)
+      : []
+    setDatabaseUsers(users ?? [])
     setBinding(currentBinding)
     setDraft(bindingToDraft(currentBinding))
     setRuntimeConfig(config)
@@ -259,12 +272,25 @@ export function ProjectDatabaseSection({ projectId }: Props) {
 
   async function openPHPMyAdmin() {
     await perform('phpmyadmin', async () => {
-      let status = await request<PHPMyAdminStatus>('/phpmyadmin/install', { method: 'POST', body: '{}' })
-      if (!status.running) {
-        status = await request<PHPMyAdminStatus>('/phpmyadmin/start', { method: 'POST', body: '{}' })
-      }
-      if (!status.url) throw new Error('phpMyAdmin nie zwrócił adresu aplikacji')
-      window.open(status.url, '_blank', 'noopener,noreferrer')
+      const job = await request<Job>('/phpmyadmin/start', { method: 'POST', body: '{}' })
+      storePendingJob(pendingKey, job.id); setJobId(job.id)
+    })
+  }
+  function finishJob(job: Job) {
+    storePendingJob(pendingKey, '')
+    if (job.status !== 'succeeded') { setError(job.error || job.status); return }
+    if (job.type === 'database.network-test' && job.result) setNetwork(job.result as unknown as NetworkDiagnostic)
+    if (job.type === 'database.phpmyadmin.action') {
+      void request<PHPMyAdminStatus>('/phpmyadmin/status').then((status) => {
+        if (status.running) setPmaURL(status.url)
+      }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Odczyt phpMyAdmin nie powiódł się'))
+    }
+  }
+  async function testNetwork() {
+    await perform('network', async () => {
+      setNetwork(null)
+      const job = await request<Job>(`/projects/${encodeURIComponent(projectId)}/database-binding/test-network`, { method: 'POST', body: '{}' })
+      storePendingJob(pendingKey, job.id); setJobId(job.id)
     })
   }
 
@@ -322,6 +348,10 @@ export function ProjectDatabaseSection({ projectId }: Props) {
 
     {error && <div className="error-banner">{error}</div>}
     {message && <div className="success-banner">{message}</div>}
+    {jobId && <DurableJobNotice jobId={jobId} onComplete={finishJob} />}
+    {pmaURL && <p><a href={pmaURL} target="_blank" rel="noreferrer">Przejdź do phpMyAdmin</a></p>}
+    {network && <div className="validation-box"><strong>Diagnostyka sieciowa z kontenera {network.container}</strong><p>Cel: {network.host}:{network.port}. DNS: {network.dns_resolved ? 'OK' : 'BŁĄD'}. TCP: {network.tcp_reachable ? 'OK' : 'BŁĄD'}. {network.duration_ms} ms.</p><p>{network.message}</p><small>Nie sprawdzano użytkownika, hasła ani grantów SQL.</small></div>}
+
 
     <fieldset disabled={readOnly || busy !== ''} className="database-mode-selector">
       <legend>Tryb bazy danych</legend>
@@ -368,7 +398,12 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         </div>
         <label>Silnik<input readOnly value={binding?.engine || draft.engine || 'mysql'} /></label>
         <label>Nazwa bazy<input readOnly value={binding?.database || 'zostanie utworzona automatycznie'} /></label>
-        <label>Użytkownik<input readOnly value={binding?.username || 'zostanie utworzony automatycznie'} /></label>
+        <label>Użytkownik bazy
+          {managedExists ? <select disabled={readOnly || busy !== ''} value={draft.database_user_id ?? binding?.database_user_id ?? ''} onChange={(e) => setDraft({ ...draft, database_user_id: e.target.value })}>
+            <option value="">Wybierz konto</option>
+            {databaseUsers.map((item) => <option key={item.id} value={item.id}>{item.username}</option>)}
+          </select> : <input readOnly value="zostanie utworzony automatycznie" />}
+        </label>
         <label>Status<input readOnly value={binding?.status || 'jeszcze nie utworzono'} /></label>
         <label>Data utworzenia<input readOnly value={formatDatabaseTimestamp(binding?.created_at)} /></label>
       </>}
@@ -500,6 +535,7 @@ DB_PASSWORD=moje_haslo`}</code></pre>
       {draft.mode === 'managed' && !managedExists
         ? <button type="button" disabled={busy !== ''} onClick={() => void provisionManaged()}>{busy === 'provision' ? 'Tworzenie bazy…' : 'Utwórz bazę i połącz z aplikacją'}</button>
         : <button type="button" disabled={busy !== ''} onClick={() => void saveBinding()}>{busy === 'save' ? 'Zapisywanie…' : 'Zapisz konfigurację bazy'}</button>}
+      {binding && binding.mode !== 'none' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void testNetwork()}>{busy === 'network' ? 'Sprawdzanie DNS / TCP…' : 'Testuj sieć bez poświadczeń'}</button>}
       {binding?.mode !== 'none' && !binding?.host_access_only && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void testConnection()}>{busy === 'test' ? 'Testowanie…' : 'Testuj połączenie'}</button>}
       {binding?.mode === 'managed' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void openPHPMyAdmin()}>Otwórz phpMyAdmin</button>}
       {binding?.mode === 'managed' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void rotatePassword()}>Zmień hasło</button>}

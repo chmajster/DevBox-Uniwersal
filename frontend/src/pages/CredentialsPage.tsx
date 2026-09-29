@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { GitIntegrationBrowser } from '../git/GitIntegrationBrowser'
 import { request } from '../api/client'
 import type { CentralCredential } from '../api/types'
 
@@ -54,13 +55,13 @@ export function CredentialsPage() {
   }
 
   return <>
-    <div className="page-heading"><div><h1>Poświadczenia</h1><p className="muted">Centralny magazyn tokenów GitHub i kluczy SSH. Sekret jest szyfrowany i nie jest zwracany przez API.</p></div></div>
+    <div className="page-heading"><div><h1>Poświadczenia</h1><p className="muted">Centralny magazyn tokenów GitHub/GitLab i kluczy SSH. Sekret jest szyfrowany i nie jest zwracany przez API.</p></div></div>
     {error&&<div className="error-banner">{error}</div>}
     {message&&<div className="success-banner">{message}</div>}
 
     <form className="panel form-grid credential-create-form" onSubmit={create}>
       <label>Nazwa<input value={name} onChange={e=>setName(e.target.value)} placeholder="GitHub - konto główne" required/></label>
-      <label>Typ<select value={kind} onChange={e=>setKind(e.target.value as 'token'|'ssh_key')}><option value="token">GitHub token</option><option value="ssh_key">SSH key</option></select></label>
+      <label>Typ<select value={kind} onChange={e=>setKind(e.target.value as 'token'|'ssh_key')}><option value="token">Token API GitHub / GitLab</option><option value="ssh_key">SSH key</option></select></label>
       <label className="span-2">Sekret<textarea className="secret-field" value={secret} onChange={e=>setSecret(e.target.value)} placeholder={kind==='token'?'github_pat_…':'-----BEGIN OPENSSH PRIVATE KEY-----'} required/></label>
       <div className="form-actions"><button type="submit" disabled={busy}>{busy?'Zapisywanie…':'Dodaj poświadczenie'}</button></div>
     </form>
@@ -71,7 +72,7 @@ export function CredentialsPage() {
         <tbody>
           {items.map(item=><tr key={item.id}>
             <td><strong>{item.name}</strong></td>
-            <td>{item.kind==='token'?'GitHub token':'SSH key'}</td>
+            <td>{item.kind==='token'?'Token API GitHub / GitLab':'SSH key'}</td>
             <td><span className="badge badge-ok">zaszyfrowany</span></td>
             <td>{new Date(item.updated_at).toLocaleString()}</td>
             <td className="actions">
@@ -83,6 +84,8 @@ export function CredentialsPage() {
         </tbody>
       </table>
     </div>
+
+    <GitIntegrationBrowser credentials={items} manage />
 
     {editing&&<form className="panel form-grid" onSubmit={rotate}>
       <div className="span-2"><h2>Zmień sekret: {editing.name}</h2><p className="muted">Obecna wartość nie jest wyświetlana. Podaj nową, aby ją zastąpić.</p></div>

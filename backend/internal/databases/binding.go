@@ -16,6 +16,7 @@ const (
 )
 
 type DatabaseBinding struct {
+	DatabaseUserID     *string      `json:"database_user_id,omitempty"`
 	ID                 string       `json:"id,omitempty"`
 	ProjectID          string       `json:"project_id"`
 	Mode               DatabaseMode `json:"mode"`
@@ -38,6 +39,7 @@ type DatabaseBinding struct {
 }
 
 type DatabaseBindingInput struct {
+	DatabaseUserID     string       `json:"database_user_id,omitempty"`
 	Mode               DatabaseMode `json:"mode"`
 	ApplicationService string       `json:"application_service,omitempty"`
 	ComposeService     string       `json:"compose_service,omitempty"`

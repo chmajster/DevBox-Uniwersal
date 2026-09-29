@@ -46,6 +46,9 @@ type DeploymentSpec struct {
 	Labels               map[string]string
 	Fingerprint          string
 	ReadOnly             bool
+	Healthcheck          Healthcheck
+	User                 string
+	WritablePaths        []string
 }
 
 type moduleDef struct {

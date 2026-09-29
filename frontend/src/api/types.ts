@@ -13,6 +13,10 @@ export interface CentralCredential {
 }
 
 export interface UpdateStatus {
+  mode?: 'signed' | 'git'
+  ready?: boolean
+  trust_configured?: boolean
+  release_tag?: string
   current_version: string
   latest_version?: string
   latest_commit_at?: string
@@ -154,7 +158,18 @@ export interface RuntimeModuleOption {
   versioned: boolean
 }
 
+export interface RuntimeExecutionOptions {
+  source_mode?: 'live' | 'versioned' | ''
+  uid?: number
+  gid?: number
+  cgo?: boolean
+  build_outputs?: string[]
+  writable_paths?: string[]
+  healthcheck?: { target?: string; startup_seconds?: number; timeout_seconds?: number; expected_statuses?: number[] }
+}
+
 export interface RuntimeContainerConfig {
+  execution?: RuntimeExecutionOptions
   project_id: string
   runtime: string
   runtime_version: string
@@ -244,6 +259,7 @@ export interface ComposeProcess {
 export type DatabaseMode = 'none' | 'managed' | 'compose' | 'external'
 
 export interface DatabaseBinding {
+  database_user_id?: string
   id?: string
   project_id: string
   mode: DatabaseMode
@@ -265,6 +281,7 @@ export interface DatabaseBinding {
 }
 
 export interface DatabaseBindingInput {
+  database_user_id?: string
   mode: DatabaseMode
   application_service?: string
   compose_service?: string
@@ -343,14 +360,39 @@ export interface MySQLStatus {
 }
 
 export interface PHPMyAdminStatus {
+  host_database_access?: boolean
+  host_database_reachable?: boolean
+  host_database_host?: string
+  host_database_port?: number
   installed: boolean
   running: boolean
   state: string
   url: string
-  host_database_access: boolean
-  host_database_reachable: boolean
-  host_database_host?: string
-  host_database_port?: number
+}
+
+export interface NetworkDiagnostic {
+  container: string
+  host: string
+  port: number
+  dns_resolved: boolean
+  addresses: string[]
+  tcp_reachable: boolean
+  duration_ms: number
+  message?: string
+}
+export interface MySQLPluginStatus {
+  server_path?: string
+  container_host?: string
+  client_path?: string
+  installed: boolean
+  running: boolean
+  engine?: string
+  path?: string
+  version?: string
+  host: string
+  port: number
+  installable: boolean
+  message?: string
 }
 
 export interface DockerComposePluginStatus {
@@ -366,20 +408,6 @@ export interface PHPFPMStatus {
   installed: boolean
   path?: string
   version?: string
-  installable: boolean
-  message?: string
-}
-
-export interface MySQLPluginStatus {
-  installed: boolean
-  running: boolean
-  engine?: 'mysql' | 'mariadb'
-  client_path?: string
-  server_path?: string
-  version?: string
-  host?: string
-  port?: number
-  container_host?: string
   installable: boolean
   message?: string
 }

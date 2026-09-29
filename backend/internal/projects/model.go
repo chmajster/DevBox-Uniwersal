@@ -1,6 +1,9 @@
 package projects
 
-import "time"
+import (
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/containerspec"
+	"time"
+)
 
 const (
 	SourceGit   = "git"
@@ -28,14 +31,15 @@ type RuntimeModule struct {
 }
 
 type RuntimeContainerConfig struct {
-	ProjectID       string          `json:"project_id"`
-	Runtime         string          `json:"runtime"`
-	RuntimeVersion  string          `json:"runtime_version"`
-	ContainerPolicy string          `json:"container_policy"`
-	Modules         []RuntimeModule `json:"modules"`
-	ContainerName   string          `json:"container_name,omitempty"`
-	ImageTag        string          `json:"image_tag,omitempty"`
-	Fingerprint     string          `json:"build_fingerprint,omitempty"`
+	Execution       containerspec.ExecutionOptions `json:"execution"`
+	ProjectID       string                         `json:"project_id"`
+	Runtime         string                         `json:"runtime"`
+	RuntimeVersion  string                         `json:"runtime_version"`
+	ContainerPolicy string                         `json:"container_policy"`
+	Modules         []RuntimeModule                `json:"modules"`
+	ContainerName   string                         `json:"container_name,omitempty"`
+	ImageTag        string                         `json:"image_tag,omitempty"`
+	Fingerprint     string                         `json:"build_fingerprint,omitempty"`
 }
 
 type RuntimeContainerState struct {

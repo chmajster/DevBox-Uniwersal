@@ -2,6 +2,13 @@
 
 DevBox Universal is an integrated local development control plane.
 
+## Audit implementation (2026-09-29)
+
+- B01–B06, F01–F09 and D01–D05: managed runtime command/readiness contracts, versioned-source rollback, durable plugin/image/TLS jobs, explicit database accounts, network-only diagnostics, bounded worker pool and GitHub/GitLab profiles.
+- Signed source verification, encrypted pre-migration control-plane snapshots, exact-version/SQLite checks and rollback are implemented. Signing identity and release publication are operator prerequisites.
+- Local certificate issuance, renewal, verification and Nginx TLS termination are implemented. Public CA trust on clients remains explicit; public-domain ACME is not included.
+- Regression/race tests and a real Docker build/mount/readiness/rollback workflow are included. See `docs/audit-completion.md` for the complete matrix and test boundaries.
+
 ## Core
 
 - Admin-only control-plane user management supports account creation, Admin/Operator/Viewer role changes, enable/disable, password change/generation, per-user session revocation and account deletion with last-admin/self-protection safeguards.
@@ -95,13 +102,20 @@ DevBox Universal is an integrated local development control plane.
 - Linux installer with install/status/repair/update/uninstall/help; clean installations default to Docker-managed MySQL and install only the host client, while existing pre-binding host-MySQL installations remain legacy unless explicitly migrated.
 - `devbox status`, `devbox doctor` and allowlisted privileged helper.
 
+## Audit completion
+
+- B01–B06, F01–F09 and D01–D05 are implemented with backend/frontend contracts, additive migrations and regression tests. Exact guarantees, test boundaries and configuration requirements are in `docs/audit-completion.md`.
+- Runtime images and GitHub/GitLab integrations use actual provider APIs; package/image/TLS operations use persistent jobs.
+- Signed source release verification and encrypted control-plane rollback are available but require the signing key/release prerequisites.
+- Local HTTPS issuance/renewal and real TLS verification are available; client trust is explicit.
+
 ## Current hardening work
 
 - Login rate limiting and session administration.
 - Secret-key rotation/versioning.
-- Signed release artifacts and rollback-capable updater.
+- Provision the operator signing identity and publish signed release tags.
 - Full browser E2E coverage.
-- Automatic local HTTPS.
+- Public-domain ACME support and comprehensive browser trust/host integration tests.
 
 ## Configurable project port publishing
 

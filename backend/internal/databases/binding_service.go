@@ -16,6 +16,8 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 )
 
+var ErrDatabaseUserInUse = errors.New("database user is assigned to an application; change or remove its binding before deleting the user")
+
 var databaseServiceName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 
 type endpointDatabaseEngine interface {
@@ -61,7 +63,9 @@ func (s *Service) GetDatabaseBinding(ctx context.Context, projectID string) (Dat
 }
 
 func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, input DatabaseBindingInput, actor, remote *string) (DatabaseBinding, error) {
-	if s.secrets == nil {
+	s.bindingMu.Lock()
+	defer s.bindingMu.Unlock()
+	if s.secrets == nil && input.Mode != DatabaseModeNone && !input.HostAccessOnly {
 		return DatabaseBinding{}, ErrSecretsUnavailable
 	}
 	if _, err := s.repo.ProjectByID(ctx, projectID); err != nil {
@@ -103,7 +107,7 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 	}
 	if input.Mode == DatabaseModeNone {
 		if err == nil {
-			if existing.SecretRef != "" {
+			if existing.SecretRef != "" && s.secrets != nil {
 				_ = s.secrets.Delete(ctx, bindingSecretScope(projectID), existing.SecretRef)
 			}
 			if err := s.repo.DeleteDatabaseBinding(ctx, projectID); err != nil {
@@ -144,13 +148,25 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 			}
 			return DatabaseBinding{}, err
 		}
-		users, err := s.repo.UsersByDatabase(ctx, database.ID)
-		if err != nil {
-			return DatabaseBinding{}, err
+		selected := strings.TrimSpace(input.DatabaseUserID)
+		if selected == "" && existing.DatabaseUserID != nil && existing.DatabaseID != nil && *existing.DatabaseID == database.ID {
+			selected = *existing.DatabaseUserID
 		}
-		if len(users) == 0 || users[0].SecretRef == "" {
-			return DatabaseBinding{}, errors.New("database credentials are unavailable")
+		if selected == "" {
+			users, err := s.repo.UsersByDatabase(ctx, database.ID)
+			if err != nil {
+				return DatabaseBinding{}, err
+			}
+			if len(users) != 1 {
+				return DatabaseBinding{}, errors.New("invalid database user: select the application account explicitly")
+			}
+			selected = users[0].ID
 		}
+		user, err := s.repo.UserByID(ctx, selected)
+		if err != nil || user.DatabaseID != database.ID || user.SecretRef == "" {
+			return DatabaseBinding{}, errors.New("invalid database user: account does not belong to the selected database or has no credentials")
+		}
+		item.DatabaseUserID = &user.ID
 		item.DatabaseID = &database.ID
 		item.Engine = database.Engine
 		item.Port = 3306
@@ -197,7 +213,7 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 		}
 		return DatabaseBinding{}, err
 	}
-	if err == nil && existing.SecretRef != "" && existing.SecretRef != item.SecretRef {
+	if err == nil && s.secrets != nil && existing.SecretRef != "" && existing.SecretRef != item.SecretRef {
 		_ = s.secrets.Delete(ctx, bindingSecretScope(projectID), existing.SecretRef)
 	}
 	s.recordAudit(ctx, actor, "database_binding.update", "project", &projectID, map[string]any{"mode": item.Mode, "host_access_only": item.HostAccessOnly}, remote)
@@ -212,14 +228,11 @@ func (s *Service) RotateProjectDatabasePassword(ctx context.Context, projectID s
 	if binding.Mode != DatabaseModeManaged || binding.DatabaseID == nil {
 		return errors.New("password rotation is only supported for managed project databases")
 	}
-	users, err := s.repo.UsersByDatabase(ctx, *binding.DatabaseID)
+	user, err := s.boundDatabaseUser(ctx, binding)
 	if err != nil {
 		return err
 	}
-	if len(users) == 0 {
-		return errors.New("database credentials are unavailable")
-	}
-	if _, err := s.ChangeUserPassword(ctx, users[0].ID, nil, actor, remote); err != nil {
+	if _, err := s.ChangeUserPassword(ctx, user.ID, nil, actor, remote); err != nil {
 		return err
 	}
 	return nil
@@ -260,12 +273,9 @@ func (s *Service) ResolveApplicationConnection(ctx context.Context, projectID st
 		if err != nil {
 			return providers.DatabaseConnection{}, errors.New("database binding is configured but no database exists")
 		}
-		users, err := s.repo.UsersByDatabase(ctx, database.ID)
+		user, err := s.boundDatabaseUser(ctx, binding)
 		if err != nil {
 			return providers.DatabaseConnection{}, err
-		}
-		if len(users) == 0 || users[0].SecretRef == "" {
-			return providers.DatabaseConnection{}, errors.New("database credentials are unavailable")
 		}
 		engine, ok := s.engine.(endpointDatabaseEngine)
 		if !ok {
@@ -277,7 +287,7 @@ func (s *Service) ResolveApplicationConnection(ctx context.Context, projectID st
 		}
 		return providers.DatabaseConnection{
 			Engine: database.Engine, Host: endpoint.Host, Port: endpoint.Port, Database: database.Name,
-			Username: users[0].Username, SecretRef: users[0].SecretRef, Mode: DatabaseModeManaged,
+			Username: user.Username, SecretRef: user.SecretRef, Mode: DatabaseModeManaged,
 		}, nil
 	case DatabaseModeCompose:
 		if binding.ComposeService == "" {
@@ -349,7 +359,7 @@ func (s *Service) TestApplicationConnection(ctx context.Context, projectID strin
 		return errors.New("project does not use a database")
 	}
 	if runtime.HostAccessOnly {
-		return errors.New("host database access only configures container-to-host networking; database credentials are not configured")
+		return errors.New("invalid operation: credential-free host access uses the asynchronous test-network operation, not an SQL login test")
 	}
 	defer clear(runtime.Secret)
 	if runtime.Connection.Mode == DatabaseModeCompose {
@@ -467,10 +477,9 @@ func (s *Service) decorateBinding(ctx context.Context, item DatabaseBinding) (Da
 			item.Database = database.Name
 			item.Engine = database.Engine
 			item.Status = database.Status
-			users, _ := s.repo.UsersByDatabase(ctx, database.ID)
-			if len(users) > 0 {
-				item.Username = users[0].Username
-				item.HasSecret = users[0].SecretRef != ""
+			if user, err := s.boundDatabaseUser(ctx, item); err == nil {
+				item.Username = user.Username
+				item.HasSecret = user.SecretRef != ""
 			}
 		}
 	}
@@ -478,6 +487,9 @@ func (s *Service) decorateBinding(ctx context.Context, item DatabaseBinding) (Da
 }
 
 func validateBindingInput(input DatabaseBindingInput) error {
+	if input.Mode != DatabaseModeManaged && input.DatabaseUserID != "" {
+		return errors.New("invalid database_user_id outside managed mode")
+	}
 	switch input.Mode {
 	case DatabaseModeNone, DatabaseModeManaged, DatabaseModeCompose, DatabaseModeExternal:
 	default:
@@ -582,4 +594,15 @@ func databaseEnvironment(connection providers.DatabaseConnection, password []byt
 		"DATABASE_HOST": connection.Host, "DATABASE_PORT": port, "DATABASE_NAME": connection.Database,
 		"DATABASE_USER": connection.Username, "DATABASE_PASSWORD": secret,
 	}
+}
+
+func (s *Service) boundDatabaseUser(ctx context.Context, b DatabaseBinding) (DatabaseUser, error) {
+	if b.DatabaseID == nil || b.DatabaseUserID == nil || *b.DatabaseUserID == "" {
+		return DatabaseUser{}, errors.New("database user not selected for this application")
+	}
+	user, err := s.repo.UserByID(ctx, *b.DatabaseUserID)
+	if err != nil || user.DatabaseID != *b.DatabaseID || user.SecretRef == "" {
+		return DatabaseUser{}, errors.New("selected database credentials are unavailable")
+	}
+	return user, nil
 }

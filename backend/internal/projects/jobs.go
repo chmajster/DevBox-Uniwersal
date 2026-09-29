@@ -60,7 +60,11 @@ func (h *GitJobHandler) Run(ctx context.Context, job domain.Job) (map[string]any
 			return nil, errors.New("clone is only valid for Git projects")
 		}
 		if h.git.IsRepository(ctx, p.LocalPath) {
-			return nil, errors.New("destination already contains a Git repository")
+			if err := h.git.VerifyClone(ctx, p.LocalPath, p.RepositoryURL, p.Branch); err != nil {
+				return nil, err
+			}
+			log("git.clone.reconciled")
+			break
 		}
 		if err := os.MkdirAll(filepath.Dir(p.LocalPath), 0o750); err != nil {
 			return nil, err
@@ -192,6 +196,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		portPlan               *deploymentPortPlan
 		restoreComposePorts    func() error
 		restorePreviousCompose bool
+		runtimeActivated       bool
 		composeCommitted       bool
 		composeStarted         bool
 		composeDir             string
@@ -201,6 +206,9 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		projectEnvironment     = runtimes.ResolvedEnvironment{Plain: map[string]string{}, Sensitive: map[string]string{}}
 	)
 	defer func() {
+		if recover() != nil {
+			runErr = errors.New("deployment handler panicked; inspect deployment logs and runtime state")
+		}
 		if runErr == nil {
 			return
 		}
@@ -238,9 +246,13 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			_ = h.integrations.Ports.Release(cleanupCtx, legacyAllocatedPort)
 		}
 		finished := time.Now().UTC()
-		_ = h.repo.FinishDeployment(context.Background(), deploymentID, DeploymentFailed, currentStage, commitAfter, runErr.Error(), finished, finished.Sub(started))
-		_ = h.repo.UpdateStatus(context.Background(), p.ID, "failed")
-		_ = h.logger.Log(context.Background(), job.ID, "error", "deployment.failed", map[string]any{"stage": currentStage, "error": runErr.Error()})
+		_ = h.repo.FinishDeployment(cleanupCtx, deploymentID, DeploymentFailed, currentStage, commitAfter, runErr.Error(), finished, finished.Sub(started))
+		status := "failed"
+		if runtimeActivated {
+			status = "running"
+		}
+		_ = h.repo.UpdateStatus(cleanupCtx, p.ID, status)
+		_ = h.logger.Log(cleanupCtx, job.ID, "error", "deployment.failed", map[string]any{"stage": currentStage, "error": runErr.Error()})
 	}()
 
 	setStage := func(next string) error {
@@ -485,6 +497,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			if err := publisher.CheckPublishedHTTP(ctx, portPlan.state.HTTP.HostPort); err != nil {
 				return nil, fmt.Errorf("configured Compose HTTP port: %w", err)
 			}
+			runtimeActivated = true
 			composeCommitted = true
 			if err := portPlan.commit(); err != nil {
 				return nil, err
@@ -493,6 +506,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			h.logPortPlan(ctx, job.ID, "published", portPlan)
 		}
 		composeCommitted = true
+		runtimeActivated = true
 		var routeWarning string
 		if h.integrations.Routes != nil {
 			if targetPort == 0 {
@@ -600,6 +614,10 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	if err != nil {
 		return nil, err
 	}
+	spec, err = containerspec.WithExecution(spec, config.Execution, p.BuildCommand, p.StartCommand, p.Healthcheck)
+	if err != nil {
+		return nil, err
+	}
 	portPlan, err = h.preparePortPlan(ctx, p, network, spec.ContainerPort)
 	if err != nil {
 		return nil, err
@@ -638,15 +656,18 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	if err := setStage(DeploymentStarting); err != nil {
 		return nil, err
 	}
-	if err := h.replaceWithPortPlan(ctx, spec, portPlan); err != nil {
+	if err := h.replaceWithPortPlan(providers.WithDeploymentObserver(ctx, setStage), spec, portPlan); err != nil {
 		return nil, fmt.Errorf("replace managed container: %w", err)
 	}
+	runtimeActivated = true
 	if err := portPlan.commit(); err != nil {
 		return nil, err
 	}
 	h.logPortPlan(ctx, job.ID, "published", portPlan)
-	if err := setStage(DeploymentHealthcheck); err != nil {
-		return nil, err
+	if currentStage != DeploymentHealthcheck {
+		if err := setStage(DeploymentHealthcheck); err != nil {
+			return nil, err
+		}
 	}
 	if err := h.repo.SaveRuntimeContainerState(ctx, p.ID, RuntimeContainerState{
 		ContainerName: spec.ContainerName,
@@ -928,3 +949,24 @@ func containsString(values []string, target string) bool {
 
 var _ jobpkg.Handler = (*GitJobHandler)(nil)
 var _ jobpkg.Handler = (*DeploymentHandler)(nil)
+
+func (h *GitJobHandler) RecoverInterrupted(ctx context.Context, j domain.Job) (bool, error) {
+	return h.typeName == JobClone || h.typeName == JobFetch, nil
+}
+func (h *DeploymentHandler) RecoverInterrupted(ctx context.Context, j domain.Job) (bool, error) {
+	id, err := payloadString(j.Payload, "deployment_id")
+	if err != nil {
+		return false, err
+	}
+	project, err := payloadString(j.Payload, "project_id")
+	if err != nil {
+		return false, err
+	}
+	err = h.repo.FinishDeployment(ctx, id, DeploymentFailed, "INTERRUPTED", "", "Service restarted during deployment; inspect runtime and retry explicitly", time.Now().UTC(), 0)
+	if err != nil {
+		return false, err
+	}
+	// A stopped orchestrator cannot infer whether an external process completed.
+	// Auto-start reconciliation, when enabled, performs a fresh deployment.
+	return false, h.repo.UpdateStatus(ctx, project, "unknown")
+}

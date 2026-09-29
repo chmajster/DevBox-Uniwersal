@@ -1,5 +1,12 @@
 # Changelog
 
+## Audit hardening — 2026-09-29
+
+- Implemented B01–B06, F01–F09 and D01–D05: safe managed replacement, command/health contracts, immutable-source mode, durable plugin jobs, resource locking, explicit DB accounts, credential-free diagnostics, runtime image catalog, GitHub/GitLab integration, signed-update rollback and local TLS lifecycle.
+- Added migrations 011–013, regression/race tests and real Docker deployment CI.
+- Signed updates require an operator-provisioned trust key and signed release. Local HTTPS requires explicit client trust in the exported public CA. See `docs/audit-completion.md` for exact scope and operational prerequisites.
+
+
 ## Unreleased
 
 ### Project detail navigation

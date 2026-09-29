@@ -109,20 +109,7 @@ func (s *Service) InstallPHPExtensions(ctx context.Context, ids []string) ([]PHP
 }
 
 func (s *Service) installPackage(ctx context.Context, helperKey string) error {
-	sudo := s.sudoBinary
-	if sudo == "" {
-		sudo = "sudo"
-	}
-	cmd := exec.CommandContext(ctx, sudo, s.helperBinary, "install-package", helperKey)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		message := strings.TrimSpace(string(out))
-		if message == "" {
-			message = err.Error()
-		}
-		return errors.New(message)
-	}
-	return nil
+	return s.runPackageInstall(ctx, helperKey)
 }
 
 func loadedPHPModules(ctx context.Context) (map[string]bool, error) {

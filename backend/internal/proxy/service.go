@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 )
 
 type Service struct {
+	mu            sync.Mutex
 	repo          *SQLiteRepository
 	nginx         *NginxProvider
 	hosts         HostsManager
@@ -27,6 +29,8 @@ func (s *Service) ListDomains(ctx context.Context) ([]Domain, error) {
 }
 
 func (s *Service) CreateDomain(ctx context.Context, projectID, hostname string, targetPort int) (DomainMutationResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if projectID == "" {
 		return DomainMutationResult{}, fmt.Errorf("%w: project_id is required", ErrInvalidInput)
 	}
@@ -75,6 +79,8 @@ func (s *Service) CreateDomain(ctx context.Context, projectID, hostname string, 
 }
 
 func (s *Service) UpdateDomain(ctx context.Context, id string, hostname *string, targetPort *int) (DomainMutationResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	current, err := s.repo.DomainByID(ctx, id)
 	if err != nil {
 		return DomainMutationResult{}, err
@@ -93,6 +99,9 @@ func (s *Service) UpdateDomain(ctx context.Context, id string, hostname *string,
 		}
 		nextPort = *targetPort
 	}
+	if current.TLSEnabled && nextHostname != current.Hostname {
+		return DomainMutationResult{}, fmt.Errorf("disable HTTPS before renaming its certificate hostname")
+	}
 	if nextHostname != current.Hostname {
 		if existing, lookupErr := s.repo.DomainByHostname(ctx, nextHostname); lookupErr == nil && existing.ID != id {
 			return DomainMutationResult{}, fmt.Errorf("%w: hostname already exists", ErrConflict)
@@ -101,8 +110,9 @@ func (s *Service) UpdateDomain(ctx context.Context, id string, hostname *string,
 		}
 	}
 
-	oldRoute := routeFor(current.Hostname, current.TargetPort)
+	oldRoute := domainRoute(current)
 	newRoute := routeFor(nextHostname, nextPort)
+	newRoute.TLS = current.TLSEnabled
 	if err := s.nginx.UpdateSite(ctx, newRoute); err != nil {
 		return DomainMutationResult{}, err
 	}
@@ -145,6 +155,8 @@ func (s *Service) UpdateDomain(ctx context.Context, id string, hostname *string,
 }
 
 func (s *Service) DeleteDomain(ctx context.Context, id string) (Domain, HostChange, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	current, err := s.repo.DomainByID(ctx, id)
 	if err != nil {
 		return Domain{}, HostChange{}, err
@@ -153,7 +165,7 @@ func (s *Service) DeleteDomain(ctx context.Context, id string) (Domain, HostChan
 		return Domain{}, HostChange{}, err
 	}
 	if err := s.repo.DeleteDomain(ctx, id); err != nil {
-		_ = s.nginx.Apply(ctx, routeFor(current.Hostname, current.TargetPort))
+		_ = s.nginx.Apply(ctx, domainRoute(current))
 		return Domain{}, HostChange{}, err
 	}
 	hostsResult, err := s.hosts.Remove(ctx, current.Hostname)
@@ -179,6 +191,9 @@ func (s *Service) EnsureProjectRoute(ctx context.Context, projectID, hostname st
 			continue
 		}
 		nextHostname := hostname
+		if current.TLSEnabled {
+			nextHostname = current.Hostname
+		}
 		nextPort := targetPort
 		_, err := s.UpdateDomain(ctx, current.ID, &nextHostname, &nextPort)
 		return err

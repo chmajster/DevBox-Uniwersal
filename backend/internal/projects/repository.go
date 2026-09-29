@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -182,6 +183,13 @@ func (r *Repository) RuntimeContainerConfig(ctx context.Context, projectID strin
 		ContainerPolicy: p.ContainerPolicy,
 		Modules:         []RuntimeModule{},
 	}
+	var options string
+	if err := r.db.QueryRowContext(ctx, `SELECT runtime_options_json FROM projects WHERE id=?`, projectID).Scan(&options); err != nil {
+		return RuntimeContainerConfig{}, err
+	}
+	if err := json.Unmarshal([]byte(options), &config.Execution); err != nil {
+		return RuntimeContainerConfig{}, fmt.Errorf("decode runtime execution options: %w", err)
+	}
 	rows, err := r.db.QueryContext(ctx, `SELECT module_name,version_constraint FROM project_runtime_modules WHERE project_id=? AND enabled=1 ORDER BY module_name`, projectID)
 	if err != nil {
 		return RuntimeContainerConfig{}, fmt.Errorf("load runtime modules: %w", err)
@@ -217,8 +225,12 @@ func (r *Repository) SaveRuntimeContainerConfig(ctx context.Context, projectID s
 	}
 	defer tx.Rollback()
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	result, err := tx.ExecContext(ctx, `UPDATE projects SET runtime=?,runtime_version=?,container_policy=?,updated_at=? WHERE id=?`,
-		config.Runtime, config.RuntimeVersion, config.ContainerPolicy, now, projectID)
+	options, err := json.Marshal(config.Execution)
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE projects SET runtime=?,runtime_version=?,container_policy=?,runtime_options_json=?,updated_at=? WHERE id=?`,
+		config.Runtime, config.RuntimeVersion, config.ContainerPolicy, string(options), now, projectID)
 	if err != nil {
 		return fmt.Errorf("update runtime container config: %w", err)
 	}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
@@ -32,6 +33,7 @@ type databaseEngine interface {
 }
 
 type Service struct {
+	bindingMu  sync.Mutex
 	repo       *Repository
 	engine     databaseEngine
 	secrets    secrets.SecretStore
@@ -78,6 +80,12 @@ func NewService(repo *Repository, engine databaseEngine, secretStore secrets.Sec
 		return nil, err
 	}
 	if err := runner.Register(NewRestoreJobHandler(repo, engine, backupDir)); err != nil {
+		return nil, err
+	}
+	if err := runner.Register(&NetworkTestHandler{service: service}); err != nil {
+		return nil, err
+	}
+	if err := runner.Register(&PHPMyAdminJobHandler{service: service}); err != nil {
 		return nil, err
 	}
 	if service.managed != nil {
@@ -157,6 +165,8 @@ func (s *Service) CreateDatabase(ctx context.Context, name, engine, charset stri
 }
 
 func (s *Service) DeleteDatabase(ctx context.Context, id string, actor *string, remote *string) error {
+	s.bindingMu.Lock()
+	defer s.bindingMu.Unlock()
 	item, err := s.repo.DatabaseByID(ctx, id)
 	if err != nil {
 		return err
@@ -297,7 +307,7 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	if err := s.repo.UpdateDatabaseStatus(ctx, database.ID, "ready"); err != nil {
 		return ProvisionResult{}, err
 	}
-	bindingInput := DatabaseBindingInput{Mode: DatabaseModeManaged, Engine: engine, Port: 3306}
+	bindingInput := DatabaseBindingInput{Mode: DatabaseModeManaged, Engine: engine, Port: 3306, DatabaseUserID: user.ID}
 	if len(applicationService) > 0 {
 		bindingInput.ApplicationService = strings.TrimSpace(applicationService[0])
 	}
@@ -396,6 +406,15 @@ func (s *Service) DatabaseUserConnection(ctx context.Context, userID, password s
 }
 
 func (s *Service) DeleteUser(ctx context.Context, id string, actor *string, remote *string) error {
+	s.bindingMu.Lock()
+	defer s.bindingMu.Unlock()
+	inUse, err := s.repo.DatabaseUserInUse(ctx, id)
+	if err != nil {
+		return err
+	}
+	if inUse {
+		return ErrDatabaseUserInUse
+	}
 	user, err := s.repo.UserByID(ctx, id)
 	if err != nil {
 		return err

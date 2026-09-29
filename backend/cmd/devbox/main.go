@@ -25,6 +25,7 @@ import (
 	controldb "github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/databases"
 	dockermodule "github.com/chmajster/DevBox-Uniwersal/backend/internal/docker"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/gitintegrations"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/monitoring"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/operations"
@@ -32,6 +33,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/projects"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/proxy"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimeimages"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/scriptapps"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
@@ -52,6 +54,12 @@ func run(args []string) int {
 	switch command {
 	case "serve":
 		if err := serve(); err != nil {
+			fmt.Fprintln(os.Stderr, "[FAIL]", err)
+			return 1
+		}
+		return 0
+	case "verify-update", "update-snapshot", "update-restore", "update-health", "update-check-idle":
+		if err := updater.Maintenance(args); err != nil {
 			fmt.Fprintln(os.Stderr, "[FAIL]", err)
 			return 1
 		}
@@ -106,7 +114,15 @@ func serve() error {
 	users := repository.NewSQLiteUsers(db)
 	sessions := repository.NewSQLiteSessions(db)
 	jobsRepo := repository.NewSQLiteJobs(db)
-	jobRunner := jobs.NewRunner(jobsRepo)
+	maintenancePath := filepath.Join(filepath.Dir(cfg.DatabasePath), "update-maintenance")
+	maintenanceCheck := func() error {
+		_, err := os.Stat(maintenancePath)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return errors.New("control-plane update in progress; new jobs are temporarily paused")
+	}
+	jobRunner := jobs.NewRunner(jobsRepo, jobs.WithWorkers(cfg.JobWorkers), jobs.WithAdmissionCheck(maintenanceCheck))
 	auditRepo := repository.NewSQLiteAudit(db)
 	authService := auth.NewService(users, sessions, cfg.SessionTTL)
 	if cfg.AuthDisabled && cfg.BootstrapAdminUsername == "" {
@@ -117,6 +133,16 @@ func serve() error {
 		os.Exit(1)
 	}
 	auditService := audit.NewService(auditRepo)
+	pluginOptions := []plugins.ServiceOption{plugins.WithJobRunner(jobRunner)}
+	if cfg.ManagedMySQLEnabled {
+		pluginOptions = append(pluginOptions, plugins.WithReservedHostPort(cfg.MySQLPort, fmt.Sprintf("zarządzany MySQL DevBox (%s)", cfg.ManagedMySQLContainer)))
+	}
+	pluginService := plugins.NewService(cfg.NginxHelperBinary, cfg.SudoBinary, pluginOptions...)
+	for _, handler := range pluginService.Handlers() {
+		if err := jobRunner.Register(handler); err != nil {
+			return fmt.Errorf("register host MySQL handler: %w", err)
+		}
+	}
 
 	backupRepo := backups.NewRepository(db)
 	backupManager := backups.NewManager(db, backups.ManagerOptions{
@@ -150,6 +176,7 @@ func serve() error {
 	credentialRepo := credentials.NewRepository(db)
 	credentialService := credentials.NewService(credentialRepo, secretStore)
 	credentialModule := credentials.NewModule(credentialService, auditService)
+	gitIntegrationModule := gitintegrations.NewModule(gitintegrations.NewService(db, credentialService), auditService)
 
 	runtimeRegistry := runtimes.NewDefaultRegistry()
 	runtimeProjectResolver := runtimes.NewSQLiteProjectResolver(db)
@@ -163,6 +190,12 @@ func serve() error {
 	dockerProvider := dockermodule.NewCLIProvider()
 	dockerService := dockermodule.NewService(dockerProvider, auditService, cfg.ProjectsRoot)
 	dockerModule := dockermodule.NewModule(dockerService)
+	runtimeImageService, err := runtimeimages.NewService(db, dockerProvider, jobRunner, auditService)
+	if err != nil {
+		logger.Error("runtime image service initialization failed", "error", err)
+		os.Exit(1)
+	}
+	runtimeImageModule := runtimeimages.NewModule(runtimeImageService)
 
 	databaseRepo := databases.NewRepository(db)
 	mysqlConfig := databases.MySQLConfig{
@@ -212,20 +245,19 @@ func serve() error {
 		cancel()
 	}
 	mysqlProvider := databases.NewMySQLProvider(mysqlConfig, secretStore)
+	discoverCtx, discoverCancel := context.WithTimeout(context.Background(), 4*time.Second)
+	hostMySQL := pluginService.MySQLStatus(discoverCtx)
+	discoverCancel()
 	phpMyAdmin := databases.NewPHPMyAdminManager(databases.PHPMyAdminConfig{
-		DockerBinary: cfg.PHPMyAdminDockerBinary,
-		Image:        cfg.PHPMyAdminImage,
-		Container:    cfg.PHPMyAdminContainer,
-		HostPort:     cfg.PHPMyAdminHostPort,
-		MySQLHost:    phpMySQLHost,
-		MySQLPort:    phpMySQLPort,
-		Network:      phpMySQLNetwork,
+		HostDatabasePort: hostMySQL.Port,
+		DockerBinary:     cfg.PHPMyAdminDockerBinary,
+		Image:            cfg.PHPMyAdminImage,
+		Container:        cfg.PHPMyAdminContainer,
+		HostPort:         cfg.PHPMyAdminHostPort,
+		MySQLHost:        phpMySQLHost,
+		MySQLPort:        phpMySQLPort,
+		Network:          phpMySQLNetwork,
 	})
-	phpMyAdminReconcileCtx, phpMyAdminReconcileCancel := context.WithTimeout(context.Background(), 60*time.Second)
-	if _, err := phpMyAdmin.Reconcile(phpMyAdminReconcileCtx); err != nil {
-		logger.Warn("phpMyAdmin reconciliation failed; it will retry when opened", "error", err)
-	}
-	phpMyAdminReconcileCancel()
 	databaseOptions := []databases.ServiceOption{databases.WithComposeDatabaseProvider(dockerProvider)}
 	if managedMySQL != nil {
 		databaseOptions = append(databaseOptions, databases.WithManagedMySQL(managedMySQL))
@@ -250,6 +282,16 @@ func serve() error {
 	healthChecker := proxy.NewHealthChecker(networkRepo)
 	networkService := proxy.NewService(networkRepo, nginxProvider, hostsManager, healthChecker, cfg.HealthTimeout)
 	networkModule := proxy.NewModule(networkService, portManager, healthChecker, nginxProvider, auditService, cfg.HealthTimeout)
+	tlsService, err := proxy.NewTLSService(db, secretStore, networkService, jobRunner, auditService, filepath.Join(filepath.Dir(cfg.DatabasePath), "tls"))
+	if err != nil {
+		logger.Error("TLS service initialization failed", "error", err)
+		os.Exit(1)
+	}
+	if err := tlsService.RestoreMaterial(context.Background()); err != nil {
+		logger.Warn("TLS material recovery needs attention", "error", err)
+	}
+	tlsModule := proxy.NewTLSModule(tlsService)
+
 	appHealthService := apphealth.NewService(db, cfg.HealthMonitorInterval, cfg.HealthTimeout, cfg.HealthHistoryRetentionDays)
 	appHealthModule := apphealth.NewModule(appHealthService, auditService)
 
@@ -275,39 +317,16 @@ func serve() error {
 			os.Exit(1)
 		}
 	}
-	pluginOptions := []plugins.ServiceOption{plugins.WithJobRunner(jobRunner)}
-	if cfg.ManagedMySQLEnabled {
-		pluginOptions = append(pluginOptions, plugins.WithReservedHostPort(
-			cfg.MySQLPort,
-			fmt.Sprintf("zarządzany MySQL DevBox (%s)", cfg.ManagedMySQLContainer),
-		))
-	}
-	pluginService := plugins.NewService(cfg.NginxHelperBinary, cfg.SudoBinary, pluginOptions...)
-	for _, handler := range pluginService.Handlers() {
-		if err := jobRunner.Register(handler); err != nil {
-			logger.Error("plugin job handler registration failed", "type", handler.Type(), "error", err)
-			os.Exit(1)
-		}
-	}
-
 	workerCtx, stopWorkers := context.WithCancel(context.Background())
 	defer stopWorkers()
-	if err := jobRunner.Start(workerCtx); err != nil {
-		logger.Error("job runner start failed", "error", err)
-		os.Exit(1)
-	}
-	go appHealthService.Run(workerCtx)
-	reconciledJobs, err := projectService.ReconcileAutoStart(context.Background())
-	if err != nil {
-		logger.Error("desired-state reconciliation failed", "error", err)
-		os.Exit(1)
-	}
-	if len(reconciledJobs) > 0 {
-		logger.Info("desired-state reconciliation queued", "jobs", len(reconciledJobs))
-	}
+
 	projectModule := projects.NewModule(projectService, auditService)
 	updaterModule := updater.NewModule(updater.NewService(cfg.AppVersion, cfg.NginxHelperBinary, cfg.SudoBinary), auditService)
-	pluginModule := plugins.NewModule(pluginService, auditService)
+	if err := jobRunner.Register(plugins.NewInstallHandler(pluginService, jobRunner, auditService)); err != nil {
+		logger.Error("plugin handler registration failed", "error", err)
+		os.Exit(1)
+	}
+	pluginModule := plugins.NewModule(pluginService, auditService, jobRunner)
 
 	scriptAppRepo := scriptapps.NewRepository(db)
 	scriptAppService := scriptapps.NewService(scriptAppRepo, jobRunner)
@@ -318,6 +337,21 @@ func serve() error {
 		}
 	}
 	scriptAppModule := scriptapps.NewModule(scriptAppService, auditService)
+
+	if err := jobRunner.Start(workerCtx); err != nil {
+		logger.Error("job runner start failed", "error", err)
+		os.Exit(1)
+	}
+	tlsService.StartRenewalScheduler(workerCtx)
+	go appHealthService.Run(workerCtx)
+	reconciledJobs, err := projectService.ReconcileAutoStart(context.Background())
+	if err != nil {
+		logger.Error("desired-state reconciliation failed", "error", err)
+		os.Exit(1)
+	}
+	if len(reconciledJobs) > 0 {
+		logger.Info("desired-state reconciliation queued", "jobs", len(reconciledJobs))
+	}
 
 	logRegistry := operations.NewRegistry()
 	logSources := []operations.LogSource{
@@ -345,21 +379,24 @@ func serve() error {
 	}
 	modules := []api.Module{
 		credentialModule,
+		gitIntegrationModule,
 		updaterModule,
 		pluginModule,
 		runtimeModule,
+		runtimeImageModule,
 		projectModule,
 		scriptAppModule,
 		dockerModule,
 		databaseModule,
 		networkModule,
+		tlsModule,
 		appHealthModule,
 		backupModule,
 		monitoring.NewModule(monitoring.NewCollector()),
 		operations.NewModule(logRegistry),
 	}
 
-	apiHandler := api.New(api.Dependencies{
+	apiHandler := api.New(api.Dependencies{MaintenanceCheck: maintenanceCheck,
 		DB:           db,
 		Auth:         authService,
 		Audit:        auditService,

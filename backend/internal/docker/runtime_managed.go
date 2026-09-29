@@ -2,14 +2,15 @@ package docker
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -87,7 +88,7 @@ func (p *CLIProvider) BuildManaged(ctx context.Context, spec containerspec.Deplo
 	return nil
 }
 
-func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspec.DeploymentSpec, additional []providers.PublishedPort) error {
+func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspec.DeploymentSpec, additional []providers.PublishedPort) (runErr error) {
 	if err := p.Available(ctx); err != nil {
 		return err
 	}
@@ -104,24 +105,6 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 	if err != nil {
 		return err
 	}
-	backupName := spec.ContainerName + "-previous"
-	_, _, _ = p.runner.Run(ctx, "container", "rm", "-f", "-v", backupName)
-
-	hadPrevious := false
-	if _, _, err := p.runner.Run(ctx, "container", "rename", spec.ContainerName, backupName); err == nil {
-		hadPrevious = true
-		_, _, _ = p.runner.Run(ctx, "container", "stop", "--time", "10", backupName)
-	} else if !errors.Is(err, ErrNotFound) {
-		return fmt.Errorf("prepare managed container replacement: %w", err)
-	}
-
-	rollback := func() {
-		_, _, _ = p.runner.Run(context.Background(), "container", "rm", "-f", "-v", spec.ContainerName)
-		if hadPrevious {
-			_, _, _ = p.runner.Run(context.Background(), "container", "rename", backupName, spec.ContainerName)
-			_, _, _ = p.runner.Run(context.Background(), "container", "start", spec.ContainerName)
-		}
-	}
 
 	args := []string{
 		"container", "create",
@@ -132,7 +115,6 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 	}
 	for i, network := range spec.Networks {
 		if err := validateNetworkRef(network); err != nil {
-			rollback()
 			return err
 		}
 		if i == 0 {
@@ -141,17 +123,21 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 	}
 	extraHostArgs, err := managedExtraHostArgs(spec)
 	if err != nil {
-		rollback()
 		return err
 	}
 	args = append(args, extraHostArgs...)
 	args = append(args, publishArgs...)
+	if spec.User != "" {
+		if !regexp.MustCompile(`^[1-9][0-9]*:[1-9][0-9]*$`).MatchString(spec.User) {
+			return fmt.Errorf("invalid non-root runtime UID:GID")
+		}
+		args = append(args, "--user", spec.User)
+	}
 	if spec.ReadOnly {
 		args = append(args, "--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=64m")
 	}
 	mountArgs, err := managedMountArgs(spec)
 	if err != nil {
-		rollback()
 		return err
 	}
 	args = append(args, mountArgs...)
@@ -162,11 +148,9 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 	sort.Strings(labelKeys)
 	for _, key := range labelKeys {
 		if err := validateValue(key, "container label"); err != nil {
-			rollback()
 			return err
 		}
 		if err := validateValue(spec.Labels[key], "container label value"); err != nil {
-			rollback()
 			return err
 		}
 		args = append(args, "--label", key+"="+spec.Labels[key])
@@ -178,19 +162,16 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 	sort.Strings(envKeys)
 	for _, key := range envKeys {
 		if err := validateEnvironmentName(key); err != nil {
-			rollback()
 			return err
 		}
 		value := spec.Environment[key]
 		if err := validateValue(value, "environment value"); err != nil {
-			rollback()
 			return err
 		}
 		args = append(args, "--env", key+"="+value)
 	}
 	envFile, cleanupEnv, err := secureEnvFile(spec.SensitiveEnvironment)
 	if err != nil {
-		rollback()
 		return err
 	}
 	defer cleanupEnv()
@@ -198,26 +179,90 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 		args = append(args, "--env-file", envFile)
 	}
 	args = append(args, spec.Image)
+	suffix := make([]byte, 6)
+	if _, err := rand.Read(suffix); err != nil {
+		return err
+	}
+	backupName := spec.ContainerName + "-previous-" + hex.EncodeToString(suffix)
+	previous, inspectErr := p.InspectContainer(ctx, spec.ContainerName)
+	hadPrevious := inspectErr == nil
+	if inspectErr != nil && !errors.Is(inspectErr, ErrNotFound) {
+		return fmt.Errorf("inspect previous container: %w", inspectErr)
+	}
+	renamed, created, healthy := false, false, false
+	defer func() {
+		if recover() != nil {
+			runErr = fmt.Errorf("managed replacement panicked; restoring previous container")
+		}
+		if healthy {
+			return
+		}
+		cleanup, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		if created {
+			if _, _, err := p.runner.Run(cleanup, "container", "rm", "-f", "-v", spec.ContainerName); err != nil && !errors.Is(err, ErrNotFound) {
+				runErr = errors.Join(runErr, fmt.Errorf("remove failed replacement (previous retained as %s): %w", backupName, err))
+				return
+			}
+		}
+		if renamed {
+			if _, _, err := p.runner.Run(cleanup, "container", "rename", backupName, spec.ContainerName); err != nil {
+				runErr = errors.Join(runErr, fmt.Errorf("restore container name (retained as %s): %w", backupName, err))
+				return
+			}
+			if previous.Running {
+				if _, _, err := p.runner.Run(cleanup, "container", "start", spec.ContainerName); err != nil {
+					runErr = errors.Join(runErr, fmt.Errorf("restart previous container: %w", err))
+				}
+			}
+		}
+	}()
+	if hadPrevious {
+		if _, _, err := p.runner.Run(ctx, "container", "rename", spec.ContainerName, backupName); err != nil {
+			return fmt.Errorf("prepare replacement: %w", err)
+		}
+		renamed = true
+		if previous.Running {
+			if _, _, err := p.runner.Run(ctx, "container", "stop", "--time", "10", backupName); err != nil {
+				return fmt.Errorf("stop previous container: %w", err)
+			}
+		}
+	}
 	if _, _, err := p.runner.Run(ctx, args...); err != nil {
-		rollback()
+		check, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		candidate, checkErr := p.InspectContainer(check, spec.ContainerName)
+		stop()
+		created = checkErr == nil && spec.Labels["io.devbox.project"] != "" && candidate.Image == spec.Image && candidate.Labels["io.devbox.project"] == spec.Labels["io.devbox.project"]
 		return fmt.Errorf("create managed container: %w", err)
 	}
-	for _, network := range spec.Networks[1:] {
+	created = true
+	for i, network := range spec.Networks {
+		if i == 0 {
+			continue
+		}
 		if err := p.ConnectNetwork(ctx, spec.ContainerName, network); err != nil {
-			rollback()
 			return fmt.Errorf("connect managed container network: %w", err)
 		}
 	}
 	if _, _, err := p.runner.Run(ctx, "container", "start", spec.ContainerName); err != nil {
-		rollback()
 		return fmt.Errorf("start managed container: %w", err)
 	}
-	if err := p.waitManagedHealthy(ctx, spec.ContainerName, spec.HostPort); err != nil {
-		rollback()
+	if err := providers.ReportDeploymentStage(ctx, "HEALTHCHECK"); err != nil {
 		return err
 	}
+	if err := p.checkManagedAccess(ctx, spec); err != nil {
+		return err
+	}
+	if err := p.waitManagedReady(ctx, spec.ContainerName, spec.HostPort, spec.Healthcheck); err != nil {
+		return err
+	}
+	healthy = true
 	if hadPrevious {
-		_, _, _ = p.runner.Run(ctx, "container", "rm", "-f", "-v", backupName)
+		cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		// Cleanup cannot invalidate a healthy app. A unique name retains the
+		// previous instance for manual cleanup if Docker removal fails.
+		_, _, _ = p.runner.Run(cleanup, "container", "rm", "-f", "-v", backupName)
 	}
 	return nil
 }
@@ -299,48 +344,7 @@ func (p *CLIProvider) RemoveManaged(ctx context.Context, containerName string) e
 }
 
 func (p *CLIProvider) waitManagedHealthy(ctx context.Context, containerName string, hostPort int) error {
-	deadline := time.Now().Add(30 * time.Second)
-	client := &http.Client{Timeout: 2 * time.Second}
-	target := "http://127.0.0.1:" + strconv.Itoa(hostPort) + "/"
-	var lastErr error
-	for {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if time.Now().After(deadline) {
-			if lastErr == nil {
-				lastErr = errors.New("container did not become healthy")
-			}
-			return fmt.Errorf("managed container healthcheck failed: %w", lastErr)
-		}
-		out, _, err := p.runner.Run(ctx, "container", "inspect", "--format", "{{.State.Running}}", containerName)
-		if err == nil && strings.TrimSpace(string(out)) == "true" {
-			req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-			if reqErr == nil {
-				resp, httpErr := client.Do(req)
-				if httpErr == nil {
-					_ = resp.Body.Close()
-					if resp.StatusCode < 500 {
-						return nil
-					}
-					lastErr = fmt.Errorf("HTTP status %d", resp.StatusCode)
-				} else {
-					lastErr = httpErr
-				}
-			}
-		} else if err != nil {
-			lastErr = err
-		} else {
-			lastErr = errors.New("container is not running")
-		}
-		timer := time.NewTimer(500 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-		}
-	}
+	return p.waitManagedReady(ctx, containerName, hostPort, containerspec.Healthcheck{})
 }
 
 func stageManagedContext(source string) (string, error) {

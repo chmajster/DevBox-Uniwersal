@@ -23,14 +23,15 @@ type API struct {
 }
 
 type Dependencies struct {
-	DB           *sql.DB
-	Auth         *auth.Service
-	Audit        *audit.Service
-	Jobs         repository.JobRepository
-	Version      string
-	CookieSecure bool
-	AuthDisabled bool
-	Modules      []Module
+	DB               *sql.DB
+	Auth             *auth.Service
+	Audit            *audit.Service
+	Jobs             repository.JobRepository
+	Version          string
+	CookieSecure     bool
+	AuthDisabled     bool
+	Modules          []Module
+	MaintenanceCheck func() error
 }
 
 func New(deps Dependencies) http.Handler {
@@ -61,5 +62,14 @@ func New(deps Dependencies) http.Handler {
 		module.RegisterRoutes(mux, middleware)
 	}
 
-	return withSecurityHeaders(mux)
+	return withSecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if deps.MaintenanceCheck != nil && r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions && r.URL.Path != "/api/v1/auth/login" && r.URL.Path != "/api/v1/auth/logout" {
+			if err := deps.MaintenanceCheck(); err != nil {
+				w.Header().Set("Retry-After", "30")
+				writeError(w, http.StatusServiceUnavailable, "maintenance", "Control-plane update in progress; mutations are temporarily paused", nil)
+				return
+			}
+		}
+		mux.ServeHTTP(w, r)
+	}))
 }

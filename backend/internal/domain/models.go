@@ -51,6 +51,7 @@ type Session struct {
 }
 
 type Job struct {
+	ResourceKey string         `json:"resource_key,omitempty"`
 	ID          string         `json:"id"`
 	Type        string         `json:"type"`
 	Status      string         `json:"status"`

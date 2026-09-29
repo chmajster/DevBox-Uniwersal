@@ -15,7 +15,7 @@ type SQLiteJobs struct{ db *sql.DB }
 func NewSQLiteJobs(db *sql.DB) *SQLiteJobs { return &SQLiteJobs{db: db} }
 
 func (r *SQLiteJobs) List(ctx context.Context, limit, offset int) ([]domain.Job, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,type,status,project_id,requested_by,payload_json,result_json,error,created_at,started_at,finished_at FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,type,status,resource_key,project_id,requested_by,payload_json,result_json,error,created_at,started_at,finished_at FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list jobs: %w", err)
 	}
@@ -32,7 +32,7 @@ func (r *SQLiteJobs) List(ctx context.Context, limit, offset int) ([]domain.Job,
 }
 
 func (r *SQLiteJobs) ByID(ctx context.Context, id string) (domain.Job, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT id,type,status,project_id,requested_by,payload_json,result_json,error,created_at,started_at,finished_at FROM jobs WHERE id = ?`, id)
+	row := r.db.QueryRowContext(ctx, `SELECT id,type,status,resource_key,project_id,requested_by,payload_json,result_json,error,created_at,started_at,finished_at FROM jobs WHERE id = ?`, id)
 	job, err := scanJob(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Job{}, ErrNotFound
@@ -45,7 +45,7 @@ type scanner func(dest ...any) error
 func scanJob(scan scanner) (domain.Job, error) {
 	var j domain.Job
 	var projectID, requestedBy, payloadJSON, resultJSON, errText, created, started, finished sql.NullString
-	if err := scan(&j.ID, &j.Type, &j.Status, &projectID, &requestedBy, &payloadJSON, &resultJSON, &errText, &created, &started, &finished); err != nil {
+	if err := scan(&j.ID, &j.Type, &j.Status, &j.ResourceKey, &projectID, &requestedBy, &payloadJSON, &resultJSON, &errText, &created, &started, &finished); err != nil {
 		return domain.Job{}, err
 	}
 	if projectID.Valid {

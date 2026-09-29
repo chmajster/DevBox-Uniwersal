@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -33,9 +34,14 @@ type NginxOptions struct {
 	SudoBinary     string
 }
 
+type certificateSource interface {
+	Material(context.Context, string) (string, string, error)
+}
+
 type NginxProvider struct {
-	options NginxOptions
-	runner  commandRunner
+	certificates certificateSource
+	options      NginxOptions
+	runner       commandRunner
 }
 
 var _ providers.ReverseProxyProvider = (*NginxProvider)(nil)
@@ -91,7 +97,18 @@ func (n *NginxProvider) ValidateConfig(ctx context.Context) error {
 }
 
 func (n *NginxProvider) Render(route providers.ProxyRoute) (string, error) {
-	return n.renderWithListen(route, "    listen 80;\n    listen [::]:80;")
+	if !route.TLS {
+		return n.renderWithListen(route, "    listen 80;\n    listen [::]:80;")
+	}
+	rendered, err := n.renderWithListen(route, "    listen 443 ssl;\n    listen [::]:443 ssl;")
+	if err != nil {
+		return "", err
+	}
+	hostname, err := NormalizeHostname(route.Domain)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("# Managed by DevBox Universal.\nserver {\n listen 80;\n listen [::]:80;\n server_name %s;\n return 308 https://%s$request_uri;\n}\n", hostname, hostname) + rendered, nil
 }
 
 func (n *NginxProvider) renderWithListen(route providers.ProxyRoute, listenDirectives string) (string, error) {
@@ -103,8 +120,14 @@ func (n *NginxProvider) renderWithListen(route providers.ProxyRoute, listenDirec
 	if err != nil {
 		return "", err
 	}
+	tlsDirectives := ""
 	if route.TLS {
-		return "", fmt.Errorf("%w: TLS proxy sites require certificate integration and are not enabled by this module", ErrInvalidInput)
+		certificate, key := route.Metadata["tls_certificate"], route.Metadata["tls_key"]
+		validPath := regexp.MustCompile(`^/[A-Za-z0-9_./-]+$`)
+		if !validPath.MatchString(certificate) || !validPath.MatchString(key) || filepath.Clean(certificate) != certificate || filepath.Clean(key) != key {
+			return "", fmt.Errorf("%w: validated certificate material is required for TLS", ErrInvalidInput)
+		}
+		tlsDirectives = fmt.Sprintf("    ssl_certificate %s;\n    ssl_certificate_key %s;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_tickets off;\n", certificate, key)
 	}
 	if strings.TrimSpace(listenDirectives) == "" {
 		return "", fmt.Errorf("%w: nginx listen directive is required", ErrInvalidInput)
@@ -113,7 +136,7 @@ func (n *NginxProvider) renderWithListen(route providers.ProxyRoute, listenDirec
 server {
 %s
     server_name %s;
-
+%s
     location / {
         proxy_pass %s;
         proxy_http_version 1.1;
@@ -128,7 +151,7 @@ server {
         proxy_read_timeout 60s;
     }
 }
-`, listenDirectives, hostname, upstream), nil
+`, listenDirectives, hostname, tlsDirectives, upstream), nil
 }
 
 func (n *NginxProvider) TestRoute(ctx context.Context, route providers.ProxyRoute) error {
@@ -144,7 +167,15 @@ func (n *NginxProvider) TestRoute(ctx context.Context, route providers.ProxyRout
 	// the privileged helper. Use a private Unix socket for the isolated syntax
 	// test so validation never requires CAP_NET_BIND_SERVICE or a free TCP port.
 	socketPath := filepath.ToSlash(filepath.Join(tmp, "candidate.sock"))
-	rendered, err := n.renderWithListen(route, "    listen unix:"+socketPath+";")
+	route, err = n.resolveCertificate(ctx, route)
+	if err != nil {
+		return err
+	}
+	ssl := ""
+	if route.TLS {
+		ssl = " ssl"
+	}
+	rendered, err := n.renderWithListen(route, "    listen unix:"+socketPath+ssl+";")
 	if err != nil {
 		return err
 	}
@@ -175,6 +206,11 @@ func (n *NginxProvider) UpdateSite(ctx context.Context, route providers.ProxyRou
 }
 
 func (n *NginxProvider) Apply(ctx context.Context, route providers.ProxyRoute) error {
+	var err error
+	route, err = n.resolveCertificate(ctx, route)
+	if err != nil {
+		return err
+	}
 	hostname, err := NormalizeHostname(route.Domain)
 	if err != nil {
 		return err
@@ -538,4 +574,19 @@ func removeIfExists(path string) error {
 		return nil
 	}
 	return err
+}
+
+func (n *NginxProvider) resolveCertificate(ctx context.Context, r providers.ProxyRoute) (providers.ProxyRoute, error) {
+	if !r.TLS || r.Metadata["tls_certificate"] != "" {
+		return r, nil
+	}
+	if n.certificates == nil {
+		return r, fmt.Errorf("certificate manager is not configured")
+	}
+	cert, key, err := n.certificates.Material(ctx, r.Domain)
+	if err != nil {
+		return r, err
+	}
+	r.Metadata = map[string]string{"tls_certificate": cert, "tls_key": key}
+	return r, nil
 }

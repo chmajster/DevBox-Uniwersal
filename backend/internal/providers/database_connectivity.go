@@ -68,3 +68,25 @@ type ComposeDatabaseProvider interface {
 	InspectComposeServices(ctx context.Context, directory, projectName string) ([]string, error)
 	TestComposeDatabase(ctx context.Context, directory, projectName, service string, connection DatabaseConnection, password []byte) error
 }
+
+type ApplicationNetworkTarget struct {
+	ProjectID          string
+	Directory          string
+	ProjectName        string
+	ApplicationService string
+	Host               string
+	Port               int
+}
+type NetworkDiagnostic struct {
+	Container    string   `json:"container"`
+	Host         string   `json:"host"`
+	Port         int      `json:"port"`
+	DNSResolved  bool     `json:"dns_resolved"`
+	Addresses    []string `json:"addresses,omitempty"`
+	TCPReachable bool     `json:"tcp_reachable"`
+	DurationMS   int64    `json:"duration_ms"`
+	Message      string   `json:"message"`
+}
+type ApplicationNetworkTester interface {
+	TestApplicationNetwork(ctx context.Context, target ApplicationNetworkTarget) (NetworkDiagnostic, error)
+}

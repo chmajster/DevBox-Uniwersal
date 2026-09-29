@@ -298,3 +298,41 @@ func MaskSecrets(input string, values ...string) string {
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
+
+// VerifyClone accepts only an already completed clone of this exact source.
+// It never deletes a partial/unrelated destination or resets user changes.
+func (g *GitClient) VerifyClone(ctx context.Context, dir, remote, branch string) error {
+	root, err := g.run(ctx, dir, nil, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return err
+	}
+	expected, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return err
+	}
+	actual, err := filepath.EvalSymlinks(strings.TrimSpace(root))
+	if err != nil {
+		return err
+	}
+	if expected != actual {
+		return errors.New("clone destination belongs to a parent Git repository")
+	}
+	origin, err := g.run(ctx, dir, nil, "remote", "get-url", "origin")
+	if err != nil {
+		return err
+	}
+	if strings.TrimRight(strings.TrimSpace(origin), "/") != strings.TrimRight(strings.TrimSpace(remote), "/") {
+		return errors.New("clone destination contains a different repository")
+	}
+	if _, err := g.Revision(ctx, dir); err != nil {
+		return errors.New("clone destination is incomplete; inspect it before retrying")
+	}
+	current, err := g.run(ctx, dir, nil, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return err
+	}
+	if branch != "" && strings.TrimSpace(current) != branch {
+		return errors.New("clone destination uses a different branch; refusing to switch it automatically")
+	}
+	return nil
+}

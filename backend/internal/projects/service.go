@@ -385,6 +385,9 @@ func (s *Service) UpdateRuntimeContainerConfig(ctx context.Context, id string, c
 	} else if err := containerspec.Validate(config.Runtime, config.RuntimeVersion, modules); err != nil {
 		return RuntimeContainerConfig{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
+	if err := containerspec.ValidateExecution(config.Execution); err != nil {
+		return RuntimeContainerConfig{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
 	if err := s.repo.SaveRuntimeContainerConfig(ctx, id, config); err != nil {
 		return RuntimeContainerConfig{}, err
 	}

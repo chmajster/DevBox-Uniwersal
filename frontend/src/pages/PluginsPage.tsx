@@ -1,198 +1,56 @@
 import { useCallback, useEffect, useState } from 'react'
 import { request } from '../api/client'
-import type { DockerComposePluginStatus, Job, MySQLPluginStatus, PHPFPMStatus, PHPMyAdminStatus, PostgreSQLPluginStatus } from '../api/types'
+import type { DockerComposePluginStatus, PHPFPMStatus, PHPMyAdminStatus, PostgreSQLPluginStatus, MySQLPluginStatus, Job } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
+import { DurableJobNotice, readPendingJob, storePendingJob } from '../components/DurableJobNotice'
 
 type PHPMyAdminAction = 'install' | 'start' | 'stop' | 'restart'
-
+const pendingKey = 'devbox.plugin-job'
 export function PluginsPage() {
   const { user } = useAuth()
   const canMutate = user?.role !== 'viewer'
   const canInstallSystemPackages = user?.role === 'admin'
   const [dockerCompose, setDockerCompose] = useState<DockerComposePluginStatus | null>(null)
   const [phpFPM, setPHPFPM] = useState<PHPFPMStatus | null>(null)
-  const [mysql, setMySQL] = useState<MySQLPluginStatus | null>(null)
   const [postgresql, setPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
+  const [mysql, setMySQL] = useState<MySQLPluginStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'mysql-install' | 'postgresql-install' | null>(null)
-  const [installProgress, setInstallProgress] = useState<number | null>(null)
-  const [installPhase, setInstallPhase] = useState('')
+  const [jobId, setJobId] = useState(() => readPendingJob(pendingKey))
+  const [busyAction, setBusyAction] = useState<string | null>(() => readPendingJob(pendingKey) ? 'resume' : null)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-
   const load = useCallback(async () => {
-    const [dockerComposeStatus, phpFPMStatus, mySQLStatus, postgreSQLStatus, phpMyAdminStatus] = await Promise.all([
+    const [compose, php, postgres, pma, hostMySQL] = await Promise.all([
       request<DockerComposePluginStatus>('/plugins/docker-compose/status'),
       request<PHPFPMStatus>('/plugins/php-fpm/status'),
-      request<MySQLPluginStatus>('/plugins/mysql/status'),
       request<PostgreSQLPluginStatus>('/plugins/postgresql/status'),
       request<PHPMyAdminStatus>('/phpmyadmin/status'),
+      request<MySQLPluginStatus>('/plugins/mysql/status'),
     ])
-    setDockerCompose(dockerComposeStatus)
-    setPHPFPM(phpFPMStatus)
-    setMySQL(mySQLStatus)
-    setPostgreSQL(postgreSQLStatus)
-    setPHPMyAdmin(phpMyAdminStatus)
+    setDockerCompose(compose); setPHPFPM(php); setPostgreSQL(postgres); setPHPMyAdmin(pma); setMySQL(hostMySQL)
   }, [])
-
-  useEffect(() => {
-    load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Nie udało się pobrać statusu pluginów'))
-  }, [load])
-
-  async function installDockerCompose() {
-    setBusyAction('docker-compose-install')
-    setError('')
-    setMessage('')
+  useEffect(() => { void load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Nie udało się pobrać statusu pluginów')) }, [load])
+  async function enqueue(path: string, action: string) {
+    setBusyAction(action); setError(''); setMessage('')
     try {
-      const status = await request<DockerComposePluginStatus>('/plugins/docker-compose/install', { method: 'POST' })
-      setDockerCompose(status)
-      setMessage('Docker Compose został zainstalowany i jest gotowy do wdrażania projektów Compose.')
+      const job = await request<Job>(path, { method: 'POST', body: '{}' })
+      storePendingJob(pendingKey, job.id); setJobId(job.id)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Instalacja Docker Compose nie powiodła się')
-      await load().catch(() => undefined)
-    } finally {
-      setBusyAction(null)
+      setError(cause instanceof Error ? cause.message : 'Nie udało się utworzyć zadania'); setBusyAction(null)
     }
   }
-
-  async function installPHPFPM() {
-    setBusyAction('php-fpm-install')
-    setError('')
-    setMessage('')
-    try {
-      const status = await request<PHPFPMStatus>('/plugins/php-fpm/install', { method: 'POST' })
-      setPHPFPM(status)
-      setMessage('PHP-FPM został zainstalowany i jest gotowy do użycia.')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Instalacja PHP-FPM nie powiodła się')
-      await load().catch(() => undefined)
-    } finally {
-      setBusyAction(null)
-    }
+  function finishJob(job: Job) {
+    storePendingJob(pendingKey, ''); setBusyAction(null)
+    if (job.status === 'succeeded') setMessage('Operacja zakończona. Status komponentów został odświeżony.')
+    else setError(job.error || `Operacja: ${job.status}`)
+    void load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Odczyt statusu nie powiódł się'))
   }
-
-  async function waitForJob(jobId: string): Promise<Job> {
-    const deadline = Date.now() + 5 * 60 * 1000
-    while (Date.now() < deadline) {
-      const job = await request<Job>(`/jobs/${encodeURIComponent(jobId)}`)
-      if (job.status === 'succeeded') return job
-      if (job.status === 'failed' || job.status === 'cancelled') {
-        throw new Error(job.error || `Zadanie ${job.status}.`)
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, 1000))
-    }
-    throw new Error('Instalacja MySQL/MariaDB nadal trwa. Sprawdź status zadania w zakładce Zadania.')
-  }
-
-  async function installMySQL() {
-    setBusyAction('mysql-install')
-    setError('')
-    setMessage('')
-    try {
-      const job = await request<Job>('/plugins/mysql/install', { method: 'POST' })
-      setMessage(`Instalacja MySQL/MariaDB została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
-      await waitForJob(job.id)
-      await load()
-      setMessage('Hostowy MySQL/MariaDB został zainstalowany i zweryfikowany.')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Instalacja MySQL/MariaDB nie powiodła się')
-      await load().catch(() => undefined)
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
-  async function installPostgreSQL() {
-    setBusyAction('postgresql-install')
-    setError('')
-    setMessage('')
-    try {
-      const status = await request<PostgreSQLPluginStatus>('/plugins/postgresql/install', { method: 'POST' })
-      setPostgreSQL(status)
-      setMessage('PostgreSQL został zainstalowany.')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Instalacja PostgreSQL nie powiodła się')
-      await load().catch(() => undefined)
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
-  async function openPHPMyAdmin() {
-    setBusyAction('start')
-    setError('')
-    setMessage('')
-    try {
-      const status = await request<PHPMyAdminStatus>('/phpmyadmin/start', { method: 'POST', body: '{}' })
-      setPHPMyAdmin(status)
-      if (!status.running) throw new Error('phpMyAdmin nie został uruchomiony.')
-      if (!status.url) throw new Error('phpMyAdmin nie zwrócił adresu aplikacji.')
-      window.open(status.url, '_blank', 'noopener,noreferrer')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Nie udało się otworzyć phpMyAdmin')
-      await load().catch(() => undefined)
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
-  async function phpAction(action: PHPMyAdminAction) {
-    let installTimer: number | undefined
-    let installSucceeded = false
-
-    setBusyAction(action)
-    setError('')
-    setMessage('')
-
-    if (action === 'install') {
-      setInstallProgress(5)
-      setInstallPhase('Przygotowywanie instalacji…')
-      installTimer = window.setInterval(() => {
-        setInstallProgress((current) => {
-          const next = Math.min((current ?? 5) + 7, 92)
-          if (next < 35) setInstallPhase('Przygotowywanie kontenera phpMyAdmin…')
-          else if (next < 75) setInstallPhase('Pobieranie obrazu i uruchamianie kontenera…')
-          else setInstallPhase('Weryfikacja stanu usługi…')
-          return next
-        })
-      }, 700)
-    }
-
-    try {
-      const status = await request<PHPMyAdminStatus>(`/phpmyadmin/${action}`, { method: 'POST' })
-      setPHPMyAdmin(status)
-      installSucceeded = action === 'install'
-      const labels: Record<PHPMyAdminAction, string> = {
-        install: 'phpMyAdmin został zainstalowany.',
-        start: 'phpMyAdmin został uruchomiony.',
-        stop: 'phpMyAdmin został zatrzymany.',
-        restart: 'phpMyAdmin został zrestartowany.',
-      }
-      setMessage(labels[action])
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Operacja phpMyAdmin nie powiodła się')
-      await load().catch(() => undefined)
-    } finally {
-      if (installTimer !== undefined) window.clearInterval(installTimer)
-      setBusyAction(null)
-
-      if (action === 'install') {
-        if (installSucceeded) {
-          setInstallProgress(100)
-          setInstallPhase('phpMyAdmin został zainstalowany.')
-          window.setTimeout(() => {
-            setInstallProgress(null)
-            setInstallPhase('')
-          }, 1200)
-        } else {
-          setInstallProgress(null)
-          setInstallPhase('')
-        }
-      }
-    }
-  }
-
+  const installDockerCompose = () => enqueue('/plugins/docker-compose/install', 'docker-compose-install')
+  const installPHPFPM = () => enqueue('/plugins/php-fpm/install', 'php-fpm-install')
+  const installPostgreSQL = () => enqueue('/plugins/postgresql/install', 'postgresql-install')
+  const phpAction = (action: PHPMyAdminAction) => enqueue(`/phpmyadmin/${action}`, action)
+  const openPHPMyAdmin = () => phpAction('start')
   const busy = busyAction !== null
 
   return <>
@@ -208,6 +66,19 @@ export function PluginsPage() {
 
     {error && <div className="error-banner">{error}</div>}
     {message && <div className="success-banner">{message}</div>}
+    {jobId && <DurableJobNotice jobId={jobId} onComplete={finishJob} />}
+    {phpMyAdmin?.running && <p><a href={phpMyAdmin.url} target="_blank" rel="noreferrer">Przejdź do działającego phpMyAdmin</a></p>}
+
+    <section className="panel phpmyadmin-panel">
+      <div><h2>MySQL / MariaDB na hoście</h2><p className="muted">Osobny, opcjonalny serwer. Instalacja nie zmienia bind-address ani grantów użytkowników i nie zastępuje kontenera devbox-mysql.</p></div>
+      <div className="phpmyadmin-status">
+        <p>{mysql?.installed ? `${mysql.engine ?? 'MySQL'} — ${mysql.running ? 'odpowiada' : 'nie odpowiada'}` : 'Niezainstalowany'}</p>
+        {mysql?.version && <p>Wersja: {mysql.version}</p>}
+        {mysql && <p>Z kontenera: <code>host.docker.internal:{mysql.port}</code></p>}
+        {mysql?.message && <p className="muted">{mysql.message}</p>}
+        {canInstallSystemPackages && !mysql?.installed && mysql?.installable && <button type="button" disabled={busy} onClick={() => void enqueue('/plugins/mysql/install', 'mysql-install')}>Zainstaluj MySQL / MariaDB</button>}
+      </div>
+    </section>
 
     <section className="panel phpmyadmin-panel">
       <div>
@@ -259,13 +130,13 @@ export function PluginsPage() {
           <Icon name="cpu" size={24} />
           <div>
             <h2>PHP-FPM</h2>
-            <p className="muted">Runtime FastCGI wymagany do uruchamiania aplikacji PHP zarządzanych przez DevBox Universal.</p>
+            <p className="muted">Opcjonalny PHP-FPM na hoście. Aplikacje zarządzane przez DevBox korzystają z własnego runtime w kontenerze.</p>
           </div>
         </div>
         <p className="muted small">
           {phpFPM?.installed
             ? 'PHP-FPM został wykryty w systemie.'
-            : 'PHP-FPM nie jest zainstalowany. Aplikacje PHP wymagające PHP-FPM nie uruchomią się do czasu instalacji tego komponentu.'}
+            : 'PHP-FPM nie jest zainstalowany na hoście. Nie blokuje to aplikacji PHP uruchamianych w kontenerze.'}
         </p>
       </div>
 
@@ -291,57 +162,6 @@ export function PluginsPage() {
           )}
           {!phpFPM?.installed && canInstallSystemPackages && phpFPM && !phpFPM.installable && (
             <span className="muted small">Instalacja z panelu jest niedostępna, ponieważ privileged helper nie jest skonfigurowany.</span>
-          )}
-        </div>
-      </div>
-    </section>
-
-    <section className="panel phpmyadmin-panel">
-      <div>
-        <div className="actions">
-          <Icon name="database" size={24} />
-          <div>
-            <h2>MySQL / MariaDB na hoście</h2>
-            <p className="muted">Opcjonalny serwer MySQL/MariaDB instalowany bezpośrednio w systemie hosta przez manager pakietów.</p>
-          </div>
-        </div>
-        <p className="muted small">
-          {mysql?.installed
-            ? 'Serwer hostowy został wykryty. Jest niezależny od zarządzanego kontenera devbox-mysql.'
-            : 'Zainstaluj hostowy MySQL/MariaDB, jeżeli aplikacje mają łączyć się z bazą działającą bezpośrednio na hoście.'}
-        </p>
-      </div>
-
-      <div className="phpmyadmin-status">
-        <div className="actions">
-          <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
-            {mysql?.installed ? 'Zainstalowany' : 'Niezainstalowany'}
-          </span>
-          {mysql?.installed && <span className="status-chip" data-ok={mysql.running ? 'true' : 'false'}>
-            {mysql.running ? 'Usługa działa' : 'Usługa nie odpowiada'}
-          </span>}
-          {mysql?.engine && <span className="status-chip" data-ok="true">{mysql.engine === 'mariadb' ? 'MariaDB' : 'MySQL'}</span>}
-        </div>
-
-        {mysql?.version && <p className="muted small">Wersja: <code>{mysql.version}</code></p>}
-        {mysql?.client_path && <p className="muted small">Klient: <code>{mysql.client_path}</code></p>}
-        {mysql?.server_path && <p className="muted small">Serwer: <code>{mysql.server_path}</code></p>}
-        {mysql?.host && mysql?.port && <p className="muted small">Adres hosta: <code>{mysql.host}:{mysql.port}</code></p>}
-        {mysql?.container_host && mysql?.port && <p className="muted small">Adres z kontenera: <code>{mysql.container_host}:{mysql.port}</code></p>}
-        {mysql?.message && <p className="muted small">{mysql.message}</p>}
-        <p className="muted small">Instalacja hostowa nie zastępuje zarządzanego MySQL DevBox (<code>devbox-mysql</code>). DevBox blokuje instalację, jeżeli port 3306 jest już zarezerwowany przez zarządzany MySQL lub inny listener.</p>
-
-        <div className="actions">
-          {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
-            <button type="button" onClick={() => void installMySQL()} disabled={busy}>
-              {busyAction === 'mysql-install' ? 'Instalowanie…' : 'Zainstaluj MySQL / MariaDB'}
-            </button>
-          )}
-          {!mysql?.installed && !canInstallSystemPackages && (
-            <span className="muted small">Instalacja MySQL/MariaDB wymaga roli administratora.</span>
-          )}
-          {!mysql?.installed && canInstallSystemPackages && mysql && !mysql.installable && (
-            <span className="muted small">{mysql.message || 'Instalacja z panelu jest obecnie niedostępna.'}</span>
           )}
         </div>
       </div>
@@ -407,25 +227,6 @@ export function PluginsPage() {
       </div>
 
       <div className="phpmyadmin-status">
-        {installProgress !== null && <div className="phpmyadmin-install-progress" role="status" aria-live="polite">
-          <div className="phpmyadmin-install-progress-header">
-            <div>
-              <strong>{installProgress < 100 ? 'Instalowanie phpMyAdmin' : 'Instalacja zakończona'}</strong>
-              <span>{installPhase}</span>
-            </div>
-            <strong className="phpmyadmin-install-percent">{installProgress}%</strong>
-          </div>
-          <div
-            className="phpmyadmin-progress-track"
-            role="progressbar"
-            aria-label="Postęp instalacji phpMyAdmin"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={installProgress}
-          >
-            <div className="phpmyadmin-progress-value" style={{ width: `${installProgress}%` }} />
-          </div>
-        </div>}
 
         <div className="actions">
           <span className="status-chip" data-ok={phpMyAdmin?.installed ? 'true' : 'false'}>
@@ -434,19 +235,9 @@ export function PluginsPage() {
           <span className="status-chip" data-ok={phpMyAdmin?.running ? 'true' : 'false'}>
             {busyAction === 'install' ? 'installing' : phpMyAdmin?.running ? 'Uruchomiony' : phpMyAdmin?.state ?? 'Zatrzymany'}
           </span>
-          {phpMyAdmin?.installed && <span className="status-chip" data-ok={phpMyAdmin.host_database_access ? 'true' : 'false'}>
-            {phpMyAdmin.host_database_access ? 'Host gateway skonfigurowany' : 'Wymaga rekonfiguracji host MySQL'}
-          </span>}
-          {phpMyAdmin?.running && phpMyAdmin.host_database_access && <span className="status-chip" data-ok={phpMyAdmin.host_database_reachable ? 'true' : 'false'}>
-            {phpMyAdmin.host_database_reachable ? 'Host MySQL osiągalny' : 'Host MySQL nieosiągalny'}
-          </span>}
         </div>
 
-        <p className="muted small">
-          phpMyAdmin ma dostęp do hostowego MySQL/MariaDB przez <code>{phpMyAdmin?.host_database_host ?? 'host.docker.internal'}:{phpMyAdmin?.host_database_port ?? 3306}</code>.
-          Na ekranie logowania możesz wybrać serwer hostowy albo wpisać inny serwer dzięki trybowi arbitrary server.
-        </p>
-
+        {phpMyAdmin?.installed && <p className="muted small">Dostęp host-gateway: {phpMyAdmin.host_database_access ? 'skonfigurowany' : 'wymaga rekonfiguracji'}. TCP do {phpMyAdmin.host_database_host ?? 'host.docker.internal'}:{phpMyAdmin.host_database_port ?? 3306}: {phpMyAdmin.host_database_reachable ? 'osiągalny' : 'nieosiągalny lub kontener zatrzymany'}. Ten test nie sprawdza loginu ani hasła.</p>}
         <div className="actions">
           {canMutate && !phpMyAdmin?.installed && (
             <button type="button" onClick={() => phpAction('install')} disabled={busy}>

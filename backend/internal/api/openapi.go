@@ -17,6 +17,21 @@ type documentedRoute struct {
 }
 
 var documentedRoutes = []documentedRoute{
+	{"GET", "/api/v1/runtime-images/{runtime}", "List runtime base images and project usage", "viewer"},
+	{"GET", "/api/v1/runtime-images/{runtime}/versions", "Read available versions from the container registry", "viewer"},
+	{"POST", "/api/v1/runtime-images/{runtime}/actions", "Queue runtime image pull or safe removal", "operator"},
+	{"GET", "/api/v1/git-integrations", "List GitHub/GitLab integration profiles", "operator"},
+	{"POST", "/api/v1/git-integrations", "Bind a stored token to a trusted Git provider", "admin"},
+	{"DELETE", "/api/v1/git-integrations/{id}", "Delete integration profile without deleting credentials", "admin"},
+	{"GET", "/api/v1/git-integrations/{id}/test", "Verify identity and repository-read capability", "operator"},
+	{"GET", "/api/v1/git-integrations/{id}/repositories", "List provider repositories by page", "operator"},
+	{"GET", "/api/v1/git-integrations/{id}/branches", "List repository branches by page", "operator"},
+	{"GET", "/api/v1/git-integrations/{id}/overview", "Read PR/MR and CI status with partial-access warnings", "operator"},
+	{"POST", "/api/v1/projects/{id}/database-binding/test-network", "Queue credential-free DNS/TCP diagnostic from application container", "operator"},
+	{"GET", "/api/v1/domains/{id}/tls", "Read active local TLS certificate and verification status", "viewer"},
+	{"POST", "/api/v1/domains/{id}/tls", "Queue local HTTPS enable, renew, verify or disable", "admin"},
+	{"GET", "/api/v1/proxy/tls/ca.crt", "Export public local CA certificate; never exports private key", "viewer"},
+
 	{"GET", "/api/v1/health", "Control-plane health", ""},
 	{"POST", "/api/v1/auth/login", "Create authenticated session", ""},
 	{"POST", "/api/v1/auth/logout", "End authenticated session", "viewer"},
@@ -34,9 +49,9 @@ var documentedRoutes = []documentedRoute{
 	{"POST", "/api/v1/credentials", "Create central credential", "operator"},
 	{"PATCH", "/api/v1/credentials/{id}", "Update central credential", "operator"},
 	{"DELETE", "/api/v1/credentials/{id}", "Delete central credential", "operator"},
-	{"GET", "/api/v1/update/status", "Check DevBox Git update status", "admin"},
+	{"GET", "/api/v1/update/status", "Check verified release/update readiness", "admin"},
 	{"GET", "/api/v1/update/progress", "Read live DevBox update progress", "admin"},
-	{"POST", "/api/v1/update/apply", "Start DevBox Git update", "admin"},
+	{"POST", "/api/v1/update/apply", "Start verified DevBox update with rollback snapshot", "admin"},
 	{"GET", "/api/v1/script-apps", "List URL/script-installed applications", "viewer"},
 	{"POST", "/api/v1/script-apps", "Create and optionally install a URL/script application", "admin"},
 	{"GET", "/api/v1/script-apps/{id}", "Get URL/script application", "viewer"},

@@ -38,20 +38,6 @@ type DockerComposeStatus struct {
 	Message     string `json:"message,omitempty"`
 }
 
-type MySQLPluginStatus struct {
-	Installed     bool   `json:"installed"`
-	Running       bool   `json:"running"`
-	Engine        string `json:"engine,omitempty"`
-	ClientPath    string `json:"client_path,omitempty"`
-	ServerPath    string `json:"server_path,omitempty"`
-	Version       string `json:"version,omitempty"`
-	Host          string `json:"host,omitempty"`
-	Port          int    `json:"port,omitempty"`
-	ContainerHost string `json:"container_host,omitempty"`
-	Installable   bool   `json:"installable"`
-	Message       string `json:"message,omitempty"`
-}
-
 type PostgreSQLStatus struct {
 	Installed   bool   `json:"installed"`
 	Running     bool   `json:"running"`
@@ -197,20 +183,7 @@ func (s *Service) InstallDockerCompose(ctx context.Context) (DockerComposeStatus
 }
 
 func (s *Service) installSystemPackage(ctx context.Context, component string) error {
-	sudo := s.sudoBinary
-	if sudo == "" {
-		sudo = "sudo"
-	}
-	cmd := exec.CommandContext(ctx, sudo, s.helperBinary, "install-package", component)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		message := strings.TrimSpace(string(out))
-		if message == "" {
-			message = err.Error()
-		}
-		return errors.New(message)
-	}
-	return nil
+	return s.runPackageInstall(ctx, component)
 }
 
 func firstLine(value string) string {
@@ -219,103 +192,6 @@ func firstLine(value string) string {
 		return strings.TrimSpace(line)
 	}
 	return value
-}
-
-func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
-	status := MySQLPluginStatus{
-		Installable:   s.helperBinary != "",
-		Host:          "127.0.0.1",
-		Port:          3306,
-		ContainerHost: "host.docker.internal",
-	}
-
-	for _, client := range []string{"mysql", "mariadb"} {
-		if path, err := exec.LookPath(client); err == nil {
-			status.ClientPath = path
-			break
-		}
-	}
-
-	detector := s.mysqlDetector
-	if detector == nil {
-		detector = detectHostMySQL
-	}
-	instance, installed := detector(ctx)
-	if !installed {
-		if conflict := s.mysqlInstallConflict(); conflict != "" {
-			status.Installable = false
-			status.Message = conflict
-			return status
-		}
-		if status.ClientPath != "" {
-			status.Message = "Wykryto klienta MySQL/MariaDB, ale serwer hostowy nie jest zainstalowany."
-		} else {
-			status.Message = "Hostowy MySQL/MariaDB nie jest zainstalowany."
-		}
-		if status.Installable {
-			status.Message += " Możesz zainstalować serwer z panelu Pluginy."
-		} else {
-			status.Message += " Instalacja z panelu jest niedostępna, ponieważ DEVBOX_PRIVILEGED_HELPER nie jest skonfigurowany."
-		}
-		return status
-	}
-
-	status.Installed = true
-	status.Running = instance.Running
-	status.Engine = instance.Engine
-	status.ServerPath = instance.Source
-	status.Version = instance.Version
-	status.Port = instance.Port
-	status.ContainerHost = instance.Host
-
-	if status.Running {
-		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany i aktywna usługa odpowiada na TCP 3306."
-	} else if owner, reserved := s.reservedHostPorts[3306]; reserved {
-		status.Installable = false
-		if owner == "" {
-			owner = "inna usługa DevBox"
-		}
-		status.Message = fmt.Sprintf("Hostowy MySQL/MariaDB jest zainstalowany, ale nie działa na TCP 3306, który jest zarezerwowany przez %s.", owner)
-	} else {
-		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany, ale hostowa usługa nie odpowiada na TCP 3306."
-	}
-	return status
-}
-
-func (s *Service) mysqlInstallConflict() string {
-	if owner, reserved := s.reservedHostPorts[3306]; reserved {
-		if owner == "" {
-			owner = "inna usługa DevBox"
-		}
-		return fmt.Sprintf("Nie można zainstalować hostowego MySQL/MariaDB na porcie 3306: port jest zarezerwowany przez %s. Zatrzymaj lub przekonfiguruj tę usługę albo użyj już dostępnej bazy przez DevBox.", owner)
-	}
-	if hostTCPPortOpen(3306) {
-		return "Nie można zainstalować hostowego MySQL/MariaDB: port 3306 jest już zajęty przez inny listener. DevBox nie uruchomi drugiego serwera na tym samym porcie."
-	}
-	return ""
-}
-
-func (s *Service) InstallMySQL(ctx context.Context) (MySQLPluginStatus, error) {
-	if status := s.MySQLStatus(ctx); status.Installed {
-		return status, nil
-	}
-	if conflict := s.mysqlInstallConflict(); conflict != "" {
-		return MySQLPluginStatus{}, errors.New(conflict)
-	}
-	if s.helperBinary == "" {
-		return MySQLPluginStatus{}, errors.New("privileged helper is not configured")
-	}
-	if err := s.installSystemPackage(ctx, "mysql"); err != nil {
-		return MySQLPluginStatus{}, fmt.Errorf("install MySQL/MariaDB: %w", err)
-	}
-	status := s.MySQLStatus(ctx)
-	if !status.Installed {
-		return status, errors.New("MySQL/MariaDB installation completed but the server executable was not detected")
-	}
-	if !status.Running {
-		return status, errors.New("MySQL/MariaDB was installed but the host service is not running on TCP 3306")
-	}
-	return status, nil
 }
 
 func (s *Service) PostgreSQLStatus(ctx context.Context) PostgreSQLStatus {
@@ -386,7 +262,7 @@ func detectHostMySQL(ctx context.Context) (HostDatabaseInstance, bool) {
 		engine = "mariadb"
 		label = "MariaDB"
 	}
-	const port = 3306
+	port := discoverMySQLPort(ctx, path)
 	return HostDatabaseInstance{
 		ID:        engine + ":host:" + strconv.Itoa(port),
 		Engine:    engine,
@@ -485,30 +361,6 @@ func findMySQLServer() (string, error) {
 	return "", errors.New("mysql server executable not found")
 }
 
-func hostMySQLDaemonRunning(ctx context.Context, engine string) bool {
-	units := []string{"mysql.service", "mariadb.service"}
-	services := []string{"mysql", "mariadb"}
-	if strings.EqualFold(engine, "mariadb") {
-		units = []string{"mariadb.service", "mysql.service"}
-		services = []string{"mariadb", "mysql"}
-	}
-	if systemctl, err := exec.LookPath("systemctl"); err == nil {
-		for _, unit := range units {
-			if exec.CommandContext(ctx, systemctl, "is-active", "--quiet", unit).Run() == nil {
-				return true
-			}
-		}
-	}
-	if service, err := exec.LookPath("service"); err == nil {
-		for _, name := range services {
-			if exec.CommandContext(ctx, service, name, "status").Run() == nil {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func hostTCPPortOpen(port int) bool {
 	if port < 1 || port > 65535 {
 		return false
@@ -570,18 +422,8 @@ func (s *Service) InstallPHPFPM(ctx context.Context) (PHPFPMStatus, error) {
 	if s.helperBinary == "" {
 		return PHPFPMStatus{}, errors.New("privileged helper is not configured")
 	}
-	sudo := s.sudoBinary
-	if sudo == "" {
-		sudo = "sudo"
-	}
-	cmd := exec.CommandContext(ctx, sudo, s.helperBinary, "install-package", "php-fpm")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		message := strings.TrimSpace(string(out))
-		if message == "" {
-			message = err.Error()
-		}
-		return PHPFPMStatus{}, fmt.Errorf("install PHP-FPM: %s", message)
+	if err := s.installSystemPackage(ctx, "php-fpm"); err != nil {
+		return PHPFPMStatus{}, fmt.Errorf("install PHP-FPM: %w", err)
 	}
 	status := s.PHPFPMStatus(ctx)
 	if !status.Installed {
@@ -620,12 +462,17 @@ func findPHPFPM() (string, error) {
 }
 
 type Module struct {
+	runner  jobs.JobRunner
 	service *Service
 	audit   *audit.Service
 }
 
-func NewModule(service *Service, auditService *audit.Service) *Module {
-	return &Module{service: service, audit: auditService}
+func NewModule(service *Service, auditService *audit.Service, runners ...jobs.JobRunner) *Module {
+	m := &Module{service: service, audit: auditService}
+	if len(runners) > 0 {
+		m.runner = runners[0]
+	}
+	return m
 }
 
 func (m *Module) Name() string { return "plugins" }
@@ -641,10 +488,10 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/plugins/docker-compose/install", admin(m.installDockerCompose))
 	mux.Handle("GET /api/v1/plugins/php-fpm/status", viewer(m.phpFPMStatus))
 	mux.Handle("POST /api/v1/plugins/php-fpm/install", admin(m.installPHPFPM))
-	mux.Handle("GET /api/v1/plugins/mysql/status", viewer(m.mySQLStatus))
-	mux.Handle("POST /api/v1/plugins/mysql/install", admin(m.installMySQL))
 	mux.Handle("GET /api/v1/plugins/postgresql/status", viewer(m.postgreSQLStatus))
 	mux.Handle("POST /api/v1/plugins/postgresql/install", admin(m.installPostgreSQL))
+	mux.Handle("GET /api/v1/plugins/mysql/status", viewer(m.mySQLStatus))
+	mux.Handle("POST /api/v1/plugins/mysql/install", admin(m.installMySQL))
 	mux.Handle("GET /api/v1/plugins/databases/host", viewer(m.hostDatabases))
 	mux.Handle("GET /api/v1/plugins/php/extensions", viewer(m.phpExtensions))
 	mux.Handle("POST /api/v1/plugins/php/extensions/install", admin(m.installPHPExtensions))
@@ -655,43 +502,7 @@ func (m *Module) dockerComposeStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) installDockerCompose(w http.ResponseWriter, r *http.Request) {
-	status, err := m.service.InstallDockerCompose(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "docker_compose_install_failed", err.Error())
-		return
-	}
-	if m.audit != nil {
-		var actor *string
-		if user, ok := api.CurrentUser(r.Context()); ok {
-			id := user.ID
-			actor = &id
-		}
-		_ = m.audit.Record(r.Context(), actor, "plugin.docker_compose.install", "plugin", nil, map[string]any{"mode": status.Mode, "path": status.Path, "version": status.Version}, nil)
-	}
-	writeData(w, http.StatusOK, status)
-}
-
-func (m *Module) mySQLStatus(w http.ResponseWriter, r *http.Request) {
-	writeData(w, http.StatusOK, m.service.MySQLStatus(r.Context()))
-}
-
-func (m *Module) installMySQL(w http.ResponseWriter, r *http.Request) {
-	var actor *string
-	if user, ok := api.CurrentUser(r.Context()); ok {
-		id := user.ID
-		actor = &id
-	}
-	job, err := m.service.QueueMySQLInstall(r.Context(), actor)
-	if err != nil {
-		writeError(w, http.StatusConflict, "mysql_install_unavailable", err.Error())
-		return
-	}
-	if m.audit != nil {
-		_ = m.audit.Record(r.Context(), actor, "plugin.mysql.install.enqueue", "plugin", nil, map[string]any{
-			"job_id": job.ID,
-		}, nil)
-	}
-	writeData(w, http.StatusAccepted, job)
+	m.enqueueInstall(w, r, "docker-compose", nil)
 }
 
 func (m *Module) hostDatabases(w http.ResponseWriter, r *http.Request) {
@@ -703,20 +514,7 @@ func (m *Module) postgreSQLStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) installPostgreSQL(w http.ResponseWriter, r *http.Request) {
-	status, err := m.service.InstallPostgreSQL(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "postgresql_install_failed", err.Error())
-		return
-	}
-	if m.audit != nil {
-		var actor *string
-		if user, ok := api.CurrentUser(r.Context()); ok {
-			id := user.ID
-			actor = &id
-		}
-		_ = m.audit.Record(r.Context(), actor, "plugin.postgresql.install", "plugin", nil, map[string]any{"path": status.Path, "version": status.Version, "running": status.Running}, nil)
-	}
-	writeData(w, http.StatusOK, status)
+	m.enqueueInstall(w, r, "postgresql", nil)
 }
 
 func (m *Module) phpFPMStatus(w http.ResponseWriter, r *http.Request) {
@@ -724,20 +522,7 @@ func (m *Module) phpFPMStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) installPHPFPM(w http.ResponseWriter, r *http.Request) {
-	status, err := m.service.InstallPHPFPM(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "php_fpm_install_failed", err.Error())
-		return
-	}
-	if m.audit != nil {
-		var actor *string
-		if user, ok := api.CurrentUser(r.Context()); ok {
-			id := user.ID
-			actor = &id
-		}
-		_ = m.audit.Record(r.Context(), actor, "plugin.php_fpm.install", "plugin", nil, map[string]any{"path": status.Path, "version": status.Version}, nil)
-	}
-	writeData(w, http.StatusOK, status)
+	m.enqueueInstall(w, r, "php-fpm", nil)
 }
 
 func writeData(w http.ResponseWriter, status int, data any) {
@@ -750,4 +535,30 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": message}})
+}
+
+func hostMySQLDaemonRunning(parent context.Context, engine string) bool {
+	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
+	defer cancel()
+	units := []string{"mysql.service", "mariadb.service"}
+	services := []string{"mysql", "mariadb"}
+	if strings.EqualFold(engine, "mariadb") {
+		units = []string{"mariadb.service", "mysql.service"}
+		services = []string{"mariadb", "mysql"}
+	}
+	if systemctl, err := exec.LookPath("systemctl"); err == nil {
+		for _, unit := range units {
+			if exec.CommandContext(ctx, systemctl, "is-active", "--quiet", unit).Run() == nil {
+				return true
+			}
+		}
+	}
+	if service, err := exec.LookPath("service"); err == nil {
+		for _, name := range services {
+			if exec.CommandContext(ctx, service, name, "status").Run() == nil {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -7,6 +7,7 @@ import (
 )
 
 type Request struct {
+	ResourceKey string
 	Type        string
 	ProjectID   *string
 	RequestedBy *string
@@ -16,6 +17,12 @@ type Request struct {
 type Handler interface {
 	Type() string
 	Run(ctx context.Context, job domain.Job) (map[string]any, error)
+}
+
+// RestartRecoverable opts into safe reconciliation after process interruption.
+// The handler must inspect durable external state before repeating mutations.
+type RestartRecoverable interface {
+	RecoverInterrupted(ctx context.Context, job domain.Job) (retry bool, err error)
 }
 
 type JobRunner interface {

@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	JobWorkers             int
 	HTTPAddr               string
 	DatabasePath           string
 	MigrationsDir          string
@@ -121,7 +122,12 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("DEVBOX_HEALTH_HISTORY_RETENTION_DAYS must be between 1 and 3650")
 	}
 
+	workers, err := getEnvInt("DEVBOX_JOB_WORKERS", 4)
+	if err != nil || workers < 1 || workers > 16 {
+		return Config{}, fmt.Errorf("DEVBOX_JOB_WORKERS must be between 1 and 16")
+	}
 	cfg := Config{
+		JobWorkers:                 workers,
 		HTTPAddr:                   getEnv("DEVBOX_HTTP_ADDR", "127.0.0.1:8787"),
 		DatabasePath:               getEnv("DEVBOX_DATABASE_PATH", "./data/devbox.db"),
 		MigrationsDir:              getEnv("DEVBOX_MIGRATIONS_DIR", "./migrations"),

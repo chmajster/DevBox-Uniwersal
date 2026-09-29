@@ -51,6 +51,7 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("GET /api/v1/projects/{id}/database-binding", viewer(http.HandlerFunc(m.getDatabaseBinding)))
 	mux.Handle("PUT /api/v1/projects/{id}/database-binding", operator(http.HandlerFunc(m.updateDatabaseBinding)))
 	mux.Handle("DELETE /api/v1/projects/{id}/database-binding", operator(http.HandlerFunc(m.deleteDatabaseBinding)))
+	mux.Handle("POST /api/v1/projects/{id}/database-binding/test-network", operator(http.HandlerFunc(m.testDatabaseNetwork)))
 	mux.Handle("POST /api/v1/projects/{id}/database-binding/test", operator(http.HandlerFunc(m.testDatabaseBinding)))
 	mux.Handle("POST /api/v1/projects/{id}/database-binding/password", operator(http.HandlerFunc(m.rotateDatabasePassword)))
 	mux.Handle("GET /api/v1/projects/{id}/database-binding/compose-services", viewer(http.HandlerFunc(m.composeServices)))
@@ -353,12 +354,12 @@ func (m *Module) phpMyAdminStatus(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) phpMyAdminAction(w http.ResponseWriter, r *http.Request) {
 	actor, remote := requestIdentity(r)
-	status, err := m.service.PHPMyAdminAction(r.Context(), r.PathValue("action"), actor, remote)
+	status, err := m.service.QueuePHPMyAdminAction(r.Context(), r.PathValue("action"), actor, remote)
 	if err != nil {
 		writeModuleError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, status)
+	writeData(w, http.StatusAccepted, status)
 }
 
 func requestIdentity(r *http.Request) (*string, *string) {
@@ -409,6 +410,8 @@ func sameOrigin(next http.Handler) http.Handler {
 
 func writeModuleError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrDatabaseUserInUse):
+		writeError(w, http.StatusConflict, "database_user_in_use", err.Error(), nil)
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "database resource not found", nil)
 	case errors.Is(err, ErrInvalidIdentifier), errors.Is(err, ErrInvalidPrivilege),

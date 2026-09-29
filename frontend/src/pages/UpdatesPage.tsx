@@ -169,7 +169,7 @@ export function UpdatesPage() {
   const progressFailed=progress?.state==='failed'
   const progressFinished=progress?.state==='succeeded'||progress?.state==='no_update'
   const currentStageLabel=progress?.stage&&progress.stage!=='idle'
-    ? UPDATE_STAGES.find(stage=>stage.id===progress.stage)?.label||progress.stage
+    ? progress.stage==='rollback' ? 'Przywracanie poprzedniej wersji' : UPDATE_STAGES.find(stage=>stage.id===progress.stage)?.label||progress.stage
     : 'Oczekiwanie'
 
   return <>
@@ -190,27 +190,29 @@ export function UpdatesPage() {
       <div className="update-panel-heading">
         <div>
           <h2>Stan aktualizacji</h2>
-          <p className="muted small">Porównanie aktualnie uruchomionego buildu z wybraną gałęzią repozytorium.</p>
+          <p className="muted small">Porównanie uruchomionej wersji z podpisanym wydaniem albo jawnie włączoną gałęzią deweloperską.</p>
         </div>
-        <span className="status-chip" data-ok={statusAttribute(status ? !status.update_available : undefined)}>
-          {status ? status.update_available?'Dostępna aktualizacja':'System aktualny' : 'Sprawdzanie'}
+        <span className="status-chip" data-ok={statusAttribute(status ? !status.last_error&&!status.update_available : undefined)}>
+          {status ? status.last_error ? 'Nie udało się zweryfikować' : status.update_available?'Dostępna aktualizacja':'System aktualny' : 'Sprawdzanie'}
         </span>
       </div>
 
       <div className="summary-grid update-summary-grid">
         <div className="span-2"><span>Repozytorium</span><strong>{status?.repository??'—'}</strong></div>
+        <div><span>Tryb / zaufanie</span><strong>{status?.mode==='signed' ? status.trust_configured ? 'Podpisane wydania · klucz skonfigurowany' : 'Podpisane wydania · brak klucza' : 'Git · tryb deweloperski bez podpisów'}</strong></div>
         <div><span>Gałąź</span><strong>{status?.ref??'—'}</strong></div>
         <div><span>Ostatnie sprawdzenie</span><strong>{formatDate(status?.checked_at)}</strong></div>
         <div><span>Wersja zainstalowana</span><strong className="mono">{shortVersion(status?.current_version)}</strong></div>
         <div><span>Najnowszy commit</span><strong className="mono">{shortVersion(status?.latest_version)}</strong></div>
-        <div><span>Data ostatniego commita</span><strong>{formatDate(status?.latest_commit_at)}</strong></div>
+        <div><span>{status?.mode==='signed'?'Data podpisanego wydania':'Data ostatniego commita'}</span><strong>{formatDate(status?.latest_commit_at)}</strong></div>
         <div><span>Auto-update</span><strong>{status?.auto_update?'Włączony':'Wyłączony / niedostępny'}</strong></div>
         <div><span>Harmonogram</span><strong>{status?.schedule??'—'}</strong></div>
       </div>
 
-      {status?.last_error&&<div className="warning-banner">Nie udało się pobrać najnowszego commita: {status.last_error}</div>}
+      {status?.mode==='git'&&<div className="warning-banner">Tryb deweloperski Git nie weryfikuje podpisu wydawcy. Szyfrowana kopia i rollback pozostają aktywne.</div>}
+      {status?.last_error&&<div className="warning-banner">Nie udało się zweryfikować aktualizacji: {status.last_error}</div>}
       <div className="form-actions update-actions">
-        <button type="button" onClick={apply} disabled={busy||progressActive||!status?.update_available}>
+        <button type="button" onClick={apply} disabled={busy||progressActive||status?.ready===false||!status?.update_available}>
           {busy?'Uruchamianie…':progressActive?'Aktualizacja trwa…':'Aktualizuj teraz'}
         </button>
         <span className="muted small">Ręczne uruchomienie startuje <code>devbox-update.service</code> w tle.</span>
