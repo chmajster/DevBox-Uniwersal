@@ -29,85 +29,11 @@ const (
 )
 
 var (
-	gitRefPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+package updater
-
-import (
-	"bufio"
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"net/http"
-	"os"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
-
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
-)
-
-)
+	gitRefPattern              = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 	sensitiveAssignmentPattern = regexp.MustCompile(`(?i)(password|passwd|token|secret|api[_-]?key)([[:space:]]*[:=][[:space:]]*)([^[:space:]]+)`)
-	authorizationHeaderPattern = regexp.MustCompile(`(?i)(authorization[[:space:]]*:[[:space:]]*).+package updater
-
-import (
-	"bufio"
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"net/http"
-	"os"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
-
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
-)
-
-const (
-	defaultRepository   = "https://github.com/chmajster/DevBox-Uniwersal.git"
-	defaultRef          = "main"
-	defaultProgressFile = "/var/lib/devbox/update-status"
-	defaultUpdateLog    = "/var/log/devbox-update.log"
-	updateLogTailLines  = 40
-	updateLogTailBytes  = 32 * 1024
-)
-
-var (
-	gitRefPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+package updater
-
-import (
-	"bufio"
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"net/http"
-	"os"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
-
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
-)
-
-)
-	)
-	bearerPattern = regexp.MustCompile(`(?i)(bearer[[:space:]]+)[A-Za-z0-9._~+/=-]+`)
-	mysqlPasswordPattern = regexp.MustCompile(`(?i)(-p|--password=)([^[:space:]]+)`)
+	authorizationHeaderPattern = regexp.MustCompile(`(?i)(authorization[[:space:]]*:[[:space:]]*).+$`)
+	bearerPattern              = regexp.MustCompile(`(?i)(bearer[[:space:]]+)[A-Za-z0-9._~+/=-]+`)
+	mysqlPasswordPattern       = regexp.MustCompile(`(?i)(-p|--password=)([^[:space:]]+)`)
 )
 
 type Status struct {
