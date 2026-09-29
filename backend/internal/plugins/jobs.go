@@ -35,12 +35,13 @@ func (h *MySQLInstallJobHandler) Run(ctx context.Context, _ domain.Job) (map[str
 	}
 	return map[string]any{
 		"engine":         status.Engine,
-		"version":        status.Version,
 		"running":        status.Running,
-		"host":           status.Host,
 		"port":           status.Port,
 		"container_host": status.ContainerHost,
-		"server_path":    status.ServerPath,
+		"container_name": status.ContainerName,
+		"image":          status.Image,
+		"volume":         status.Volume,
+		"network":        status.Network,
 	}, nil
 }
 
@@ -66,12 +67,13 @@ func (h *PostgreSQLInstallJobHandler) Run(ctx context.Context, _ domain.Job) (ma
 	}
 	return map[string]any{
 		"engine":         "postgresql",
-		"version":        status.Version,
 		"running":        status.Running,
-		"host":           status.Host,
 		"port":           status.Port,
 		"container_host": status.ContainerHost,
-		"path":           status.Path,
+		"container_name": status.ContainerName,
+		"image":          status.Image,
+		"volume":         status.Volume,
+		"network":        status.Network,
 	}, nil
 }
 
