@@ -14,7 +14,7 @@ export type DatabaseModeField =
 
 const fields: Record<DatabaseMode, DatabaseModeField[]> = {
   none: [],
-  managed: ['application_service', 'database', 'username', 'application_host', 'application_port', 'status'],
+  managed: [],
   compose: ['application_service', 'compose_service', 'port', 'database', 'username', 'password', 'application_host', 'application_port'],
   external: ['application_service', 'host', 'port', 'database', 'username', 'password', 'application_host', 'application_port'],
 }
