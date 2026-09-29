@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
@@ -65,7 +64,7 @@ func TestQueueMySQLInstallUsesJobEngine(t *testing.T) {
 	)
 	actor := "admin-user"
 
-	job, err := service.QueueMySQLInstall(context.Background(), &actor)
+	job, err := service.QueueMySQLInstall(context.Background(), &actor, 3307)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +77,9 @@ func TestQueueMySQLInstallUsesJobEngine(t *testing.T) {
 	}
 	if request.RequestedBy == nil || *request.RequestedBy != actor {
 		t.Fatalf("requested_by = %#v", request.RequestedBy)
+	}
+	if got := request.Payload["port"]; got != 3307 {
+		t.Fatalf("queued port = %#v, want 3307", got)
 	}
 }
 
@@ -95,17 +97,54 @@ func TestMySQLInstallRejectedWhenManagedPortIsReserved(t *testing.T) {
 	)
 
 	status := service.MySQLStatus(context.Background())
-	if status.Installable {
-		t.Fatalf("reserved port must make host MySQL unavailable for installation: %#v", status)
+	if !status.Installable {
+		t.Fatalf("a free alternate port should keep host MySQL installable: %#v", status)
 	}
-	if !strings.Contains(status.Message, "zarezerwowany") || !strings.Contains(status.Message, "devbox-mysql") {
-		t.Fatalf("conflict message = %q", status.Message)
+	if status.SuggestedPort == 3306 {
+		t.Fatalf("reserved managed port must not be suggested: %#v", status)
 	}
-	if _, err := service.QueueMySQLInstall(context.Background(), nil); err == nil {
-		t.Fatal("expected queueing to fail for reserved port")
+	if _, err := service.QueueMySQLInstall(context.Background(), nil, 3306); err == nil {
+		t.Fatal("expected queueing to fail for the reserved managed port")
 	}
 	if len(runner.requests) != 0 {
 		t.Fatalf("conflicting installation must not enqueue a job: %#v", runner.requests)
+	}
+	if _, err := service.QueueMySQLInstall(context.Background(), nil, 3307); err != nil {
+		t.Fatalf("alternate application port should be queueable: %v", err)
+	}
+	if len(runner.requests) != 1 {
+		t.Fatalf("expected one queued alternate-port job, got %#v", runner.requests)
+	}
+}
+
+
+func TestQueuePostgreSQLInstallUsesRequestedPort(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	runner := &recordingPluginJobRunner{}
+	service := NewService(
+		"/usr/local/lib/devbox/devbox-helper",
+		"/usr/bin/sudo",
+		WithJobRunner(runner),
+	)
+	job, err := service.QueuePostgreSQLInstall(context.Background(), nil, 5544)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Type != JobInstallHostPostgreSQL || len(runner.requests) != 1 {
+		t.Fatalf("unexpected PostgreSQL job: %#v requests=%#v", job, runner.requests)
+	}
+	if got := runner.requests[0].Payload["port"]; got != 5544 {
+		t.Fatalf("queued PostgreSQL port = %#v, want 5544", got)
+	}
+}
+
+func TestJobPayloadPortAcceptsPersistedJSONNumber(t *testing.T) {
+	port, err := jobPayloadPort(map[string]any{"port": float64(5432)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if port != 5432 {
+		t.Fatalf("port = %d, want 5432", port)
 	}
 }
 
