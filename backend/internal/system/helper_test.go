@@ -16,6 +16,15 @@ func TestHelperRejectsUnknownPackageAndService(t *testing.T) {
 	}
 }
 
+func TestMySQLPackageAndServiceAreAllowlisted(t *testing.T) {
+	if got := allowedPackages["mysql"]; got != "default-mysql-server" {
+		t.Fatalf("mysql package mapping = %q, want default-mysql-server", got)
+	}
+	if got := allowedServices["mysql"]; got != "mysql.service" {
+		t.Fatalf("mysql service mapping = %q, want mysql.service", got)
+	}
+}
+
 func TestPostgreSQLPackageAndServiceAreAllowlisted(t *testing.T) {
 	if got := allowedPackages["postgresql"]; got != "postgresql" {
 		t.Fatalf("postgresql package mapping = %q, want postgresql", got)
