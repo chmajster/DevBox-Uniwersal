@@ -258,8 +258,33 @@ func timerEnabled(ctx context.Context) bool {
 func updateServiceActive(ctx context.Context) bool {
 	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(checkCtx, "systemctl", "is-active", "--quiet", "devbox-update.service")
-	return cmd.Run() == nil
+
+	// devbox-update.service is Type=oneshot. During the whole ExecStart run
+	// systemd reports ActiveState=activating, not active. systemctl is-active
+	// therefore returns a non-zero exit code even though the updater is still
+	// executing, which used to turn valid progress into a false "failed" state.
+	cmd := exec.CommandContext(
+		checkCtx,
+		"systemctl",
+		"show",
+		"--property=ActiveState",
+		"--value",
+		"devbox-update.service",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return updateServiceStateRunning(string(out))
+}
+
+func updateServiceStateRunning(state string) bool {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "active", "activating", "reloading", "deactivating":
+		return true
+	default:
+		return false
+	}
 }
 
 type Module struct {
