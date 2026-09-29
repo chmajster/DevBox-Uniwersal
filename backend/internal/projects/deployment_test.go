@@ -165,6 +165,36 @@ func TestDatabaseLogFieldsExcludeRuntimeSecret(t *testing.T) {
 	}
 }
 
+func TestHostAccessOnlyDoesNotInjectDatabaseVariables(t *testing.T) {
+	projectEnvironment := runtimes.ResolvedEnvironment{
+		Plain: map[string]string{
+			"APP_ENV": "project",
+			"DB_HOST": "application-owned-value",
+		},
+	}
+	runtime := providers.ProjectDatabaseRuntime{
+		Connection: providers.DatabaseConnection{
+			Mode: providers.DatabaseModeExternal,
+			Host: "host.docker.internal",
+			Port: 3306,
+		},
+		HostGateway:    true,
+		HostAccessOnly: true,
+	}
+	env := mergedComposeEnvironment(projectEnvironment, runtime)
+	if env["APP_ENV"] != "project" {
+		t.Fatalf("project environment was not preserved: %#v", env)
+	}
+	if env["DB_HOST"] != "application-owned-value" {
+		t.Fatalf("host-only access must not override application database configuration: %#v", env)
+	}
+	for _, key := range []string{"DB_DATABASE", "DB_USERNAME", "DB_PASSWORD", "DATABASE_NAME", "DATABASE_USER", "DATABASE_PASSWORD"} {
+		if _, exists := env[key]; exists {
+			t.Fatalf("host-only access injected %s: %#v", key, env)
+		}
+	}
+}
+
 func TestComposeEnvironmentPrecedenceDatabaseBindingWins(t *testing.T) {
 	projectEnvironment := runtimes.ResolvedEnvironment{
 		Plain: map[string]string{
