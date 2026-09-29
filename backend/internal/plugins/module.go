@@ -274,44 +274,57 @@ func firstLine(value string) string {
 }
 
 func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
+	if s.mysqlServer != nil {
+		endpoint := s.mysqlServer.ApplicationEndpoint()
+		status := MySQLPluginStatus{
+			Engine:        "mysql",
+			Port:          endpoint.Port,
+			ContainerHost: endpoint.Host,
+			ContainerName: s.mysqlServer.ContainerName(),
+			Image:         s.mysqlServer.Image(),
+			Volume:        s.mysqlServer.Volume(),
+			Network:       s.mysqlServer.Network(),
+			Installable:   true,
+		}
+		installed, running, err := s.mysqlServer.ContainerState(ctx)
+		if err != nil {
+			status.Installable = false
+			status.Message = "Docker nie jest dostępny dla serwera MySQL/MariaDB: " + err.Error()
+			return status
+		}
+		status.Installed = installed
+		status.Running = running
+		if running {
+			status.Message = "Kontener MySQL/MariaDB działa w Dockerze i jest dostępny dla aplikacji przez wspólną sieć " + status.Network + "."
+		} else if installed {
+			status.Message = "Kontener MySQL/MariaDB istnieje, ale nie działa."
+		} else {
+			status.Message = "MySQL/MariaDB nie jest zainstalowany. Instalacja z Pluginów utworzy trwały kontener Docker."
+		}
+		return status
+	}
+
 	status := MySQLPluginStatus{
 		Installable:   s.helperBinary != "",
 		Host:          "127.0.0.1",
 		Port:          3306,
 		ContainerHost: "host.docker.internal",
 	}
-
 	for _, client := range []string{"mysql", "mariadb"} {
 		if path, err := exec.LookPath(client); err == nil {
 			status.ClientPath = path
 			break
 		}
 	}
-
 	detector := s.mysqlDetector
 	if detector == nil {
 		detector = detectHostMySQL
 	}
 	instance, installed := detector(ctx)
 	if !installed {
-		if conflict := s.mysqlInstallConflict(); conflict != "" {
-			status.Installable = false
-			status.Message = conflict
-			return status
-		}
-		if status.ClientPath != "" {
-			status.Message = "Wykryto klienta MySQL/MariaDB, ale serwer hostowy nie jest zainstalowany."
-		} else {
-			status.Message = "Hostowy MySQL/MariaDB nie jest zainstalowany."
-		}
-		if status.Installable {
-			status.Message += " Możesz zainstalować serwer z panelu Pluginy."
-		} else {
-			status.Message += " Instalacja z panelu jest niedostępna, ponieważ DEVBOX_PRIVILEGED_HELPER nie jest skonfigurowany."
-		}
+		status.Message = "Hostowy MySQL/MariaDB nie jest zainstalowany."
 		return status
 	}
-
 	status.Installed = true
 	status.Running = instance.Running
 	status.Engine = instance.Engine
@@ -319,18 +332,6 @@ func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
 	status.Version = instance.Version
 	status.Port = instance.Port
 	status.ContainerHost = instance.Host
-
-	if status.Running {
-		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany i gotowy jako serwer SQL dla aplikacji na TCP 3306."
-	} else if owner, reserved := s.reservedHostPorts[3306]; reserved {
-		status.Installable = false
-		if owner == "" {
-			owner = "inna usługa DevBox"
-		}
-		status.Message = fmt.Sprintf("Hostowy MySQL/MariaDB jest zainstalowany, ale nie działa na TCP 3306, który jest zarezerwowany przez %s.", owner)
-	} else {
-		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany, ale hostowa usługa nie odpowiada na TCP 3306."
-	}
 	return status
 }
 
@@ -339,15 +340,26 @@ func (s *Service) mysqlInstallConflict() string {
 		if owner == "" {
 			owner = "inna usługa DevBox"
 		}
-		return fmt.Sprintf("Nie można zainstalować hostowego MySQL/MariaDB na porcie 3306: port jest zarezerwowany przez %s. Zatrzymaj lub przekonfiguruj tę usługę albo użyj już dostępnej bazy przez DevBox.", owner)
+		return fmt.Sprintf("Nie można zainstalować hostowego MySQL/MariaDB na porcie 3306: port jest zarezerwowany przez %s.", owner)
 	}
 	if hostTCPPortOpen(3306) {
-		return "Nie można zainstalować hostowego MySQL/MariaDB: port 3306 jest już zajęty przez inny listener. DevBox nie uruchomi drugiego serwera na tym samym porcie."
+		return "Nie można zainstalować hostowego MySQL/MariaDB: port 3306 jest już zajęty."
 	}
 	return ""
 }
 
 func (s *Service) InstallMySQL(ctx context.Context) (MySQLPluginStatus, error) {
+	if s.mysqlServer != nil {
+		if err := s.mysqlServer.Action(ctx, "install"); err != nil {
+			return MySQLPluginStatus{}, fmt.Errorf("install Docker MySQL/MariaDB: %w", err)
+		}
+		status := s.MySQLStatus(ctx)
+		if !status.Installed || !status.Running {
+			return status, errors.New("MySQL/MariaDB container was created but is not running")
+		}
+		return status, nil
+	}
+
 	if status := s.MySQLStatus(ctx); status.Installed && status.Running {
 		return status, nil
 	}
@@ -357,45 +369,50 @@ func (s *Service) InstallMySQL(ctx context.Context) (MySQLPluginStatus, error) {
 	if s.helperBinary == "" {
 		return MySQLPluginStatus{}, errors.New("privileged helper is not configured")
 	}
+	if err := s.installSystemPackage(ctx, "mysql"); err != nil {
+		return MySQLPluginStatus{}, fmt.Errorf("install MySQL/MariaDB: %w", err)
+	}
 	status := s.MySQLStatus(ctx)
-	if !status.Installed {
-		if err := s.installSystemPackage(ctx, "mysql"); err != nil {
-			return MySQLPluginStatus{}, fmt.Errorf("install MySQL/MariaDB: %w", err)
-		}
-		status = s.MySQLStatus(ctx)
-	}
-	if !status.Installed {
-		return status, errors.New("MySQL/MariaDB installation completed but the server executable was not detected")
-	}
 	if !status.Running {
-		serviceName := status.Engine
-		if serviceName != "mariadb" {
-			serviceName = "mysql"
-		}
-		if err := s.restartSystemService(ctx, serviceName); err != nil {
-			return status, fmt.Errorf("start MySQL/MariaDB service: %w", err)
-		}
-		status = s.MySQLStatus(ctx)
-	}
-	if !status.Running {
-		return status, errors.New("MySQL/MariaDB was installed but the host service is not running on TCP 3306")
+		return status, errors.New("MySQL/MariaDB was installed but is not running")
 	}
 	return status, nil
 }
 
 func (s *Service) PostgreSQLStatus(ctx context.Context) PostgreSQLStatus {
+	if s.postgresqlServer != nil {
+		endpoint := s.postgresqlServer.ApplicationEndpoint()
+		status := PostgreSQLStatus{
+			Port:          endpoint.Port,
+			ContainerHost: endpoint.Host,
+			ContainerName: s.postgresqlServer.ContainerName(),
+			Image:         s.postgresqlServer.Image(),
+			Volume:        s.postgresqlServer.Volume(),
+			Network:       s.postgresqlServer.Network(),
+			Installable:   true,
+		}
+		installed, running, err := s.postgresqlServer.ContainerState(ctx)
+		if err != nil {
+			status.Installable = false
+			status.Message = "Docker nie jest dostępny dla serwera PostgreSQL: " + err.Error()
+			return status
+		}
+		status.Installed = installed
+		status.Running = running
+		if running {
+			status.Message = "Kontener PostgreSQL działa w Dockerze i jest dostępny dla aplikacji przez wspólną sieć " + status.Network + "."
+		} else if installed {
+			status.Message = "Kontener PostgreSQL istnieje, ale nie działa."
+		} else {
+			status.Message = "PostgreSQL nie jest zainstalowany. Instalacja z Pluginów utworzy trwały kontener Docker."
+		}
+		return status
+	}
+
 	status := PostgreSQLStatus{Installable: s.helperBinary != "", Host: "127.0.0.1", Port: 5432, ContainerHost: "host.docker.internal"}
 	instances := detectHostPostgreSQL(ctx)
 	if len(instances) == 0 {
-		if psql, err := exec.LookPath("psql"); err == nil {
-			status.Path = psql
-			status.Message = "Wykryto klienta PostgreSQL, ale nie znaleziono działającej instalacji serwera."
-		} else {
-			status.Message = "PostgreSQL nie jest zainstalowany. Możesz doinstalować serwer z panelu Pluginy."
-		}
-		if !status.Installable {
-			status.Message += " Instalacja z panelu jest niedostępna, ponieważ DEVBOX_PRIVILEGED_HELPER nie jest skonfigurowany."
-		}
+		status.Message = "Hostowy PostgreSQL nie jest zainstalowany."
 		return status
 	}
 	selected := instances[0]
@@ -409,15 +426,35 @@ func (s *Service) PostgreSQLStatus(ctx context.Context) PostgreSQLStatus {
 	status.Running = selected.Running
 	status.Version = selected.Version
 	status.Port = selected.Port
-	if psql, err := exec.LookPath("psql"); err == nil {
-		status.Path = psql
-	}
-	if status.Running {
-		status.Message = "PostgreSQL jest zainstalowany i gotowy jako serwer SQL dla aplikacji na 127.0.0.1:" + strconv.Itoa(status.Port) + "."
-	} else {
-		status.Message = "PostgreSQL jest zainstalowany, ale wybrany klaster nie odpowiada na 127.0.0.1:" + strconv.Itoa(status.Port) + "."
-	}
 	return status
+}
+
+func (s *Service) InstallPostgreSQL(ctx context.Context) (PostgreSQLStatus, error) {
+	if s.postgresqlServer != nil {
+		if err := s.postgresqlServer.Action(ctx, "install"); err != nil {
+			return PostgreSQLStatus{}, fmt.Errorf("install Docker PostgreSQL: %w", err)
+		}
+		status := s.PostgreSQLStatus(ctx)
+		if !status.Installed || !status.Running {
+			return status, errors.New("PostgreSQL container was created but is not running")
+		}
+		return status, nil
+	}
+
+	if status := s.PostgreSQLStatus(ctx); status.Installed && status.Running {
+		return status, nil
+	}
+	if s.helperBinary == "" {
+		return PostgreSQLStatus{}, errors.New("privileged helper is not configured")
+	}
+	if err := s.installSystemPackage(ctx, "postgresql"); err != nil {
+		return PostgreSQLStatus{}, fmt.Errorf("install PostgreSQL: %w", err)
+	}
+	status := s.PostgreSQLStatus(ctx)
+	if !status.Running {
+		return status, errors.New("PostgreSQL was installed but is not running")
+	}
+	return status, nil
 }
 
 func (s *Service) HostDatabases(ctx context.Context) []HostDatabaseInstance {
