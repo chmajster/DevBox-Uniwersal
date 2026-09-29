@@ -221,6 +221,18 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Pro
 				return Project{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 			}
 			p.LocalPath = path
+			p.RepositoryURL = ""
+			p.Branch = ""
+			p.CurrentCommit = ""
+			if s.git != nil && s.git.IsRepository(ctx, path) {
+				state, err := s.git.State(ctx, path)
+				if err != nil {
+					return Project{}, fmt.Errorf("read Git state for updated local path: %w", err)
+				}
+				p.RepositoryURL = state.Remote
+				p.Branch = state.Branch
+				p.CurrentCommit = state.Commit
+			}
 		}
 	}
 	if input.Runtime != nil {
