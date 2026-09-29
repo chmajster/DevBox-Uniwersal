@@ -197,6 +197,52 @@ func TestExternalDockerHostNameRequestsHostGateway(t *testing.T) {
 	}
 }
 
+func TestHostMySQLAccessOnlyNeedsNoDatabaseCredentials(t *testing.T) {
+	ctx := context.Background()
+	service, repo, store, _ := databaseBindingTestService(t)
+
+	item, err := service.UpdateDatabaseBinding(ctx, "project-1", DatabaseBindingInput{
+		Mode: DatabaseModeExternal, HostAccessOnly: true,
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !item.HostAccessOnly {
+		t.Fatal("expected host-only access flag")
+	}
+	if item.Host != dockerHostInternal || item.Port != 3306 {
+		t.Fatalf("unexpected host-only endpoint: %+v", item)
+	}
+	if item.Database != "" || item.Username != "" || item.HasSecret {
+		t.Fatalf("host-only access must not persist database credentials: %+v", item)
+	}
+	if len(store.values) != 0 {
+		t.Fatalf("host-only access must not create SecretStore entries: %#v", store.values)
+	}
+
+	persisted, err := repo.DatabaseBindingByProject(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !persisted.HostAccessOnly || persisted.SecretRef != "" {
+		t.Fatalf("unexpected persisted host-only binding: %+v", persisted)
+	}
+
+	runtime, err := service.ResolveRuntimeDatabase(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !runtime.HostAccessOnly || !runtime.HostGateway {
+		t.Fatalf("expected host gateway only runtime: %+v", runtime)
+	}
+	if runtime.Connection.Host != dockerHostInternal || runtime.Connection.Port != 3306 {
+		t.Fatalf("unexpected runtime endpoint: %+v", runtime.Connection)
+	}
+	if runtime.Connection.Database != "" || runtime.Connection.Username != "" || len(runtime.Secret) != 0 {
+		t.Fatalf("host-only runtime must not resolve database credentials: %+v", runtime)
+	}
+}
+
 func TestExternalDatabaseBindingAllowsExplicitEmptyPassword(t *testing.T) {
 	ctx := context.Background()
 	service, repo, store, _ := databaseBindingTestService(t)
