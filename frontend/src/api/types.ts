@@ -347,6 +347,10 @@ export interface PHPMyAdminStatus {
   running: boolean
   state: string
   url: string
+  host_database_access: boolean
+  host_database_reachable: boolean
+  host_database_host?: string
+  host_database_port?: number
 }
 
 export interface DockerComposePluginStatus {
@@ -362,6 +366,20 @@ export interface PHPFPMStatus {
   installed: boolean
   path?: string
   version?: string
+  installable: boolean
+  message?: string
+}
+
+export interface MySQLPluginStatus {
+  installed: boolean
+  running: boolean
+  engine?: 'mysql' | 'mariadb'
+  client_path?: string
+  server_path?: string
+  version?: string
+  host?: string
+  port?: number
+  container_host?: string
   installable: boolean
   message?: string
 }
