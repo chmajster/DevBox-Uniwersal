@@ -71,12 +71,11 @@ type ProvisionResult struct {
 }
 
 type PHPMyAdminStatus struct {
-	Installed             bool   `json:"installed"`
-	Running               bool   `json:"running"`
-	State                 string `json:"state"`
-	URL                   string `json:"url"`
-	HostDatabaseAccess    bool   `json:"host_database_access"`
-	HostDatabaseReachable bool   `json:"host_database_reachable"`
-	HostDatabaseHost      string `json:"host_database_host,omitempty"`
-	HostDatabasePort      int    `json:"host_database_port,omitempty"`
+	Installed    bool   `json:"installed"`
+	Running      bool   `json:"running"`
+	State        string `json:"state"`
+	URL          string `json:"url"`
+	DatabaseHost string `json:"database_host,omitempty"`
+	DatabasePort int    `json:"database_port,omitempty"`
+	Network      string `json:"network,omitempty"`
 }
