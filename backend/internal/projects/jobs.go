@@ -341,6 +341,14 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 		composeDir = workDir
 		composeName = p.Slug
+		if h.integrations.SharedNetwork != "" {
+			if h.integrations.Networks == nil {
+				return nil, errors.New("provider unavailable: shared Docker application network")
+			}
+			if err := h.integrations.Networks.EnsureNetwork(ctx, h.integrations.SharedNetwork); err != nil {
+				return nil, fmt.Errorf("ensure shared Docker application network: %w", err)
+			}
+		}
 		composeEnvironment := mergedComposeEnvironment(projectEnvironment, databaseRuntime)
 		if len(composeEnvironment) > 0 || databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
 			databaseProvider, ok := h.integrations.Compose.(providers.ComposeDatabaseProvider)

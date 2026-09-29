@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
@@ -58,10 +59,33 @@ func (p *CLIProvider) ConnectNetwork(ctx context.Context, container, network str
 		return err
 	}
 	_, stderr, err := p.runner.Run(ctx, "network", "connect", network, container)
-	if err != nil && strings.Contains(strings.ToLower(string(stderr)), "already exists") {
+	if err == nil || strings.Contains(strings.ToLower(string(stderr)), "already exists") {
 		return nil
 	}
-	return err
+	if !networkNotFound(stderr, err) {
+		return err
+	}
+
+	// A shared network can disappear between reconciliation and the first
+	// attachment (for example because of an external prune). Recreate it and
+	// retry the connect exactly once instead of failing the whole deployment.
+	if ensureErr := p.EnsureNetwork(ctx, network); ensureErr != nil {
+		return fmt.Errorf("recreate Docker network %s: %w", network, ensureErr)
+	}
+	_, retryStderr, retryErr := p.runner.Run(ctx, "network", "connect", network, container)
+	if retryErr != nil && strings.Contains(strings.ToLower(string(retryStderr)), "already exists") {
+		return nil
+	}
+	return retryErr
+}
+
+func networkNotFound(stderr []byte, err error) bool {
+	lower := strings.ToLower(strings.TrimSpace(string(stderr)))
+	if !errors.Is(err, ErrNotFound) && !strings.Contains(lower, "not found") {
+		return false
+	}
+	return strings.Contains(lower, "no such network") ||
+		(strings.Contains(lower, "network ") && strings.Contains(lower, " not found"))
 }
 
 func (p *CLIProvider) EnsureImage(ctx context.Context, image string) error {
