@@ -25,6 +25,7 @@ func TestOpenAPISpecContainsCoreAndModuleRoutes(t *testing.T) {
 		"/api/v1/plugins/postgresql/{action}",
 		"/api/v1/database-users/{id}",
 		"/api/v1/database-users/{id}/databases/{database_id}",
+		"/api/v1/projects/{id}/database-services",
 		"/api/v1/health-checks",
 		"/api/v1/logs/export",
 	} {
