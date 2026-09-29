@@ -179,7 +179,7 @@ func serve() error {
 	var managedMySQL *databases.ManagedMySQLManager
 	phpMySQLHost := cfg.MySQLHost
 	phpMySQLPort := cfg.MySQLPort
-	phpMySQLNetwork := ""
+	phpMySQLNetwork := cfg.SharedAppNetwork
 	if cfg.ManagedMySQLEnabled {
 		managedMySQL = databases.NewManagedMySQLManager(dockerProvider, secretStore, databases.ManagedMySQLConfig{
 			Image:               cfg.ManagedMySQLImage,
@@ -204,7 +204,6 @@ func serve() error {
 		phpMySQLHost = applicationEndpoint.Host
 		phpMySQLPort = applicationEndpoint.Port
 		phpMySQLNetwork = managedMySQL.Network()
-
 	}
 	managedPostgreSQL := databases.NewManagedPostgreSQLManager(dockerProvider, secretStore, databases.ManagedPostgreSQLConfig{
 		Image:     cfg.ManagedPostgreSQLImage,
