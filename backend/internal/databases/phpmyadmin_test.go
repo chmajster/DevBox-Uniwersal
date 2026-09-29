@@ -84,7 +84,6 @@ func containsAdjacent(values []string, first, second string) bool {
 	return false
 }
 
-
 func TestPHPMyAdminAutoLoginWhenManagedMySQLPluginIsInstalled(t *testing.T) {
 	docker := &managedDockerFake{state: "running", exists: true}
 	store := &fakeSecretStore{values: map[string][]byte{
