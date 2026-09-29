@@ -34,6 +34,7 @@ type databaseEngine interface {
 type Service struct {
 	repo       *Repository
 	engine     databaseEngine
+	engines    map[string]databaseEngine
 	secrets    secrets.SecretStore
 	jobs       jobs.JobRunner
 	audit      *audit.Service
@@ -47,6 +48,21 @@ type ServiceOption func(*Service)
 
 func WithManagedMySQL(manager *ManagedMySQLManager) ServiceOption {
 	return func(service *Service) { service.managed = manager }
+}
+
+func WithDatabaseEngine(engine string, provider databaseEngine) ServiceOption {
+	return func(service *Service) {
+		if provider == nil {
+			return
+		}
+		if service.engines == nil {
+			service.engines = make(map[string]databaseEngine)
+		}
+		name := normalizeDatabaseEngineName(engine)
+		if name != "" {
+			service.engines[name] = provider
+		}
+	}
 }
 
 func WithComposeDatabaseProvider(provider providers.ComposeDatabaseProvider) ServiceOption {
@@ -63,6 +79,10 @@ func NewService(repo *Repository, engine databaseEngine, secretStore secrets.Sec
 	service := &Service{
 		repo:       repo,
 		engine:     engine,
+		engines: map[string]databaseEngine{
+			"mysql":   engine,
+			"mariadb": engine,
+		},
 		secrets:    secretStore,
 		jobs:       runner,
 		audit:      auditService,
@@ -74,10 +94,13 @@ func NewService(repo *Repository, engine databaseEngine, secretStore secrets.Sec
 			option(service)
 		}
 	}
-	if err := runner.Register(NewBackupJobHandler(repo, engine, backupDir)); err != nil {
+	resolver := func(engineName string) (backupEngine, error) {
+		return service.engineFor(engineName)
+	}
+	if err := runner.Register(NewBackupJobHandlerWithResolver(repo, resolver, backupDir)); err != nil {
 		return nil, err
 	}
-	if err := runner.Register(NewRestoreJobHandler(repo, engine, backupDir)); err != nil {
+	if err := runner.Register(NewRestoreJobHandlerWithResolver(repo, resolver, backupDir)); err != nil {
 		return nil, err
 	}
 	if service.managed != nil {
@@ -86,6 +109,25 @@ func NewService(repo *Repository, engine databaseEngine, secretStore secrets.Sec
 		}
 	}
 	return service, nil
+}
+
+func normalizeDatabaseEngineName(engine string) string {
+	name := strings.ToLower(strings.TrimSpace(engine))
+	if name == "postgres" {
+		return "postgresql"
+	}
+	return name
+}
+
+func (s *Service) engineFor(engine string) (databaseEngine, error) {
+	name := normalizeDatabaseEngineName(engine)
+	if name == "" {
+		name = "mysql"
+	}
+	if provider := s.engines[name]; provider != nil {
+		return provider, nil
+	}
+	return nil, fmt.Errorf("database engine %q is not configured", name)
 }
 
 func (s *Service) MySQLStatus(ctx context.Context) MySQLStatus {
@@ -110,7 +152,11 @@ func (s *Service) ListDatabases(ctx context.Context) ([]Database, error) {
 		return nil, err
 	}
 	for i := range items {
-		size, sizeErr := s.engine.Size(ctx, items[i].Name)
+		engine, engineErr := s.engineFor(items[i].Engine)
+		if engineErr != nil {
+			continue
+		}
+		size, sizeErr := engine.Size(ctx, items[i].Name)
 		if sizeErr != nil {
 			continue
 		}
@@ -120,19 +166,32 @@ func (s *Service) ListDatabases(ctx context.Context) ([]Database, error) {
 }
 
 func (s *Service) CreateDatabase(ctx context.Context, name, engine, charset string, actor *string, remote *string) (Database, error) {
+	engine = normalizeDatabaseEngineName(engine)
 	if engine == "" {
 		engine = "mysql"
 	}
+	provider, err := s.engineFor(engine)
+	if err != nil {
+		return Database{}, err
+	}
 	if charset == "" {
-		charset = "utf8mb4"
+		if engine == "postgresql" {
+			charset = "UTF8"
+		} else {
+			charset = "utf8mb4"
+		}
 	}
 	if err := ValidateIdentifier(name); err != nil {
 		return Database{}, err
 	}
+	providerName := "local-mysql"
+	if engine == "postgresql" {
+		providerName = "managed-postgresql"
+	}
 	now := time.Now().UTC()
 	item := Database{
 		ID:        newID(),
-		Provider:  "local-mysql",
+		Provider:  providerName,
 		Engine:    engine,
 		Name:      name,
 		Status:    "provisioning",
@@ -142,12 +201,12 @@ func (s *Service) CreateDatabase(ctx context.Context, name, engine, charset stri
 	if err := s.repo.CreateDatabase(ctx, item); err != nil {
 		return Database{}, err
 	}
-	if err := s.engine.CreateDatabase(ctx, providers.DatabaseSpec{Engine: engine, Name: name, Charset: charset}); err != nil {
+	if err := provider.CreateDatabase(ctx, providers.DatabaseSpec{Engine: engine, Name: name, Charset: charset}); err != nil {
 		_ = s.repo.DeleteDatabase(ctx, item.ID)
 		return Database{}, err
 	}
 	if err := s.repo.UpdateDatabaseStatus(ctx, item.ID, "ready"); err != nil {
-		_ = s.engine.DeleteDatabase(ctx, name)
+		_ = provider.DeleteDatabase(ctx, name)
 		_ = s.repo.DeleteDatabase(ctx, item.ID)
 		return Database{}, err
 	}
@@ -161,20 +220,24 @@ func (s *Service) DeleteDatabase(ctx context.Context, id string, actor *string, 
 	if err != nil {
 		return err
 	}
+	provider, err := s.engineFor(item.Engine)
+	if err != nil {
+		return err
+	}
 	users, err := s.repo.UsersByDatabase(ctx, id)
 	if err != nil {
 		return err
 	}
 	for _, user := range users {
-		_ = s.engine.Revoke(ctx, item.Name, user.Username)
-		if err := s.engine.DeleteUser(ctx, user.Username); err != nil {
+		_ = provider.Revoke(ctx, item.Name, user.Username)
+		if err := provider.DeleteUser(ctx, user.Username); err != nil {
 			return err
 		}
 		if s.secrets != nil && user.SecretRef != "" {
 			_ = s.secrets.Delete(ctx, "database-user", user.SecretRef)
 		}
 	}
-	if err := s.engine.DeleteDatabase(ctx, item.Name); err != nil {
+	if err := provider.DeleteDatabase(ctx, item.Name); err != nil {
 		return err
 	}
 	if item.ProjectID != nil {
@@ -307,8 +370,12 @@ func (s *Service) ProvisionProject(ctx context.Context, projectID, engine, chars
 	rollbackDatabase = false
 	database.Status = "ready"
 	database.Username = username
-	host, port := s.engine.Endpoint()
-	if endpointEngine, ok := s.engine.(endpointDatabaseEngine); ok {
+	provider, err := s.engineFor(database.Engine)
+	if err != nil {
+		return ConnectionConfig{}, err
+	}
+	host, port := provider.Endpoint()
+	if endpointEngine, ok := provider.(endpointDatabaseEngine); ok {
 		endpoint := endpointEngine.ApplicationEndpoint()
 		host, port = endpoint.Host, endpoint.Port
 	}
@@ -340,7 +407,7 @@ func (s *Service) CreateUser(ctx context.Context, databaseID, username string, r
 		return DatabaseUser{}, "", err
 	}
 	if len(privileges) == 0 {
-		privileges = defaultPrivileges()
+		privileges = defaultPrivilegesForEngine(database.Engine)
 	}
 	privileges, err = normalizePrivileges(privileges)
 	if err != nil {
@@ -356,18 +423,23 @@ func (s *Service) CreateUser(ctx context.Context, databaseID, username string, r
 	if err := s.secrets.Put(ctx, "database-user", user.SecretRef, []byte(password)); err != nil {
 		return DatabaseUser{}, "", err
 	}
-	if err := s.engine.CreateUser(ctx, username, user.SecretRef); err != nil {
+	provider, err := s.engineFor(database.Engine)
+	if err != nil {
 		_ = s.secrets.Delete(ctx, "database-user", user.SecretRef)
 		return DatabaseUser{}, "", err
 	}
-	if err := s.engine.Grant(ctx, database.Name, username, privileges); err != nil {
-		_ = s.engine.DeleteUser(ctx, username)
+	if err := provider.CreateUser(ctx, username, user.SecretRef); err != nil {
+		_ = s.secrets.Delete(ctx, "database-user", user.SecretRef)
+		return DatabaseUser{}, "", err
+	}
+	if err := provider.Grant(ctx, database.Name, username, privileges); err != nil {
+		_ = provider.DeleteUser(ctx, username)
 		_ = s.secrets.Delete(ctx, "database-user", user.SecretRef)
 		return DatabaseUser{}, "", err
 	}
 	if err := s.repo.CreateUser(ctx, user); err != nil {
-		_ = s.engine.Revoke(ctx, database.Name, username)
-		_ = s.engine.DeleteUser(ctx, username)
+		_ = provider.Revoke(ctx, database.Name, username)
+		_ = provider.DeleteUser(ctx, username)
 		_ = s.secrets.Delete(ctx, "database-user", user.SecretRef)
 		return DatabaseUser{}, "", err
 	}
@@ -404,8 +476,12 @@ func (s *Service) DeleteUser(ctx context.Context, id string, actor *string, remo
 	if err != nil {
 		return err
 	}
-	_ = s.engine.Revoke(ctx, database.Name, user.Username)
-	if err := s.engine.DeleteUser(ctx, user.Username); err != nil {
+	provider, err := s.engineFor(database.Engine)
+	if err != nil {
+		return err
+	}
+	_ = provider.Revoke(ctx, database.Name, user.Username)
+	if err := provider.DeleteUser(ctx, user.Username); err != nil {
 		return err
 	}
 	if s.secrets != nil && user.SecretRef != "" {
@@ -448,11 +524,19 @@ func (s *Service) ChangeUserPassword(ctx context.Context, id string, requestedPa
 	if err != nil {
 		return "", err
 	}
-	if err := s.engine.ChangePassword(ctx, user.Username, password); err != nil {
+	database, err := s.repo.DatabaseByID(ctx, user.DatabaseID)
+	if err != nil {
+		return "", err
+	}
+	provider, err := s.engineFor(database.Engine)
+	if err != nil {
+		return "", err
+	}
+	if err := provider.ChangePassword(ctx, user.Username, password); err != nil {
 		return "", err
 	}
 	if err := s.secrets.Put(ctx, "database-user", user.SecretRef, []byte(password)); err != nil {
-		_ = s.engine.ChangePassword(context.Background(), user.Username, string(old))
+		_ = provider.ChangePassword(context.Background(), user.Username, string(old))
 		return "", fmt.Errorf("persist changed database password: %w", err)
 	}
 	s.recordAudit(ctx, actor, "database_user.password_change", "database_user", &id, map[string]any{"username": user.Username}, remote)
@@ -472,9 +556,13 @@ func (s *Service) ChangeGrants(ctx context.Context, id, action string, privilege
 	if err != nil {
 		return DatabaseUser{}, err
 	}
+	provider, err := s.engineFor(database.Engine)
+	if err != nil {
+		return DatabaseUser{}, err
+	}
 	switch strings.ToLower(action) {
 	case "grant":
-		if err := s.engine.Grant(ctx, database.Name, user.Username, privileges); err != nil {
+		if err := provider.Grant(ctx, database.Name, user.Username, privileges); err != nil {
 			return DatabaseUser{}, err
 		}
 		for _, privilege := range privileges {
@@ -483,7 +571,7 @@ func (s *Service) ChangeGrants(ctx context.Context, id, action string, privilege
 			}
 		}
 	case "revoke":
-		if err := s.engine.RevokePrivileges(ctx, database.Name, user.Username, privileges); err != nil {
+		if err := provider.RevokePrivileges(ctx, database.Name, user.Username, privileges); err != nil {
 			return DatabaseUser{}, err
 		}
 		filtered := user.Privileges[:0]
@@ -501,6 +589,13 @@ func (s *Service) ChangeGrants(ctx context.Context, id, action string, privilege
 	}
 	s.recordAudit(ctx, actor, "database_user."+strings.ToLower(action), "database_user", &id, map[string]any{"database_id": database.ID, "privileges": privileges}, remote)
 	return user, nil
+}
+
+func defaultPrivilegesForEngine(engine string) []string {
+	if normalizeDatabaseEngineName(engine) == "postgresql" {
+		return []string{"SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "REFERENCES", "TRIGGER", "EXECUTE"}
+	}
+	return defaultPrivileges()
 }
 
 func (s *Service) QueueBackup(ctx context.Context, databaseID string, actor *string, remote *string) (domain.Job, Backup, error) {
