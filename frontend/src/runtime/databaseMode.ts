@@ -18,7 +18,7 @@ const fields: Record<DatabaseMode, DatabaseModeField[]> = {
   none: [],
   managed: ['application_service', 'engine', 'database', 'username', 'application_host', 'application_port', 'status', 'created_at'],
   compose: ['application_service', 'compose_service', 'port', 'database', 'username', 'password', 'application_host', 'application_port'],
-  external: ['host', 'port', 'database', 'username', 'password', 'application_host', 'application_port'],
+  external: ['application_service', 'host', 'port', 'database', 'username', 'password', 'application_host', 'application_port'],
 }
 
 export function databaseModeFields(mode: DatabaseMode): readonly DatabaseModeField[] {

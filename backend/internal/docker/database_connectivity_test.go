@@ -88,7 +88,7 @@ func TestComposeDatabaseOverrideUsesComposeDNSAndLeavesProjectFileUntouched(t *t
 		"DB_DATABASE": "plan",
 		"DB_USERNAME": "plan_user",
 		"DB_PASSWORD": "compose-secret",
-	}, "")
+	}, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,8 +121,23 @@ func TestComposeDatabaseOverrideUsesComposeDNSAndLeavesProjectFileUntouched(t *t
 	}
 }
 
+func TestRenderComposeOverrideAddsHostGateway(t *testing.T) {
+	override, err := renderComposeDatabaseOverride("web", map[string]string{
+		"DB_HOST": "host.docker.internal",
+		"DB_PORT": "3306",
+	}, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(override)
+	if !strings.Contains(text, "extra_hosts:") ||
+		!strings.Contains(text, `"host.docker.internal:host-gateway"`) {
+		t.Fatalf("host gateway mapping missing from Compose override:\n%s", text)
+	}
+}
+
 func TestRenderManagedComposeOverrideDeclaresExternalDevBoxNetwork(t *testing.T) {
-	override, err := renderComposeDatabaseOverride("web", map[string]string{"DB_HOST": "devbox-mysql"}, "devbox-apps")
+	override, err := renderComposeDatabaseOverride("web", map[string]string{"DB_HOST": "devbox-mysql"}, "devbox-apps", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,6 +160,28 @@ func (r *envAwareStubRunner) RunEnv(ctx context.Context, environment map[string]
 		r.environment[key] = value
 	}
 	return r.Run(ctx, args...)
+}
+
+func TestDatabaseConnectionToDockerHostAddsHostGateway(t *testing.T) {
+	runner := &envAwareStubRunner{stubRunner: stubRunner{responses: []runnerResponse{
+		{stdout: `[{"Id":"mysql-image"}]`},
+		{stdout: "1\n"},
+	}}}
+	provider := newCLIProviderWithRunner(runner)
+	err := provider.TestDatabaseConnection(context.Background(), "", providers.DatabaseConnection{
+		Mode: providers.DatabaseModeExternal, Host: "host.docker.internal", Port: 3306,
+		Database: "wordpress", Username: "wordpress",
+	}, []byte("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := strings.Join(runner.calls[len(runner.calls)-1], " ")
+	if !strings.Contains(last, "--add-host host.docker.internal:host-gateway") {
+		t.Fatalf("host gateway mapping missing from Docker database test: %s", last)
+	}
+	if !strings.Contains(last, "--host host.docker.internal") {
+		t.Fatalf("database test did not use host.docker.internal: %s", last)
+	}
 }
 
 func TestDatabaseConnectionFromDockerNetworkKeepsPasswordOutOfArguments(t *testing.T) {

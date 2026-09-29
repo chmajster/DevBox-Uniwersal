@@ -43,6 +43,9 @@ func (p *CLIProvider) TestDatabaseConnection(ctx context.Context, network string
 	if network != "" {
 		args = append(args, "--network", network)
 	}
+	if strings.EqualFold(strings.TrimSpace(connection.Host), "host.docker.internal") {
+		args = append(args, "--add-host", "host.docker.internal:host-gateway")
+	}
 	args = append(args,
 		"--env", "MYSQL_PWD",
 		databaseClientImage,

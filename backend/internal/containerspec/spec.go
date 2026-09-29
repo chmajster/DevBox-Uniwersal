@@ -40,6 +40,7 @@ type DeploymentSpec struct {
 	Environment          map[string]string
 	SensitiveEnvironment map[string]string
 	Networks             []string
+	ExtraHosts           map[string]string
 	BindMounts           map[string]string
 	AnonymousVolumes     []string
 	Labels               map[string]string

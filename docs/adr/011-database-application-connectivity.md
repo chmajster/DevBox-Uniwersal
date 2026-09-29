@@ -96,6 +96,8 @@ A generated PHP runtime with an active database binding must include either `pdo
 
 No WSL host IP or Docker subnet is persisted. Application-to-managed-MySQL communication uses Docker DNS and the shared network, so WSL address changes do not change project bindings.
 
+For an external MySQL/MariaDB server running on the Docker host, DevBox uses the stable application hostname `host.docker.internal`. User input of `127.0.0.1`, `localhost` or `::1` is normalized for application traffic, while managed/custom containers and generated Compose overrides receive the explicit Docker mapping `host.docker.internal:host-gateway`. This avoids persisting a bridge or WSL IP. The host database still has to listen on an interface reachable from Docker and its database account/grants must allow the container-side connection.
+
 ## Consequences
 
 - Managed application containers, project-owned Dockerfiles and project-owned Compose use the same binding resolver.

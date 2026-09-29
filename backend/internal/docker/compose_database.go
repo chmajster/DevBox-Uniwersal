@@ -81,7 +81,7 @@ func (p *CLIProvider) ConfigureComposeDatabase(ctx context.Context, directory, p
 			return nil, err
 		}
 	}
-	data, err := renderComposeDatabaseOverride(service, config.Environment, config.Network)
+	data, err := renderComposeDatabaseOverride(service, config.Environment, config.Network, config.HostGateway)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +238,7 @@ func (p *CLIProvider) originalComposeConfigJSON(ctx context.Context, directory, 
 	return out, nil
 }
 
-func renderComposeDatabaseOverride(service string, environment map[string]string, network string) ([]byte, error) {
+func renderComposeDatabaseOverride(service string, environment map[string]string, network string, hostGateway bool) ([]byte, error) {
 	if err := validateServiceName(service); err != nil || service == "" {
 		return nil, fmt.Errorf("%w: Compose application service is required", ErrInvalidInput)
 	}
@@ -263,6 +263,10 @@ func renderComposeDatabaseOverride(service string, environment map[string]string
 	fmt.Fprintf(&text, "services:\n  %s:\n    environment:\n", strconv.Quote(service))
 	for _, key := range keys {
 		fmt.Fprintf(&text, "      %s: %s\n", key, strconv.Quote(environment[key]))
+	}
+	if hostGateway {
+		text.WriteString("    extra_hosts:\n")
+		fmt.Fprintf(&text, "      - %s\n", strconv.Quote("host.docker.internal:host-gateway"))
 	}
 	if network != "" {
 		fmt.Fprintf(&text, "    networks:\n      - %s\nnetworks:\n  %s:\n    external: true\n", strconv.Quote(network), strconv.Quote(network))

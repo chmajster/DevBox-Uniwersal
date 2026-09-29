@@ -18,6 +18,8 @@
 
 ### Unified project database connectivity
 
+- Host MySQL/MariaDB bindings now work from managed containers, custom Dockerfile deployments and project Compose: loopback hosts (`127.0.0.1`, `localhost`, `::1`) resolve to `host.docker.internal`, and DevBox injects `host.docker.internal:host-gateway` where Linux/WSL Docker needs it.
+- External/Compose database bindings can explicitly store an empty password in SecretStore; the project UI exposes a `Użytkownik bazy nie ma hasła` option without conflating it with preserving an existing secret.
 - Simplified the per-project database UX around the application workflow: create a new DevBox-managed database or connect to an existing MySQL/MariaDB host; Compose remains available as an advanced source. Managed mode now explains that DevBox creates the database/user/secret, while existing-host mode makes the supplied endpoint authoritative and includes a shortcut for `devbox-mysql:3306`.
 - Fixed the project database mode selector so all four modes render as aligned responsive option cards instead of a stretched browser fieldset/grid layout.
 - Database status now exposes both the application-facing MySQL/MariaDB address (`devbox-mysql:3306` for managed mode) and the loopback administrative endpoint; the Databases UI shows the host, port, Docker network and ready-to-copy `DB_HOST` value.

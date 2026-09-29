@@ -61,6 +61,8 @@ DevBox Universal is an integrated local development control plane.
 
 - Project database mode selection uses a dedicated responsive four-option layout with consistent radio alignment on desktop and stacked fallbacks on narrow screens.
 - Per-project database bindings support `none`, DevBox-managed MySQL, project-owned Compose MySQL/MariaDB and external MySQL/MariaDB.
+- External bindings that target `localhost` or any accepted IPv4/IPv6 loopback literal are normalized for application traffic to `host.docker.internal`; DevBox injects `host.docker.internal:host-gateway` into managed/custom containers and private Compose overrides when required.
+- External and Compose bindings can explicitly represent an empty database password in SecretStore; omitting the password continues to preserve an existing secret instead of silently replacing it.
 - Managed MySQL runs as `devbox-mysql` on the shared `devbox-apps` network with persistent `devbox-mysql-data`, loopback-only admin publication and durable lifecycle jobs.
 - Admin and application endpoints are separate: control-plane operations use the loopback endpoint while application containers use `devbox-mysql:3306`.
 - The Databases page reports the effective MySQL application/admin addresses and Docker network. PostgreSQL can be installed explicitly from Plugins as an optional host component without changing the default managed MySQL topology.

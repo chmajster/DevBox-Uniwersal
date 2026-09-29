@@ -28,6 +28,24 @@ func bindingSecretScope(projectID string) string {
 	return "project-database/" + projectID
 }
 
+const dockerHostInternal = "host.docker.internal"
+
+func applicationDatabaseHost(host string) string {
+	host = strings.TrimSpace(host)
+	if strings.EqualFold(host, "localhost") {
+		return dockerHostInternal
+	}
+	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil && ip.IsLoopback() {
+		return dockerHostInternal
+	}
+	return host
+}
+
+func requiresDockerHostGateway(connection providers.DatabaseConnection) bool {
+	return connection.Mode == DatabaseModeExternal &&
+		strings.EqualFold(strings.TrimSpace(connection.Host), dockerHostInternal)
+}
+
 func (s *Service) GetDatabaseBinding(ctx context.Context, projectID string) (DatabaseBinding, error) {
 	if _, err := s.repo.ProjectByID(ctx, projectID); err != nil {
 		return DatabaseBinding{}, err
@@ -126,7 +144,7 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 		item.Username = ""
 		item.SecretRef = ""
 	case DatabaseModeCompose, DatabaseModeExternal:
-		if input.Password != "" {
+		if input.Password != "" || input.PasswordProvided {
 			item.SecretRef = newID()
 			if err := s.secrets.Put(ctx, bindingSecretScope(projectID), item.SecretRef, []byte(input.Password)); err != nil {
 				return DatabaseBinding{}, fmt.Errorf("store database binding credential: %w", err)
@@ -139,7 +157,7 @@ func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, i
 	}
 
 	if err := s.repo.UpsertDatabaseBinding(ctx, item); err != nil {
-		if input.Password != "" && item.SecretRef != "" && (err != nil || existing.SecretRef != item.SecretRef) {
+		if (input.Password != "" || input.PasswordProvided) && item.SecretRef != "" && (err != nil || existing.SecretRef != item.SecretRef) {
 			_ = s.secrets.Delete(ctx, bindingSecretScope(projectID), item.SecretRef)
 		}
 		return DatabaseBinding{}, err
@@ -236,7 +254,7 @@ func (s *Service) ResolveApplicationConnection(ctx context.Context, projectID st
 		}, nil
 	case DatabaseModeExternal:
 		return providers.DatabaseConnection{
-			Engine: binding.Engine, Host: binding.Host, Port: binding.Port, Database: binding.Database,
+			Engine: binding.Engine, Host: applicationDatabaseHost(binding.Host), Port: binding.Port, Database: binding.Database,
 			Username: binding.Username, SecretRef: binding.SecretRef, Mode: DatabaseModeExternal,
 		}, nil
 	case DatabaseModeNone:
@@ -251,7 +269,10 @@ func (s *Service) ResolveRuntimeDatabase(ctx context.Context, projectID string) 
 	if err != nil {
 		return providers.ProjectDatabaseRuntime{}, err
 	}
-	result := providers.ProjectDatabaseRuntime{Connection: connection}
+	result := providers.ProjectDatabaseRuntime{
+		Connection:  connection,
+		HostGateway: requiresDockerHostGateway(connection),
+	}
 	if connection.Mode == DatabaseModeNone {
 		return result, nil
 	}
