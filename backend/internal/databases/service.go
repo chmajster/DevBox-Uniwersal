@@ -603,7 +603,7 @@ func (s *Service) PHPMyAdminAction(ctx context.Context, action string, actor *st
 	if s.phpMyAdmin == nil {
 		return PHPMyAdminStatus{}, errors.New("phpMyAdmin manager is not configured")
 	}
-	if action != "stop" && s.managed != nil {
+	if (action == "install" || action == "start" || action == "restart") && s.managed != nil {
 		if err := s.ensureManagedReady(ctx); err != nil {
 			return PHPMyAdminStatus{}, err
 		}
@@ -625,6 +625,8 @@ func (s *Service) PHPMyAdminAction(ctx context.Context, action string, actor *st
 		if _, err = s.phpMyAdmin.Install(ctx); err == nil {
 			status, err = s.phpMyAdmin.Restart(ctx)
 		}
+	case "uninstall":
+		status, err = s.phpMyAdmin.Uninstall(ctx)
 	default:
 		return PHPMyAdminStatus{}, errors.New("unsupported phpMyAdmin action")
 	}
