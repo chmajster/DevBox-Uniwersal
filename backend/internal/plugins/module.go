@@ -579,35 +579,6 @@ func hostTCPPortOpen(port int) bool {
 	return true
 }
 
-func (s *Service) InstallPostgreSQL(ctx context.Context) (PostgreSQLStatus, error) {
-	status := s.PostgreSQLStatus(ctx)
-	if status.Installed && status.Running {
-		return status, nil
-	}
-	if s.helperBinary == "" {
-		return PostgreSQLStatus{}, errors.New("privileged helper is not configured")
-	}
-	if !status.Installed {
-		if err := s.installSystemPackage(ctx, "postgresql"); err != nil {
-			return PostgreSQLStatus{}, fmt.Errorf("install PostgreSQL: %w", err)
-		}
-		status = s.PostgreSQLStatus(ctx)
-	}
-	if !status.Installed {
-		return status, errors.New("PostgreSQL installation completed but the server executable was not detected")
-	}
-	if !status.Running {
-		if err := s.restartSystemService(ctx, "postgresql"); err != nil {
-			return status, fmt.Errorf("start PostgreSQL service: %w", err)
-		}
-		status = s.PostgreSQLStatus(ctx)
-	}
-	if !status.Running {
-		return status, errors.New("PostgreSQL was installed but no local cluster is running")
-	}
-	return status, nil
-}
-
 func findPostgreSQLServer() (string, error) {
 	if pgConfig, err := exec.LookPath("pg_config"); err == nil {
 		if out, runErr := exec.Command(pgConfig, "--bindir").CombinedOutput(); runErr == nil {

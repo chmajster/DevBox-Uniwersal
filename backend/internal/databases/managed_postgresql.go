@@ -20,10 +20,10 @@ const (
 )
 
 type ManagedPostgreSQLConfig struct {
-	Image               string
-	Container           string
-	Network             string
-	Volume              string
+	Image                string
+	Container            string
+	Network              string
+	Volume               string
 	InitialAdminPassword string
 }
 
