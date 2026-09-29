@@ -59,6 +59,21 @@ func TestUpdateAllowsLocalPathAndRuntimeChange(t *testing.T) {
 	}
 }
 
+func TestUpdateRejectsMissingLocalPath(t *testing.T) {
+	repo, project, _ := integrationProject(t, Project{
+		Runtime:         "static",
+		ContainerPolicy: ContainerPolicyAuto,
+	})
+	ctx := context.Background()
+	missing := project.LocalPath + "-missing"
+	service := NewService(repo, nil, nil, nil, t.TempDir())
+
+	_, err := service.Update(ctx, project.ID, UpdateInput{LocalPath: &missing})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("Update() error = %v, want ErrInvalidInput", err)
+	}
+}
+
 func TestUpdateRejectsLocalPathChangeForManagedSource(t *testing.T) {
 	repo, project, _ := integrationProject(t, Project{
 		Runtime:         "static",
