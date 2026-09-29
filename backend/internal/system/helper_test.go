@@ -76,7 +76,7 @@ func TestConfigureApplicationDatabaseUsesControlledSystemdRun(t *testing.T) {
 		t.Fatalf("calls = %#v, want one systemd-run invocation", runner.calls)
 	}
 	call := runner.calls[0]
-	if len(call) < 9 || call[0] != "/usr/bin/systemd-run" {
+	if len(call) < 8 || call[0] != "/usr/bin/systemd-run" {
 		t.Fatalf("unexpected configure call: %#v", call)
 	}
 	script := call[len(call)-1]
