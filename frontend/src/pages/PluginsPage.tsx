@@ -335,7 +335,7 @@ export function PluginsPage() {
               type="checkbox"
               checked={mysqlSelected}
               onChange={(event) => setMySQLSelected(event.target.checked)}
-              disabled={!canInstallSystemPackages || busy}
+              disabled={!canInstallSystemPackages || busy || mysql?.purpose === 'control-plane'}
             />
             <div>
               <strong>MySQL / MariaDB</strong>
@@ -353,9 +353,10 @@ export function PluginsPage() {
               max={65535}
               value={mysqlPort}
               onChange={(event) => setMySQLPort(Number(event.target.value))}
-              disabled={!canInstallSystemPackages || busy}
+              disabled={!canInstallSystemPackages || busy || mysql?.purpose === 'control-plane'}
             />
           </label>
+          {mysql?.purpose === 'control-plane' && <div className="error-banner">Ten MySQL obsługuje control-plane DevBox i nie może być używany jako serwer aplikacyjny. Przełącz DevBox na managed MySQL, aby wydzielić osobny hostowy MySQL dla aplikacji.</div>}
           <p className="muted small">Adres z kontenera: <code>{mysql?.container_host ?? 'host.docker.internal'}:{mysqlPort}</code></p>
           {mysql?.version && <p className="muted small">Wersja: <code>{mysql.version}</code></p>}
           {mysql?.message && <p className="muted small">{mysql.message}</p>}
