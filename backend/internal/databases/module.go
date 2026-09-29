@@ -57,6 +57,8 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/projects/{id}/database-binding/test", operator(http.HandlerFunc(m.testDatabaseBinding)))
 	mux.Handle("POST /api/v1/projects/{id}/database-binding/password", operator(http.HandlerFunc(m.rotateDatabasePassword)))
 	mux.Handle("GET /api/v1/projects/{id}/database-binding/compose-services", viewer(http.HandlerFunc(m.composeServices)))
+	mux.Handle("GET /api/v1/projects/{id}/database-services", viewer(http.HandlerFunc(m.getProjectDatabaseServices)))
+	mux.Handle("PUT /api/v1/projects/{id}/database-services", operator(http.HandlerFunc(m.updateProjectDatabaseServices)))
 	mux.Handle("POST /api/v1/projects/{id}/database/provision", operator(http.HandlerFunc(m.provisionProject)))
 	mux.Handle("POST /api/v1/databases/{id}/backup", operator(http.HandlerFunc(m.backupDatabase)))
 	mux.Handle("GET /api/v1/databases/{id}/backups", viewer(http.HandlerFunc(m.listBackups)))
@@ -302,6 +304,30 @@ func (m *Module) composeServices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeData(w, http.StatusOK, items)
+}
+
+func (m *Module) getProjectDatabaseServices(w http.ResponseWriter, r *http.Request) {
+	item, err := m.service.GetProjectDatabaseServices(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, item)
+}
+
+func (m *Module) updateProjectDatabaseServices(w http.ResponseWriter, r *http.Request) {
+	var input ProjectDatabaseServicesInput
+	if err := decodeBody(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+	actor, remote := requestIdentity(r)
+	item, err := m.service.UpdateProjectDatabaseServices(r.Context(), r.PathValue("id"), input, actor, remote)
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, item)
 }
 
 func (m *Module) provisionProject(w http.ResponseWriter, r *http.Request) {
