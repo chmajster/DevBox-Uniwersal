@@ -96,6 +96,10 @@ export function PluginsPage() {
       setError('Wybierz MySQL/MariaDB, PostgreSQL albo oba silniki.')
       return
     }
+    if (mysqlSelected && postgresqlSelected && mysqlPort === postgresqlPort) {
+      setError('MySQL/MariaDB i PostgreSQL muszą używać różnych portów.')
+      return
+    }
     setBusyAction('database-install')
     setError('')
     setMessage('')
