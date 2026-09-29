@@ -25,6 +25,8 @@
 
 ### Unified project database connectivity
 
+- Added the optional host MySQL/MariaDB plugin with status discovery and durable Job Engine installation. The installer sudoers policy now explicitly allows only `devbox-helper install-package mysql`, and the plugin refuses installation when TCP 3306 is reserved by managed `devbox-mysql` or another listener.
+- phpMyAdmin now reconciles host-gateway access and can expose both managed MySQL and host MySQL/MariaDB targets; the plugin routes are included in OpenAPI discovery.
 - Fixed database-user connection details so newly created or rotated credentials include the actual application-facing `DB_HOST`, `DB_PORT`, database and username; loopback control-plane MySQL endpoints are normalized to `host.docker.internal` for application containers.
 - Opening phpMyAdmin now reconciles its container/database target first, avoiding stale `PMA_HOST`/`PMA_PORT` configuration after database topology changes.
 - Host database access now discovers installed host MySQL/MariaDB and PostgreSQL services through `GET /api/v1/plugins/databases/host`; the project database tab lets the user choose the detected engine/port directly and still permits an explicit custom port.

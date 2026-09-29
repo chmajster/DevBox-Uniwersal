@@ -18,6 +18,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
 )
 
 type PHPFPMStatus struct {
@@ -35,6 +36,20 @@ type DockerComposeStatus struct {
 	Version     string `json:"version,omitempty"`
 	Installable bool   `json:"installable"`
 	Message     string `json:"message,omitempty"`
+}
+
+type MySQLPluginStatus struct {
+	Installed     bool   `json:"installed"`
+	Running       bool   `json:"running"`
+	Engine        string `json:"engine,omitempty"`
+	ClientPath    string `json:"client_path,omitempty"`
+	ServerPath    string `json:"server_path,omitempty"`
+	Version       string `json:"version,omitempty"`
+	Host          string `json:"host,omitempty"`
+	Port          int    `json:"port,omitempty"`
+	ContainerHost string `json:"container_host,omitempty"`
+	Installable   bool   `json:"installable"`
+	Message       string `json:"message,omitempty"`
 }
 
 type PostgreSQLStatus struct {
@@ -61,15 +76,52 @@ type HostDatabaseInstance struct {
 }
 
 type Service struct {
-	helperBinary string
-	sudoBinary   string
+	helperBinary      string
+	sudoBinary        string
+	jobs              jobs.JobRunner
+	reservedHostPorts map[int]string
+	mysqlDetector     func(context.Context) (HostDatabaseInstance, bool)
 }
 
-func NewService(helperBinary, sudoBinary string) *Service {
-	return &Service{
-		helperBinary: strings.TrimSpace(helperBinary),
-		sudoBinary:   strings.TrimSpace(sudoBinary),
+type ServiceOption func(*Service)
+
+func WithJobRunner(runner jobs.JobRunner) ServiceOption {
+	return func(service *Service) {
+		service.jobs = runner
 	}
+}
+
+func WithReservedHostPort(port int, owner string) ServiceOption {
+	return func(service *Service) {
+		if port < 1 || port > 65535 {
+			return
+		}
+		if service.reservedHostPorts == nil {
+			service.reservedHostPorts = make(map[int]string)
+		}
+		service.reservedHostPorts[port] = strings.TrimSpace(owner)
+	}
+}
+
+func withMySQLDetector(detector func(context.Context) (HostDatabaseInstance, bool)) ServiceOption {
+	return func(service *Service) {
+		service.mysqlDetector = detector
+	}
+}
+
+func NewService(helperBinary, sudoBinary string, options ...ServiceOption) *Service {
+	service := &Service{
+		helperBinary:      strings.TrimSpace(helperBinary),
+		sudoBinary:        strings.TrimSpace(sudoBinary),
+		reservedHostPorts: make(map[int]string),
+		mysqlDetector:     detectHostMySQL,
+	}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+	return service
 }
 
 func (s *Service) PHPFPMStatus(ctx context.Context) PHPFPMStatus {
@@ -169,6 +221,103 @@ func firstLine(value string) string {
 	return value
 }
 
+func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
+	status := MySQLPluginStatus{
+		Installable:   s.helperBinary != "",
+		Host:          "127.0.0.1",
+		Port:          3306,
+		ContainerHost: "host.docker.internal",
+	}
+
+	for _, client := range []string{"mysql", "mariadb"} {
+		if path, err := exec.LookPath(client); err == nil {
+			status.ClientPath = path
+			break
+		}
+	}
+
+	detector := s.mysqlDetector
+	if detector == nil {
+		detector = detectHostMySQL
+	}
+	instance, installed := detector(ctx)
+	if !installed {
+		if conflict := s.mysqlInstallConflict(); conflict != "" {
+			status.Installable = false
+			status.Message = conflict
+			return status
+		}
+		if status.ClientPath != "" {
+			status.Message = "Wykryto klienta MySQL/MariaDB, ale serwer hostowy nie jest zainstalowany."
+		} else {
+			status.Message = "Hostowy MySQL/MariaDB nie jest zainstalowany."
+		}
+		if status.Installable {
+			status.Message += " Możesz zainstalować serwer z panelu Pluginy."
+		} else {
+			status.Message += " Instalacja z panelu jest niedostępna, ponieważ DEVBOX_PRIVILEGED_HELPER nie jest skonfigurowany."
+		}
+		return status
+	}
+
+	status.Installed = true
+	status.Running = instance.Running
+	status.Engine = instance.Engine
+	status.ServerPath = instance.Source
+	status.Version = instance.Version
+	status.Port = instance.Port
+	status.ContainerHost = instance.Host
+
+	if status.Running {
+		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany i aktywna usługa odpowiada na TCP 3306."
+	} else if owner, reserved := s.reservedHostPorts[3306]; reserved {
+		status.Installable = false
+		if owner == "" {
+			owner = "inna usługa DevBox"
+		}
+		status.Message = fmt.Sprintf("Hostowy MySQL/MariaDB jest zainstalowany, ale nie działa na TCP 3306, który jest zarezerwowany przez %s.", owner)
+	} else {
+		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany, ale hostowa usługa nie odpowiada na TCP 3306."
+	}
+	return status
+}
+
+func (s *Service) mysqlInstallConflict() string {
+	if owner, reserved := s.reservedHostPorts[3306]; reserved {
+		if owner == "" {
+			owner = "inna usługa DevBox"
+		}
+		return fmt.Sprintf("Nie można zainstalować hostowego MySQL/MariaDB na porcie 3306: port jest zarezerwowany przez %s. Zatrzymaj lub przekonfiguruj tę usługę albo użyj już dostępnej bazy przez DevBox.", owner)
+	}
+	if hostTCPPortOpen(3306) {
+		return "Nie można zainstalować hostowego MySQL/MariaDB: port 3306 jest już zajęty przez inny listener. DevBox nie uruchomi drugiego serwera na tym samym porcie."
+	}
+	return ""
+}
+
+func (s *Service) InstallMySQL(ctx context.Context) (MySQLPluginStatus, error) {
+	if status := s.MySQLStatus(ctx); status.Installed {
+		return status, nil
+	}
+	if conflict := s.mysqlInstallConflict(); conflict != "" {
+		return MySQLPluginStatus{}, errors.New(conflict)
+	}
+	if s.helperBinary == "" {
+		return MySQLPluginStatus{}, errors.New("privileged helper is not configured")
+	}
+	if err := s.installSystemPackage(ctx, "mysql"); err != nil {
+		return MySQLPluginStatus{}, fmt.Errorf("install MySQL/MariaDB: %w", err)
+	}
+	status := s.MySQLStatus(ctx)
+	if !status.Installed {
+		return status, errors.New("MySQL/MariaDB installation completed but the server executable was not detected")
+	}
+	if !status.Running {
+		return status, errors.New("MySQL/MariaDB was installed but the host service is not running on TCP 3306")
+	}
+	return status, nil
+}
+
 func (s *Service) PostgreSQLStatus(ctx context.Context) PostgreSQLStatus {
 	status := PostgreSQLStatus{Installable: s.helperBinary != "", Host: "127.0.0.1", Port: 5432}
 	instances := detectHostPostgreSQL(ctx)
@@ -245,7 +394,7 @@ func detectHostMySQL(ctx context.Context) (HostDatabaseInstance, bool) {
 		Host:      "host.docker.internal",
 		Port:      port,
 		Installed: true,
-		Running:   hostTCPPortOpen(port),
+		Running:   hostMySQLDaemonRunning(ctx, engine) && hostTCPPortOpen(port),
 		Version:   version,
 		Source:    path,
 	}, true
@@ -334,6 +483,30 @@ func findMySQLServer() (string, error) {
 		}
 	}
 	return "", errors.New("mysql server executable not found")
+}
+
+func hostMySQLDaemonRunning(ctx context.Context, engine string) bool {
+	units := []string{"mysql.service", "mariadb.service"}
+	services := []string{"mysql", "mariadb"}
+	if strings.EqualFold(engine, "mariadb") {
+		units = []string{"mariadb.service", "mysql.service"}
+		services = []string{"mariadb", "mysql"}
+	}
+	if systemctl, err := exec.LookPath("systemctl"); err == nil {
+		for _, unit := range units {
+			if exec.CommandContext(ctx, systemctl, "is-active", "--quiet", unit).Run() == nil {
+				return true
+			}
+		}
+	}
+	if service, err := exec.LookPath("service"); err == nil {
+		for _, name := range services {
+			if exec.CommandContext(ctx, service, name, "status").Run() == nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func hostTCPPortOpen(port int) bool {
@@ -468,6 +641,8 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/plugins/docker-compose/install", admin(m.installDockerCompose))
 	mux.Handle("GET /api/v1/plugins/php-fpm/status", viewer(m.phpFPMStatus))
 	mux.Handle("POST /api/v1/plugins/php-fpm/install", admin(m.installPHPFPM))
+	mux.Handle("GET /api/v1/plugins/mysql/status", viewer(m.mySQLStatus))
+	mux.Handle("POST /api/v1/plugins/mysql/install", admin(m.installMySQL))
 	mux.Handle("GET /api/v1/plugins/postgresql/status", viewer(m.postgreSQLStatus))
 	mux.Handle("POST /api/v1/plugins/postgresql/install", admin(m.installPostgreSQL))
 	mux.Handle("GET /api/v1/plugins/databases/host", viewer(m.hostDatabases))
@@ -494,6 +669,29 @@ func (m *Module) installDockerCompose(w http.ResponseWriter, r *http.Request) {
 		_ = m.audit.Record(r.Context(), actor, "plugin.docker_compose.install", "plugin", nil, map[string]any{"mode": status.Mode, "path": status.Path, "version": status.Version}, nil)
 	}
 	writeData(w, http.StatusOK, status)
+}
+
+func (m *Module) mySQLStatus(w http.ResponseWriter, r *http.Request) {
+	writeData(w, http.StatusOK, m.service.MySQLStatus(r.Context()))
+}
+
+func (m *Module) installMySQL(w http.ResponseWriter, r *http.Request) {
+	var actor *string
+	if user, ok := api.CurrentUser(r.Context()); ok {
+		id := user.ID
+		actor = &id
+	}
+	job, err := m.service.QueueMySQLInstall(r.Context(), actor)
+	if err != nil {
+		writeError(w, http.StatusConflict, "mysql_install_unavailable", err.Error())
+		return
+	}
+	if m.audit != nil {
+		_ = m.audit.Record(r.Context(), actor, "plugin.mysql.install.enqueue", "plugin", nil, map[string]any{
+			"job_id": job.ID,
+		}, nil)
+	}
+	writeData(w, http.StatusAccepted, job)
 }
 
 func (m *Module) hostDatabases(w http.ResponseWriter, r *http.Request) {
