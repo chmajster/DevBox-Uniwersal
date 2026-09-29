@@ -21,9 +21,9 @@ Each project has at most one `project_database_bindings` row with one of four tr
 
 Managed bindings reference the existing `databases` row. Database name, managed username and managed user SecretRef remain authoritative in `databases` / `database_users`; the binding does not duplicate them. Compose/external bindings persist connection metadata and an opaque SecretRef only.
 
-An external binding may additionally set `host_access_only`. In that variant the binding is not a database credential configuration: DevBox stores only the Docker-host target plus the selected engine/port, injects the host-gateway mapping at deployment time, does not persist a database name/user/password, does not resolve SecretStore credentials and does not inject `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` or their `DATABASE_*` aliases. Host-access-only bindings may target MySQL, MariaDB or PostgreSQL. Application code remains responsible for its own database/schema credentials.
+The released schema still contains the `host_access_only` compatibility flag from migration `010_project_database_host_access.sql`. Existing bindings with that flag remain readable and preserve their host-gateway behavior, but the project UI no longer creates them and DevBox no longer auto-discovers host MySQL/MariaDB/PostgreSQL services for project configuration. New host SQL connections should be represented as ordinary external bindings with explicit connection credentials when that topology is intentionally required.
 
-Migration `009_project_database_bindings.sql` is additive and backfills existing per-project databases as `managed` bindings without rotating users or passwords. Migration `010_project_database_host_access.sql` adds the access-only flag without changing the released mode constraint.
+Migration `009_project_database_bindings.sql` is additive and backfills existing per-project databases as `managed` bindings without rotating users or passwords. Migration `010_project_database_host_access.sql` remains part of the schema for backwards compatibility.
 
 ### Admin and application endpoints
 
@@ -47,7 +47,7 @@ Database servers installed from Plugins are Docker-native:
 
 Network, volume, image and container reconciliation are idempotent. Database administrative credentials are stored in SecretStore and supplied to Docker through protected temporary environment files rather than command arguments or image layers. Standard restart never removes persistent database volumes.
 
-Plugin install actions run through the durable Job Engine and perform Docker image/network/volume/container reconciliation. They do not install MySQL/MariaDB or PostgreSQL server packages on the host. Legacy host databases remain supported as external/host-access targets.
+Plugin install actions run through the durable Job Engine and perform Docker image/network/volume/container reconciliation. They do not install MySQL/MariaDB or PostgreSQL server packages on the host. The project UI treats plugin databases as Docker services, not as host SQL packages.
 
 ### Runtime environment and precedence
 
@@ -98,12 +98,12 @@ A generated PHP runtime with an active database binding must include either `pdo
 
 No WSL host IP or Docker subnet is persisted. Application-to-managed-MySQL communication uses Docker DNS and the shared network, so WSL address changes do not change project bindings.
 
-For a database server running on the Docker host, DevBox uses the stable application hostname `host.docker.internal`. User input of `127.0.0.1`, `localhost` or `::1` is normalized for credentialed MySQL/MariaDB traffic, while managed/custom containers and generated Compose overrides receive the explicit Docker mapping `host.docker.internal:host-gateway`. The dedicated host-access-only UI detects installed MySQL/MariaDB and PostgreSQL services, preserves the chosen port (PostgreSQL clusters are read from `pg_lsclusters` when available), and deliberately does not collect or inject database credentials. This avoids persisting a bridge or WSL IP. The host database still has to listen on an interface reachable from Docker and, when the application authenticates to it, the database account/grants or PostgreSQL `pg_hba.conf` must allow the container-side connection.
+Managed database traffic does not depend on a WSL or host address: applications use Docker DNS on `devbox-apps`. For explicitly configured external MySQL/MariaDB bindings, loopback input such as `127.0.0.1`, `localhost` or `::1` is still normalized to `host.docker.internal` and DevBox adds `host.docker.internal:host-gateway` where Linux/WSL Docker requires it. This is an external-database compatibility path, not the normal managed-database topology.
 
 ## Consequences
 
 - Managed application containers, project-owned Dockerfiles and project-owned Compose use the same binding resolver.
 - Existing backup/restore and database-user/grant implementations remain authoritative.
-- phpMyAdmin joins `devbox-apps` for managed MySQL and also receives `host.docker.internal:host-gateway`. Its container exposes both the managed `devbox-mysql` target and host MySQL/MariaDB on `host.docker.internal:3306`, with arbitrary-server login enabled. Existing phpMyAdmin containers are reconciled on install/start/restart when this networking configuration is missing.
+- phpMyAdmin joins `devbox-apps` and targets the configured MySQL endpoint directly. In the standard managed setup that endpoint is `devbox-mysql:3306`; host-gateway mapping is added only for an explicitly configured legacy loopback target. Existing phpMyAdmin containers are reconciled on install/start/restart when this networking configuration changes.
 - The API never returns stored password plaintext from binding reads or password rotation.
 - Deleting a managed project database removes its binding so stale application endpoints are not retained.
