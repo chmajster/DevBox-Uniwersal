@@ -12,8 +12,8 @@ export function isDockerHostDatabaseHost(host?: string): boolean {
     normalized === '[::1]'
 }
 
-export function databaseModeChoice(mode: DatabaseMode, host?: string): DatabaseModeChoice {
-  if (mode === 'external' && isDockerHostDatabaseHost(host)) return 'host'
+export function databaseModeChoice(mode: DatabaseMode, hostAccessOnly = false): DatabaseModeChoice {
+  if (mode === 'external' && hostAccessOnly) return 'host'
   return mode
 }
 
