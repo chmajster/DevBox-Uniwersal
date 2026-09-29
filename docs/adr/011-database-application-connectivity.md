@@ -19,7 +19,7 @@ Each project has at most one `project_database_bindings` row with one of four tr
 - `compose`: a database service owned by the project's Compose definition;
 - `external`: an externally operated MySQL/MariaDB endpoint.
 
-Managed bindings reference the existing `databases` row. Database name, managed username and managed user SecretRef remain authoritative in `databases` / `database_users`; the binding does not duplicate them. Compose/external bindings persist connection metadata and an opaque SecretRef only.
+Managed bindings reference the existing `databases` row. Database identity remains authoritative in `databases`; managed SQL accounts live in `database_accounts`, while per-database assignments and privileges live in `database_user_grants`. A single account may therefore be granted access to multiple databases on the same SQL server. The project binding does not duplicate this state. Compose/external bindings persist connection metadata and an opaque SecretRef only.
 
 The released schema still contains the `host_access_only` compatibility flag from migration `010_project_database_host_access.sql`. Existing bindings with that flag remain readable and preserve their host-gateway behavior, but the project UI no longer creates them and DevBox no longer auto-discovers host MySQL/MariaDB/PostgreSQL services for project configuration. New host SQL connections should be represented as ordinary external bindings with explicit connection credentials when that topology is intentionally required.
 
@@ -33,6 +33,8 @@ The MySQL provider exposes separate endpoint semantics:
 - application traffic: Docker DNS `devbox-mysql:3306`.
 
 Provisioning, users, grants, backup/restore and health administration use the admin endpoint. Runtime injection uses the application endpoint. Code must not infer application connectivity from the admin endpoint.
+
+SQL account lifecycle is server-scoped, while grants are database-scoped. Password changes affect the account across all assigned databases. Removing one database assignment revokes only that database's privileges; the SQL account is dropped only when the account itself is deleted or when deletion of its final managed database leaves it with no assignments.
 
 ### Managed database server lifecycle
 
