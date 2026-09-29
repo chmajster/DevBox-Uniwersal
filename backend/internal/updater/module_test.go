@@ -98,8 +98,8 @@ func TestReadUpdateLogTailLimitsAndRedacts(t *testing.T) {
 	if lines[0] != "password=[REDACTED]" {
 		t.Fatalf("password was not redacted: %q", lines[0])
 	}
-	if lines[1] != "Authorization: Bearer [REDACTED]" {
-		t.Fatalf("bearer token was not redacted: %q", lines[1])
+	if lines[1] != "Authorization: [REDACTED]" {
+		t.Fatalf("authorization header was not redacted: %q", lines[1])
 	}
 	if lines[2] != "npm ERR! build failed" {
 		t.Fatalf("unexpected final line: %q", lines[2])
