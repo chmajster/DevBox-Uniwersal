@@ -38,8 +38,12 @@ export function PluginsPage() {
     setMySQL(mySQLStatus)
     setPostgreSQL(postgreSQLStatus)
     setPHPMyAdmin(phpMyAdminStatus)
-    setMySQLPort(mySQLStatus.port ?? mySQLStatus.suggested_port ?? 3307)
-    setPostgreSQLPort(postgreSQLStatus.port ?? postgreSQLStatus.suggested_port ?? 5432)
+    setMySQLPort(mySQLStatus.application_ready
+      ? (mySQLStatus.port ?? mySQLStatus.suggested_port ?? 3307)
+      : (mySQLStatus.suggested_port ?? mySQLStatus.port ?? 3307))
+    setPostgreSQLPort(postgreSQLStatus.application_ready
+      ? (postgreSQLStatus.port ?? postgreSQLStatus.suggested_port ?? 5432)
+      : (postgreSQLStatus.suggested_port ?? postgreSQLStatus.port ?? 5432))
   }, [])
 
   useEffect(() => {
