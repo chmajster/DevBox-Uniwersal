@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { UpdateProgress } from '../api/types'
-import { clampUpdatePercent, updateIsActive, updateStageState, updateStateLabel } from './progress'
+import { buildUpdateHardRefreshURL, clampUpdatePercent, clearUpdateHardRefreshURL, updateIsActive, updateStageState, updateStateLabel } from './progress'
 
 function progress(change: Partial<UpdateProgress>): UpdateProgress {
   return {
@@ -43,5 +43,11 @@ describe('update progress model', () => {
     expect(updateIsActive(progress({ state: 'starting' }))).toBe(true)
     expect(updateIsActive(progress({ state: 'succeeded' }))).toBe(false)
     expect(updateStateLabel(progress({ state: 'failed' }))).toBe('Błąd aktualizacji')
+  })
+
+  it('builds a one-time cache-busting URL and removes only the DevBox marker', () => {
+    const refreshed = buildUpdateHardRefreshURL('http://127.0.0.1:8787/updates?tab=system#progress', 12345)
+    expect(refreshed).toBe('http://127.0.0.1:8787/updates?tab=system&__devbox_refresh=12345#progress')
+    expect(clearUpdateHardRefreshURL(refreshed)).toBe('http://127.0.0.1:8787/updates?tab=system#progress')
   })
 })
