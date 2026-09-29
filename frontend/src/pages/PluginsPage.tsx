@@ -85,6 +85,24 @@ export function PluginsPage() {
     }
   }
 
+  async function openPHPMyAdmin() {
+    setBusyAction('start')
+    setError('')
+    setMessage('')
+    try {
+      const status = await request<PHPMyAdminStatus>('/phpmyadmin/start', { method: 'POST', body: '{}' })
+      setPHPMyAdmin(status)
+      if (!status.running) throw new Error('phpMyAdmin nie został uruchomiony.')
+      if (!status.url) throw new Error('phpMyAdmin nie zwrócił adresu aplikacji.')
+      window.open(status.url, '_blank', 'noopener,noreferrer')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Nie udało się otworzyć phpMyAdmin')
+      await load().catch(() => undefined)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   async function phpAction(action: PHPMyAdminAction) {
     let installTimer: number | undefined
     let installSucceeded = false
@@ -355,7 +373,9 @@ export function PluginsPage() {
             </button>
           )}
           {phpMyAdmin?.running && phpMyAdmin.url && (
-            <button type="button" onClick={() => window.open(phpMyAdmin.url, '_blank', 'noopener,noreferrer')}>Otwórz phpMyAdmin</button>
+            <button type="button" onClick={() => void openPHPMyAdmin()} disabled={busy}>
+              {busyAction === 'start' ? 'Sprawdzanie połączenia…' : 'Otwórz phpMyAdmin'}
+            </button>
           )}
         </div>
       </div>

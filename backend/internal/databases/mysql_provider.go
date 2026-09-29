@@ -70,6 +70,7 @@ func NewMySQLProvider(cfg MySQLConfig, secretStore secrets.SecretStore) *MySQLPr
 	if cfg.ApplicationEndpointHost == "" {
 		cfg.ApplicationEndpointHost = DefaultManagedMySQLContainer
 	}
+	cfg.ApplicationEndpointHost, _ = dockerMySQLTarget(cfg.ApplicationEndpointHost)
 	if cfg.ApplicationEndpointPort == 0 {
 		cfg.ApplicationEndpointPort = 3306
 	}

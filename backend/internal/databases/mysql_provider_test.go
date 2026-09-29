@@ -75,6 +75,23 @@ func TestValidateIdentifier(t *testing.T) {
 	}
 }
 
+func TestApplicationEndpointNormalizesHostLoopbackForContainers(t *testing.T) {
+	provider := NewMySQLProvider(MySQLConfig{
+		Host:                    "127.0.0.1",
+		Port:                    3306,
+		ApplicationEndpointHost: "127.0.0.1",
+		ApplicationEndpointPort: 3306,
+	}, nil)
+	endpoint := provider.ApplicationEndpoint()
+	if endpoint.Host != "host.docker.internal" || endpoint.Port != 3306 {
+		t.Fatalf("unexpected application endpoint: %+v", endpoint)
+	}
+	admin := provider.AdminEndpoint()
+	if admin.Host != "127.0.0.1" || admin.Port != 3306 {
+		t.Fatalf("control-plane endpoint must remain loopback: %+v", admin)
+	}
+}
+
 func TestGrantIsScopedToDatabase(t *testing.T) {
 	executor := &fakeMySQLExecutor{}
 	provider := &MySQLProvider{

@@ -140,6 +140,25 @@ func (m *PHPMyAdminManager) matchesConfiguration(ctx context.Context) (bool, err
 	return true, nil
 }
 
+func (m *PHPMyAdminManager) Reconcile(ctx context.Context) (PHPMyAdminStatus, error) {
+	current, err := m.Status(ctx)
+	if err != nil {
+		return PHPMyAdminStatus{}, err
+	}
+	if !current.Installed {
+		return current, nil
+	}
+	wasRunning := current.Running
+	updated, err := m.Install(ctx)
+	if err != nil {
+		return PHPMyAdminStatus{}, err
+	}
+	if wasRunning && !updated.Running {
+		return m.Start(ctx)
+	}
+	return updated, nil
+}
+
 func (m *PHPMyAdminManager) Start(ctx context.Context) (PHPMyAdminStatus, error) {
 	if err := m.run(ctx, "start", m.cfg.Container); err != nil {
 		return PHPMyAdminStatus{}, fmt.Errorf("start phpMyAdmin: %w", err)
