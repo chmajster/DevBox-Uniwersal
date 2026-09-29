@@ -7,11 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
 )
+
+const phpMyAdminManagedPasswordPath = "/tmp/devbox-managed-mysql-password"
 
 type PHPMyAdminConfig struct {
 	DockerBinary string
@@ -21,6 +24,7 @@ type PHPMyAdminConfig struct {
 	MySQLHost    string
 	MySQLPort    int
 	Network      string
+	ManagedMySQL *ManagedMySQLManager
 }
 
 type PHPMyAdminManager struct {
@@ -62,8 +66,12 @@ func (m *PHPMyAdminManager) Install(ctx context.Context) (PHPMyAdminStatus, erro
 	if err != nil {
 		return PHPMyAdminStatus{}, err
 	}
+	environment, err := m.requiredEnvironment(ctx)
+	if err != nil {
+		return PHPMyAdminStatus{}, err
+	}
 	if status.Installed {
-		matches, matchErr := m.matchesConfiguration(ctx)
+		matches, matchErr := m.matchesConfiguration(ctx, environment)
 		if matchErr != nil {
 			return PHPMyAdminStatus{}, matchErr
 		}
@@ -77,13 +85,17 @@ func (m *PHPMyAdminManager) Install(ctx context.Context) (PHPMyAdminStatus, erro
 	if err := m.run(ctx, "pull", m.cfg.Image); err != nil {
 		return PHPMyAdminStatus{}, fmt.Errorf("pull phpMyAdmin image: %w", err)
 	}
-	if err := m.run(ctx, m.createArgs()...); err != nil {
+	if err := m.run(ctx, m.createArgs(environment)...); err != nil {
 		return PHPMyAdminStatus{}, fmt.Errorf("create phpMyAdmin container: %w", err)
+	}
+	if err := m.installManagedCredential(ctx, environment); err != nil {
+		_ = m.run(ctx, "rm", "-f", m.cfg.Container)
+		return PHPMyAdminStatus{}, err
 	}
 	return m.Status(ctx)
 }
 
-func (m *PHPMyAdminManager) matchesConfiguration(ctx context.Context) (bool, error) {
+func (m *PHPMyAdminManager) matchesConfiguration(ctx context.Context, expectedEnvironment map[string]string) (bool, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, m.cfg.DockerBinary, "inspect", m.cfg.Container)
@@ -116,9 +128,16 @@ func (m *PHPMyAdminManager) matchesConfiguration(ctx context.Context) (bool, err
 			actualEnvironment[key] = value
 		}
 	}
-	for key, expected := range m.requiredEnvironment() {
+	for key, expected := range expectedEnvironment {
 		if actualEnvironment[key] != expected {
 			return false, nil
+		}
+	}
+	for _, key := range []string{"PMA_USER", "PMA_PASSWORD", "PMA_PASSWORD_FILE"} {
+		if _, expected := expectedEnvironment[key]; !expected {
+			if _, present := actualEnvironment[key]; present {
+				return false, nil
+			}
 		}
 	}
 	_, _, hostGateway := m.databaseTarget()
@@ -202,7 +221,7 @@ func (m *PHPMyAdminManager) Uninstall(ctx context.Context) (PHPMyAdminStatus, er
 	return m.Status(ctx)
 }
 
-func (m *PHPMyAdminManager) createArgs() []string {
+func (m *PHPMyAdminManager) createArgs(environment map[string]string) []string {
 	args := []string{"create", "--name", m.cfg.Container}
 	if m.cfg.Network != "" {
 		args = append(args, "--network", m.cfg.Network)
@@ -214,7 +233,6 @@ func (m *PHPMyAdminManager) createArgs() []string {
 		args = append(args, "--add-host", "host.docker.internal:host-gateway")
 	}
 
-	environment := m.requiredEnvironment()
 	keys := make([]string, 0, len(environment))
 	for key := range environment {
 		keys = append(keys, key)
@@ -227,14 +245,63 @@ func (m *PHPMyAdminManager) createArgs() []string {
 	return args
 }
 
-func (m *PHPMyAdminManager) requiredEnvironment() map[string]string {
+func (m *PHPMyAdminManager) requiredEnvironment(ctx context.Context) (map[string]string, error) {
 	host, port, _ := m.databaseTarget()
-	return map[string]string{
+	environment := map[string]string{
 		"PMA_ARBITRARY": "1",
 		"PMA_HOST":      host,
 		"PMA_PORT":      strconv.Itoa(port),
 		"PMA_VERBOSE":   "DevBox MySQL/MariaDB",
 	}
+	if m.cfg.ManagedMySQL == nil {
+		return environment, nil
+	}
+	installed, _, err := m.cfg.ManagedMySQL.ContainerState(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("detect managed MySQL for phpMyAdmin auto-login: %w", err)
+	}
+	if !installed {
+		return environment, nil
+	}
+	environment["PMA_ARBITRARY"] = "0"
+	environment["PMA_USER"] = "root"
+	environment["PMA_PASSWORD_FILE"] = phpMyAdminManagedPasswordPath
+	return environment, nil
+}
+
+func (m *PHPMyAdminManager) installManagedCredential(ctx context.Context, environment map[string]string) error {
+	passwordPath := strings.TrimSpace(environment["PMA_PASSWORD_FILE"])
+	if passwordPath == "" || m.cfg.ManagedMySQL == nil {
+		return nil
+	}
+	password, err := m.cfg.ManagedMySQL.RootPassword(ctx)
+	if err != nil {
+		return fmt.Errorf("load managed MySQL credential for phpMyAdmin: %w", err)
+	}
+	defer clear(password)
+
+	tmp, err := os.CreateTemp("", "devbox-phpmyadmin-mysql-password-*")
+	if err != nil {
+		return fmt.Errorf("create temporary phpMyAdmin credential file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("secure temporary phpMyAdmin credential file: %w", err)
+	}
+	if _, err := tmp.Write(password); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temporary phpMyAdmin credential file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary phpMyAdmin credential file: %w", err)
+	}
+	if err := m.run(ctx, "cp", tmpName, m.cfg.Container+":"+passwordPath); err != nil {
+		return fmt.Errorf("copy managed MySQL credential into phpMyAdmin container: %w", err)
+	}
+	return nil
 }
 
 func containsExact(values []string, expected string) bool {
