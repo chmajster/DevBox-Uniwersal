@@ -6,8 +6,9 @@ import type {
   DatabaseBindingInput,
   DatabaseMode,
   MySQLPluginStatus,
+  PostgreSQLPluginStatus,
+  ProjectDatabaseServices,
   Job,
-  PHPMyAdminStatus,
   ProjectRuntimeInfo,
   RuntimeContainerConfig,
 } from '../api/types'
@@ -51,7 +52,7 @@ function bindingToDraft(binding: DatabaseBinding): DatabaseBindingInput {
 
 function modeLabel(mode: DatabaseMode) {
   switch (mode) {
-    case 'managed': return 'MySQL/MariaDB DevBox'
+    case 'managed': return 'Bazy danych DevBox'
     case 'compose': return 'Baza z Docker Compose'
     case 'external': return 'Zewnętrzny MySQL/MariaDB'
     default: return 'Brak bazy'
@@ -66,8 +67,8 @@ const databaseModeOptions: Array<{ mode: DatabaseMode; title: string; descriptio
   },
   {
     mode: 'managed',
-    title: 'MySQL / MariaDB DevBox',
-    description: 'Utwórz bazę i użytkownika na wspólnym serwerze Docker devbox-mysql:3306 w sieci devbox-apps.',
+    title: 'Bazy danych DevBox',
+    description: 'Wybierz MySQL/MariaDB, PostgreSQL albo oba serwery. Dane połączenia są stałe; bazy, konta i uprawnienia zarządzasz w module Bazy danych.',
   },
   {
     mode: 'external',
@@ -80,6 +81,21 @@ const databaseModeOptions: Array<{ mode: DatabaseMode; title: string; descriptio
     description: 'Użyj serwisu bazy zdefiniowanego w compose.yaml lub docker-compose.yml, np. db:3306.',
   },
 ]
+
+type DatabaseServiceSelection = 'mysql' | 'postgresql' | 'both'
+
+function serviceSelectionFromEngines(engines: string[] | undefined, fallbackEngine = 'mysql'): DatabaseServiceSelection {
+  const normalized = new Set((engines ?? []).map((engine) => engine.toLowerCase()))
+  if (normalized.has('mysql') && normalized.has('postgresql')) return 'both'
+  if (normalized.has('postgresql')) return 'postgresql'
+  if (normalized.has('mysql')) return 'mysql'
+  return fallbackEngine.toLowerCase() === 'postgresql' || fallbackEngine.toLowerCase() === 'postgres' ? 'postgresql' : 'mysql'
+}
+
+function serviceEngines(selection: DatabaseServiceSelection): Array<'mysql' | 'postgresql'> {
+  if (selection === 'both') return ['mysql', 'postgresql']
+  return [selection]
+}
 
 export function ProjectDatabaseSection({ projectId }: Props) {
   const { user } = useAuth()
