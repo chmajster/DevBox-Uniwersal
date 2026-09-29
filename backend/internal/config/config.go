@@ -23,16 +23,16 @@ type Config struct {
 	MasterKeyBase64        string
 	AppVersion             string
 
-	ManagedMySQLEnabled      bool
-	ManagedMySQLAdminPort    int
-	ManagedMySQLImage        string
-	ManagedMySQLContainer    string
-	ManagedMySQLNetwork      string
-	ManagedMySQLVolume       string
-	SharedAppNetwork         string
-	ManagedPostgreSQLImage   string
+	ManagedMySQLEnabled        bool
+	ManagedMySQLAdminPort      int
+	ManagedMySQLImage          string
+	ManagedMySQLContainer      string
+	ManagedMySQLNetwork        string
+	ManagedMySQLVolume         string
+	SharedAppNetwork           string
+	ManagedPostgreSQLImage     string
 	ManagedPostgreSQLContainer string
-	ManagedPostgreSQLVolume  string
+	ManagedPostgreSQLVolume    string
 
 	MySQLHost             string
 	MySQLPort             int
@@ -145,16 +145,16 @@ func Load() (Config, error) {
 		BootstrapAdminPassword:     os.Getenv("DEVBOX_BOOTSTRAP_ADMIN_PASSWORD"),
 		MasterKeyBase64:            strings.TrimSpace(os.Getenv("DEVBOX_MASTER_KEY")),
 		AppVersion:                 getEnv("DEVBOX_VERSION", "dev"),
-		ManagedMySQLEnabled:          managedMySQL,
-		ManagedMySQLAdminPort:        managedMySQLAdminPort,
-		ManagedMySQLImage:            getEnv("DEVBOX_MYSQL_IMAGE", "mysql:8.4"),
-		ManagedMySQLContainer:        getEnv("DEVBOX_MYSQL_CONTAINER", "devbox-mysql"),
-		ManagedMySQLNetwork:          sharedAppNetwork,
-		ManagedMySQLVolume:           getEnv("DEVBOX_MYSQL_VOLUME", "devbox-mysql-data"),
-		SharedAppNetwork:             sharedAppNetwork,
-		ManagedPostgreSQLImage:       getEnv("DEVBOX_POSTGRESQL_IMAGE", "postgres:17"),
-		ManagedPostgreSQLContainer:   getEnv("DEVBOX_POSTGRESQL_CONTAINER", "devbox-postgresql"),
-		ManagedPostgreSQLVolume:      getEnv("DEVBOX_POSTGRESQL_VOLUME", "devbox-postgresql-data"),
+		ManagedMySQLEnabled:        managedMySQL,
+		ManagedMySQLAdminPort:      managedMySQLAdminPort,
+		ManagedMySQLImage:          getEnv("DEVBOX_MYSQL_IMAGE", "mysql:8.4"),
+		ManagedMySQLContainer:      getEnv("DEVBOX_MYSQL_CONTAINER", "devbox-mysql"),
+		ManagedMySQLNetwork:        sharedAppNetwork,
+		ManagedMySQLVolume:         getEnv("DEVBOX_MYSQL_VOLUME", "devbox-mysql-data"),
+		SharedAppNetwork:           sharedAppNetwork,
+		ManagedPostgreSQLImage:     getEnv("DEVBOX_POSTGRESQL_IMAGE", "postgres:17"),
+		ManagedPostgreSQLContainer: getEnv("DEVBOX_POSTGRESQL_CONTAINER", "devbox-postgresql"),
+		ManagedPostgreSQLVolume:    getEnv("DEVBOX_POSTGRESQL_VOLUME", "devbox-postgresql-data"),
 		MySQLHost:                  getEnv("DEVBOX_MYSQL_HOST", "127.0.0.1"),
 		MySQLPort:                  mysqlPort,
 		MySQLAdminUser:             getEnv("DEVBOX_MYSQL_ADMIN_USER", "devbox_admin"),
