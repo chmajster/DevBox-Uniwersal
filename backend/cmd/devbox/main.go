@@ -212,11 +212,11 @@ func serve() error {
 	})
 	mysqlProvider := databases.NewMySQLProvider(mysqlConfig, secretStore)
 	postgresqlProvider := databases.NewPostgreSQLProvider(databases.PostgreSQLConfig{
-		DockerBinary:     cfg.PHPMyAdminDockerBinary,
-		Container:        cfg.ManagedPostgreSQLContainer,
-		ApplicationHost:  cfg.ManagedPostgreSQLContainer,
-		ApplicationPort:  5432,
-		AdminUser:        "postgres",
+		DockerBinary:    cfg.PHPMyAdminDockerBinary,
+		Container:       cfg.ManagedPostgreSQLContainer,
+		ApplicationHost: cfg.ManagedPostgreSQLContainer,
+		ApplicationPort: 5432,
+		AdminUser:       "postgres",
 	}, secretStore)
 	phpMyAdmin := databases.NewPHPMyAdminManager(databases.PHPMyAdminConfig{
 		DockerBinary: cfg.PHPMyAdminDockerBinary,
