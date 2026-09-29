@@ -59,7 +59,7 @@ DevBox Universal is an integrated local development control plane.
 
 ## Databases
 
-- Project database mode selection uses a dedicated responsive five-option layout. `Połącz z MySQL na hoście` is a network-access-only choice: it stores no database name, username or password and does not inject database credential variables.
+- Project database mode selection uses a dedicated responsive five-option layout. `Połącz z MySQL na hoście` is a network-access-only choice: it stores no database name, username or password, does not inject database credential variables, and shows the exact in-application configuration (`host.docker.internal:3306`) with `.env` and PHP MySQLi examples.
 - Per-project database bindings support `none`, DevBox-managed MySQL, project-owned Compose MySQL/MariaDB and external MySQL/MariaDB.
 - The host-MySQL access-only choice stores only the stable `host.docker.internal` target plus the `host_access_only` flag. External credentialed bindings that target `localhost` or any accepted IPv4/IPv6 loopback literal are normalized to the same target; DevBox injects `host.docker.internal:host-gateway` into managed/custom containers and private Compose overrides when required.
 - External and Compose bindings can explicitly represent an empty database password in SecretStore; omitting the password continues to preserve an existing secret instead of silently replacing it.
