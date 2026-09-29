@@ -127,6 +127,9 @@ func (s *Service) engineFor(engine string) (databaseEngine, error) {
 	if provider := s.engines[name]; provider != nil {
 		return provider, nil
 	}
+	if (name == "mysql" || name == "mariadb") && s.engine != nil {
+		return s.engine, nil
+	}
 	return nil, fmt.Errorf("database engine %q is not configured", name)
 }
 
