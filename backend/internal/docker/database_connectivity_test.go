@@ -36,7 +36,6 @@ func TestEnsureNetworkCreatesOnceAndIsIdempotent(t *testing.T) {
 	}
 }
 
-
 func TestCommandErrorClassifiesDockerNetworkNotFoundVariant(t *testing.T) {
 	err := commandError("docker", "Error response from daemon: network devbox-apps not found", errors.New("exit status 1"))
 	if !errors.Is(err, ErrNotFound) {
