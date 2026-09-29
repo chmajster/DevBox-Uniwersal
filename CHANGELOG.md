@@ -33,6 +33,8 @@
 
 ### Unified project database connectivity
 
+- Reworked the project-level DevBox database choice so it no longer asks for database names, SQL users or passwords. It now selects MySQL/MariaDB, PostgreSQL or both and displays only fixed application-facing Docker DNS, port, network and runtime status.
+- Added persisted `project_database_service_access` state and authenticated GET/PUT project APIs for shared SQL service selection. SQL databases, accounts, passwords and grants remain exclusively managed from the Databases module; selecting a service does not provision or rotate credentials.
 - Reworked SQL users into server-level accounts: the MySQL/MariaDB and PostgreSQL Users tabs now list accounts, each account opens on its own page, and one account can receive access to multiple databases with an independent privilege set per database.
 - Added account-wide password change/generation plus database assignment/removal APIs and migrated existing one-database user rows into `database_accounts` and `database_user_grants` without dropping existing credentials or grants.
 - Simplified the project database UI after moving SQL plugins to Docker: removed the dedicated host-database discovery/access mode, host IP/service/version fields and host-specific connection guide. Managed applications now see the real Docker endpoint `devbox-mysql:3306` and network `devbox-apps`.
