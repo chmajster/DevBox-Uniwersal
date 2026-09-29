@@ -10,6 +10,7 @@
 
 ### Live updater progress
 
+- After a tracked update reaches `succeeded`, the Updates page performs a one-time cache-busting navigation so the freshly installed SPA document and hashed frontend assets are loaded instead of leaving the pre-update UI in memory. The temporary refresh query parameter is removed from browser history immediately after the new page loads.
 - Added persistent live update state with percentage, current stage, source/target versions and timestamps, exposed through `GET /api/v1/update/progress`.
 - The updater now records source checks, clone/validation, all eight installer stages, final restart, success/no-update and failure states in `/var/lib/devbox/update-status`.
 - The Updates UI polls only the lightweight local progress endpoint during execution, survives the expected API restart, renders a 0–100% progress bar and marks every real updater stage as pending/current/completed/failed/skipped.

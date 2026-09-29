@@ -89,7 +89,7 @@ DevBox Universal is an integrated local development control plane.
 
 ## Windows / WSL / installer
 
-- Git/systemd updates expose persistent 0–100% progress and concrete stages from source download through backend/frontend builds, artifact installation, service update, healthcheck and final restart; the Updates page resumes polling after the expected DevBox service restart.
+- Git/systemd updates expose persistent 0–100% progress and concrete stages from source download through backend/frontend builds, artifact installation, service update, healthcheck and final restart; the Updates page resumes polling after the expected DevBox service restart and, after a tracked successful update, performs a one-time cache-busting page reload before removing the temporary refresh marker from the URL.
 - Windows PowerShell bootstrap with WSL distribution detection and Linux handoff.
 - Linux installer with install/status/repair/update/uninstall/help; clean installations default to Docker-managed MySQL and install only the host client, while existing pre-binding host-MySQL installations remain legacy unless explicitly migrated.
 - `devbox status`, `devbox doctor` and allowlisted privileged helper.

@@ -19,6 +19,20 @@ export const UPDATE_STAGES = [
 
 export type UpdateStageState = 'pending' | 'current' | 'done' | 'failed' | 'skipped'
 
+const UPDATE_REFRESH_PARAM = '__devbox_refresh'
+
+export function buildUpdateHardRefreshURL(href: string, token: string | number): string {
+  const url = new URL(href)
+  url.searchParams.set(UPDATE_REFRESH_PARAM, String(token))
+  return url.toString()
+}
+
+export function clearUpdateHardRefreshURL(href: string): string {
+  const url = new URL(href)
+  url.searchParams.delete(UPDATE_REFRESH_PARAM)
+  return url.toString()
+}
+
 export function updateIsActive(progress?: UpdateProgress | null): boolean {
   return progress?.state === 'starting' || progress?.state === 'running'
 }
