@@ -29,6 +29,7 @@ const emptyDraft: DatabaseBindingInput = {
   username: '',
   password: '',
   password_provided: false,
+  host_access_only: false,
 }
 
 function bindingToDraft(binding: DatabaseBinding): DatabaseBindingInput {
@@ -43,11 +44,12 @@ function bindingToDraft(binding: DatabaseBinding): DatabaseBindingInput {
     username: binding.username ?? '',
     password: '',
     password_provided: false,
+    host_access_only: binding.host_access_only ?? false,
   }
 }
 
-function modeLabel(mode: DatabaseMode, host?: string) {
-  if (databaseModeChoice(mode, host) === 'host') return 'MySQL na hoście'
+function modeLabel(mode: DatabaseMode, hostAccessOnly = false) {
+  if (databaseModeChoice(mode, hostAccessOnly) === 'host') return 'MySQL na hoście — dostęp sieciowy'
   switch (mode) {
     case 'managed': return 'Nowa baza w DevBox'
     case 'compose': return 'Baza z Docker Compose'
@@ -80,7 +82,7 @@ const databaseModeOptions: Array<{ choice: DatabaseModeChoice; mode: DatabaseMod
     choice: 'host',
     mode: 'external',
     title: 'Połącz z MySQL na hoście',
-    description: 'Kontener aplikacji połączy się z MySQL/MariaDB uruchomionym na hoście przez host.docker.internal.',
+    description: 'Tylko otwórz kontenerowi drogę do MySQL/MariaDB na hoście przez host.docker.internal — bez danych bazy i credentiali.',
   },
   {
     choice: 'external',
@@ -139,11 +141,11 @@ export function ProjectDatabaseSection({ projectId }: Props) {
   }, [load, loadComposeServices])
 
   const modeFields = databaseModeFields(draft.mode)
-  const selectedModeChoice = databaseModeChoice(draft.mode, draft.host)
+  const selectedModeChoice = databaseModeChoice(draft.mode, Boolean(draft.host_access_only))
   const hostMySQLSelected = selectedModeChoice === 'host'
   const effectiveRuntime = effectiveRuntimeName(runtimeConfig?.runtime, runtimeInfo?.runtime)
   const phpModules = useMemo(() => new Set((runtimeConfig?.modules ?? []).map((item) => item.name.toLowerCase())), [runtimeConfig])
-  const needsPHPMySQLDriver = draft.mode !== 'none' && effectiveRuntime === 'php' && !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
+  const needsPHPMySQLDriver = draft.mode !== 'none' && !hostMySQLSelected && effectiveRuntime === 'php' && !phpModules.has('pdo_mysql') && !phpModules.has('mysqli')
 
   async function perform(name: string, action: () => Promise<void>) {
     setBusy(name)
@@ -169,7 +171,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         })
       }
       await load()
-      setMessage(`Tryb bazy został zapisany: ${modeLabel(draft.mode, draft.host)}.`)
+      setMessage(`Tryb bazy został zapisany: ${modeLabel(draft.mode, Boolean(draft.host_access_only))}.`)
     })
   }
 
@@ -290,7 +292,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         <p className="muted">Wybierz, czy DevBox ma utworzyć nową bazę dla aplikacji, czy aplikacja ma korzystać z już istniejącego hosta MySQL/MariaDB.</p>
       </div>
       <span className="status-chip" data-ok={binding?.status === 'ready' || binding?.status === 'configured' ? 'true' : 'false'}>
-        {binding?.mode ? modeLabel(binding.mode, binding.host || binding.application_host) : 'Ładowanie'}
+        {binding?.mode ? modeLabel(binding.mode, Boolean(binding.host_access_only)) : 'Ładowanie'}
       </span>
     </div>
 
@@ -311,6 +313,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
                 mode,
                 host: choice === 'host' ? dockerHostDatabaseHost : '',
                 port: 3306,
+                host_access_only: choice === 'host',
                 application_service: draft.application_service,
               })}
             />
@@ -321,7 +324,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     </fieldset>
 
     {draft.mode !== 'none' && <div className="form-grid">
-      {modeFields.includes('application_service') && <label>Application service
+      {modeFields.includes('application_service') && !hostMySQLSelected && <label>Application service
         <select disabled={readOnly || busy !== ''} value={draft.application_service ?? ''} onChange={(event) => setDraft({ ...draft, application_service: event.target.value })}>
           <option value="">Automatycznie wykryj</option>
           {serviceOptions.map((service) => <option key={service} value={service}>{service}</option>)}
@@ -357,35 +360,29 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       </>}
 
       {modeFields.includes('host') && draft.mode === 'external' && <>
-        <div className="validation-box span-2">
-          {hostMySQLSelected ? <>
-            <strong>Połączenie z MySQL/MariaDB na hoście.</strong>
-            <span>DevBox ustawi aplikacji <code>DB_HOST=host.docker.internal</code> i doda mapowanie <code>host.docker.internal:host-gateway</code> do kontenera lub Compose override. Dzięki temu aplikacja działająca wewnątrz Dockera łączy się z bazą uruchomioną na hoście, a nie z własnym <code>localhost</code>.</span>
-          </> : <>
+        {hostMySQLSelected ? <div className="validation-box span-2">
+          <strong>Dostęp sieciowy do MySQL/MariaDB na hoście.</strong>
+          <span>DevBox nie zapisuje nazwy bazy, użytkownika ani hasła i nie wstrzykuje <code>DB_DATABASE</code>, <code>DB_USERNAME</code> ani <code>DB_PASSWORD</code>. Kontener otrzyma wyłącznie mapowanie <code>host.docker.internal:host-gateway</code>. Aplikacja korzysta z adresu <code>host.docker.internal:3306</code> i zarządza własnymi credentialami w swojej konfiguracji.</span>
+        </div> : <>
+          <div className="validation-box span-2">
             <strong>Użyj istniejącej bazy na innym serwerze.</strong>
             <span>DevBox nie utworzy bazy ani użytkownika. Podaj osiągalny z kontenera adres DNS lub IP serwera MySQL/MariaDB.</span>
-          </>}
-        </div>
-        {hostMySQLSelected
-          ? <label>Host używany przez kontener<input readOnly value={dockerHostDatabaseHost} /></label>
-          : <label>Host MySQL/MariaDB<input disabled={readOnly || busy !== ''} value={draft.host ?? ''} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="np. mysql.example.internal" /></label>}
-        <label>{hostMySQLSelected ? 'Port MySQL na hoście' : 'Port'}<input disabled={readOnly || busy !== ''} type="number" min={1} max={65535} value={draft.port ?? 3306} onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })} /></label>
-        <label>Nazwa istniejącej bazy<input disabled={readOnly || busy !== ''} value={draft.database ?? ''} onChange={(event) => setDraft({ ...draft, database: event.target.value })} placeholder="np. wordpress" /></label>
-        <label>Użytkownik bazy<input disabled={readOnly || busy !== ''} value={draft.username ?? ''} onChange={(event) => setDraft({ ...draft, username: event.target.value })} /></label>
-        <label className="span-2">Hasło / Secret
-          <input disabled={readOnly || busy !== '' || draft.password_provided} type="password" autoComplete="new-password" value={draft.password ?? ''} onChange={(event) => setDraft({ ...draft, password: event.target.value, password_provided: false })} placeholder={draft.password_provided ? 'połączenie bez hasła' : binding?.has_secret ? 'pozostaw puste, aby zachować obecny SecretStore secret' : 'hasło do istniejącej bazy'} />
-        </label>
-        <label className="checkbox span-2"><input disabled={readOnly || busy !== ''} type="checkbox" checked={Boolean(draft.password_provided)} onChange={(event) => setDraft({ ...draft, password: '', password_provided: event.target.checked })} /> Użytkownik bazy nie ma hasła</label>
-        {hostMySQLSelected && <div className="validation-box span-2">
-          <strong>Wymaganie po stronie hosta.</strong>
-          <span>MySQL/MariaDB musi nasłuchiwać na interfejsie osiągalnym z Dockera, a wskazany użytkownik musi mieć grant pozwalający na połączenie z kontenera. Samo <code>bind-address=127.0.0.1</code> może blokować takie połączenie.</span>
-        </div>}
-        {!readOnly && !hostMySQLSelected && <div className="actions span-2">
-          <button type="button" className="secondary" disabled={busy !== ''} onClick={() => setDraft({ ...draft, host: 'devbox-mysql', port: 3306 })}>Wspólny MySQL DevBox — devbox-mysql:3306</button>
-        </div>}
+          </div>
+          <label>Host MySQL/MariaDB<input disabled={readOnly || busy !== ''} value={draft.host ?? ''} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="np. mysql.example.internal" /></label>
+          <label>Port<input disabled={readOnly || busy !== ''} type="number" min={1} max={65535} value={draft.port ?? 3306} onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })} /></label>
+          <label>Nazwa istniejącej bazy<input disabled={readOnly || busy !== ''} value={draft.database ?? ''} onChange={(event) => setDraft({ ...draft, database: event.target.value })} placeholder="np. wordpress" /></label>
+          <label>Użytkownik bazy<input disabled={readOnly || busy !== ''} value={draft.username ?? ''} onChange={(event) => setDraft({ ...draft, username: event.target.value })} /></label>
+          <label className="span-2">Hasło / Secret
+            <input disabled={readOnly || busy !== '' || draft.password_provided} type="password" autoComplete="new-password" value={draft.password ?? ''} onChange={(event) => setDraft({ ...draft, password: event.target.value, password_provided: false })} placeholder={draft.password_provided ? 'połączenie bez hasła' : binding?.has_secret ? 'pozostaw puste, aby zachować obecny SecretStore secret' : 'hasło do istniejącej bazy'} />
+          </label>
+          <label className="checkbox span-2"><input disabled={readOnly || busy !== ''} type="checkbox" checked={Boolean(draft.password_provided)} onChange={(event) => setDraft({ ...draft, password: '', password_provided: event.target.checked })} /> Użytkownik bazy nie ma hasła</label>
+          {!readOnly && <div className="actions span-2">
+            <button type="button" className="secondary" disabled={busy !== ''} onClick={() => setDraft({ ...draft, host: 'devbox-mysql', port: 3306 })}>Wspólny MySQL DevBox — devbox-mysql:3306</button>
+          </div>}
+        </>}
       </>}
 
-      {modeFields.includes('application_host') && <label>Host używany przez aplikację
+      {modeFields.includes('application_host') && !hostMySQLSelected && <label>Host używany przez aplikację
         <input readOnly value={draft.mode === 'managed'
           ? (binding?.application_host || 'devbox-mysql')
           : draft.mode === 'compose'
@@ -394,7 +391,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
               ? (['127.0.0.1', 'localhost', '::1'].includes((draft.host || '').trim().toLowerCase()) ? 'host.docker.internal' : (binding?.mode === 'external' && binding?.application_host && binding.host === draft.host ? binding.application_host : (draft.host || '—')))
               : '—'} />
       </label>}
-      {modeFields.includes('application_port') && <label>Port używany przez aplikację<input readOnly value={draft.mode === 'managed' ? (binding?.application_port || 3306) : (draft.port || 3306)} /></label>}
+      {modeFields.includes('application_port') && !hostMySQLSelected && <label>Port używany przez aplikację<input readOnly value={draft.mode === 'managed' ? (binding?.application_port || 3306) : (draft.port || 3306)} /></label>}
     </div>}
 
     {needsPHPMySQLDriver && <div className="validation-box">
@@ -406,7 +403,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       {draft.mode === 'managed' && !managedExists
         ? <button type="button" disabled={busy !== ''} onClick={() => void provisionManaged()}>{busy === 'provision' ? 'Tworzenie bazy…' : 'Utwórz bazę i połącz z aplikacją'}</button>
         : <button type="button" disabled={busy !== ''} onClick={() => void saveBinding()}>{busy === 'save' ? 'Zapisywanie…' : 'Zapisz konfigurację bazy'}</button>}
-      {binding?.mode !== 'none' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void testConnection()}>{busy === 'test' ? 'Testowanie…' : 'Testuj połączenie'}</button>}
+      {binding?.mode !== 'none' && !binding?.host_access_only && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void testConnection()}>{busy === 'test' ? 'Testowanie…' : 'Testuj połączenie'}</button>}
       {binding?.mode === 'managed' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void openPHPMyAdmin()}>Otwórz phpMyAdmin</button>}
       {binding?.mode === 'managed' && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void rotatePassword()}>Zmień hasło</button>}
       {binding?.database_id && <button type="button" className="secondary" disabled={busy !== ''} onClick={() => void perform('backups', loadBackups)}>Kopie zapasowe</button>}
