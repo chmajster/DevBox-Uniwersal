@@ -260,9 +260,12 @@ func renderComposeDatabaseOverride(service string, environment map[string]string
 	}
 	var text strings.Builder
 	text.WriteString(composeDatabaseMarker)
-	fmt.Fprintf(&text, "services:\n  %s:\n    environment:\n", strconv.Quote(service))
-	for _, key := range keys {
-		fmt.Fprintf(&text, "      %s: %s\n", key, strconv.Quote(environment[key]))
+	fmt.Fprintf(&text, "services:\n  %s:\n", strconv.Quote(service))
+	if len(keys) > 0 {
+		text.WriteString("    environment:\n")
+		for _, key := range keys {
+			fmt.Fprintf(&text, "      %s: %s\n", key, strconv.Quote(environment[key]))
+		}
 	}
 	if hostGateway {
 		text.WriteString("    extra_hosts:\n")
