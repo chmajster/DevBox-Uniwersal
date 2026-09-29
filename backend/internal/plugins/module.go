@@ -39,40 +39,49 @@ type DockerComposeStatus struct {
 }
 
 type MySQLPluginStatus struct {
-	Installed     bool   `json:"installed"`
-	Running       bool   `json:"running"`
-	Engine        string `json:"engine,omitempty"`
-	ClientPath    string `json:"client_path,omitempty"`
-	ServerPath    string `json:"server_path,omitempty"`
-	Version       string `json:"version,omitempty"`
-	Host          string `json:"host,omitempty"`
-	Port          int    `json:"port,omitempty"`
-	ContainerHost string `json:"container_host,omitempty"`
-	Installable   bool   `json:"installable"`
-	Message       string `json:"message,omitempty"`
+	Installed        bool   `json:"installed"`
+	Running          bool   `json:"running"`
+	ApplicationReady bool   `json:"application_ready"`
+	Engine           string `json:"engine,omitempty"`
+	ClientPath       string `json:"client_path,omitempty"`
+	ServerPath       string `json:"server_path,omitempty"`
+	Version          string `json:"version,omitempty"`
+	Host             string `json:"host,omitempty"`
+	Port             int    `json:"port,omitempty"`
+	SuggestedPort    int    `json:"suggested_port,omitempty"`
+	ContainerHost    string `json:"container_host,omitempty"`
+	Purpose          string `json:"purpose,omitempty"`
+	Installable      bool   `json:"installable"`
+	Message          string `json:"message,omitempty"`
 }
 
 type PostgreSQLStatus struct {
-	Installed   bool   `json:"installed"`
-	Running     bool   `json:"running"`
-	Path        string `json:"path,omitempty"`
-	Version     string `json:"version,omitempty"`
-	Host        string `json:"host,omitempty"`
-	Port        int    `json:"port,omitempty"`
-	Installable bool   `json:"installable"`
-	Message     string `json:"message,omitempty"`
+	Installed        bool   `json:"installed"`
+	Running          bool   `json:"running"`
+	ApplicationReady bool   `json:"application_ready"`
+	Path             string `json:"path,omitempty"`
+	Version          string `json:"version,omitempty"`
+	Host             string `json:"host,omitempty"`
+	Port             int    `json:"port,omitempty"`
+	SuggestedPort    int    `json:"suggested_port,omitempty"`
+	ContainerHost    string `json:"container_host,omitempty"`
+	Purpose          string `json:"purpose,omitempty"`
+	Installable      bool   `json:"installable"`
+	Message          string `json:"message,omitempty"`
 }
 
 type HostDatabaseInstance struct {
-	ID        string `json:"id"`
-	Engine    string `json:"engine"`
-	Label     string `json:"label"`
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	Installed bool   `json:"installed"`
-	Running   bool   `json:"running"`
-	Version   string `json:"version,omitempty"`
-	Source    string `json:"source,omitempty"`
+	ID               string `json:"id"`
+	Engine           string `json:"engine"`
+	Label            string `json:"label"`
+	Host             string `json:"host"`
+	Port             int    `json:"port"`
+	Installed        bool   `json:"installed"`
+	Running          bool   `json:"running"`
+	ApplicationReady bool   `json:"application_ready"`
+	Purpose          string `json:"purpose,omitempty"`
+	Version          string `json:"version,omitempty"`
+	Source           string `json:"source,omitempty"`
 }
 
 type Service struct {
@@ -211,6 +220,38 @@ func (s *Service) installSystemPackage(ctx context.Context, component string) er
 		return errors.New(message)
 	}
 	return nil
+}
+
+func (s *Service) configureApplicationDatabase(ctx context.Context, engine string, port int) error {
+	if s.helperBinary == "" {
+		return errors.New("privileged helper is not configured")
+	}
+	sudo := s.sudoBinary
+	if sudo == "" {
+		sudo = "sudo"
+	}
+	cmd := exec.CommandContext(ctx, sudo, s.helperBinary, "configure-app-database", engine, strconv.Itoa(port))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(out))
+		if message == "" {
+			message = err.Error()
+		}
+		return errors.New(message)
+	}
+	return nil
+}
+
+func (s *Service) suggestedApplicationDatabasePort(start int) int {
+	for port := start; port <= start+50 && port <= 65535; port++ {
+		if _, reserved := s.reservedHostPorts[port]; reserved {
+			continue
+		}
+		if !hostTCPPortOpen(port) {
+			return port
+		}
+	}
+	return start
 }
 
 func firstLine(value string) string {
