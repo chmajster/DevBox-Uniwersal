@@ -263,14 +263,14 @@ export function PluginsPage() {
         <div className="actions">
           <Icon name="cpu" size={24} />
           <div>
-            <h2>PHP-FPM</h2>
-            <p className="muted">Runtime FastCGI wymagany do uruchamiania aplikacji PHP zarządzanych przez DevBox Universal.</p>
+            <h2>PHP-FPM na hoście</h2>
+            <p className="muted">Opcjonalny komponent systemowy hosta. Zarządzane aplikacje PHP DevBox uruchamiają własny runtime wewnątrz kontenera Docker.</p>
           </div>
         </div>
         <p className="muted small">
           {phpFPM?.installed
-            ? 'PHP-FPM został wykryty w systemie.'
-            : 'PHP-FPM nie jest zainstalowany. Aplikacje PHP wymagające PHP-FPM nie uruchomią się do czasu instalacji tego komponentu.'}
+            ? 'PHP-FPM został wykryty na hoście. Nie zmienia to konfiguracji PHP wewnątrz kontenerów aplikacji.'
+            : 'Brak hostowego PHP-FPM nie blokuje zarządzanych aplikacji PHP. Instaluj go tylko wtedy, gdy potrzebuje go inne narzędzie lub ręczna konfiguracja hosta.'}
         </p>
       </div>
 
@@ -358,6 +358,8 @@ export function PluginsPage() {
             <div><span>Adres dla aplikacji</span><strong><code>{mysql?.container_host ?? 'host.docker.internal'}:{mysql?.port ?? 3306}</code></strong></div>
             <div><span>Obsługiwane bazy</span><strong>Wiele</strong></div>
             <div><span>Obsługiwane aplikacje</span><strong>Wiele</strong></div>
+            <div><span>PHP</span><strong>mysqli / PDO MySQL</strong></div>
+            <div><span>Model</span><strong>1 serwer → N baz</strong></div>
           </div>
 
           {mysql?.version && <p className="muted small">Wersja: <code>{mysql.version}</code></p>}
@@ -401,6 +403,8 @@ export function PluginsPage() {
             <div><span>Adres dla aplikacji</span><strong><code>{postgresql?.container_host ?? 'host.docker.internal'}:{postgresql?.port ?? 5432}</code></strong></div>
             <div><span>Obsługiwane bazy</span><strong>Wiele</strong></div>
             <div><span>Obsługiwane aplikacje</span><strong>Wiele</strong></div>
+            <div><span>PHP</span><strong>pgsql / PDO PostgreSQL</strong></div>
+            <div><span>Model</span><strong>1 serwer → N baz</strong></div>
           </div>
 
           {postgresql?.version && <p className="muted small">Wersja: <code>{postgresql.version}</code></p>}
@@ -414,7 +418,7 @@ export function PluginsPage() {
       <div className="database-server-plugin-footer">
         <div>
           <strong>Serwer ≠ baza</strong>
-          <p className="muted small">Plugin instaluje i wykrywa silnik serwera. Konkretne bazy, użytkownicy i przypisania aplikacji są osobnymi zasobami i mogą współdzielić ten sam serwer.</p>
+          <p className="muted small">Plugin instaluje i wykrywa silnik serwera. Konkretne bazy, użytkownicy i przypisania aplikacji są osobnymi zasobami i mogą współdzielić ten sam serwer. MySQLi jest sterownikiem PHP do MySQL, a nie osobnym serwerem bazodanowym.</p>
         </div>
         <div className="actions">
           {canInstallSystemPackages && (
