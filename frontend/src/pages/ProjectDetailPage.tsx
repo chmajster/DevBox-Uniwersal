@@ -6,13 +6,24 @@ import type { Deployment, GitState, Job, LogEntry, Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { ProjectRuntimeSection } from '../runtime/ProjectRuntimeSection'
 import { ProjectDatabaseSection } from '../runtime/ProjectDatabaseSection'
-import { ProjectPHPModulesSection } from '../runtime/ProjectPHPModulesSection'
+import { ProjectPortsSection } from '../runtime/ProjectPortsSection'
 import { publishedApplicationURL } from '../runtime/portSettings'
 
-type Tab = 'overview' | 'git' | 'deployments' | 'logs' | 'configuration'
+type Tab = 'overview' | 'git' | 'deployments' | 'logs' | 'runtime' | 'database' | 'ports' | 'settings'
+
+const projectDetailTabs: Array<{ id: Tab; label: string }> = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'git', label: 'Git' },
+  { id: 'deployments', label: 'Deployments' },
+  { id: 'logs', label: 'Logi' },
+  { id: 'runtime', label: 'Runtime' },
+  { id: 'database', label: 'Baza danych' },
+  { id: 'ports', label: 'Porty' },
+  { id: 'settings', label: 'Ustawienia' },
+]
 
 function tabFromParam(value: string | null): Tab {
-  return value === 'git' || value === 'deployments' || value === 'logs' || value === 'configuration' ? value : 'overview'
+  return projectDetailTabs.some((item) => item.id === value) ? value as Tab : 'overview'
 }
 
 const deploymentStages = ['QUEUED', 'PREPARING', 'UPDATING_SOURCE', 'DATABASE', 'DEPENDENCIES', 'BUILDING', 'STARTING', 'HEALTHCHECK', 'SUCCESS'] as const
@@ -44,7 +55,7 @@ function deploymentProgress(item: Deployment) {
 
 export function ProjectDetailPage() {
   const { id = '' } = useParams()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
   const [project, setProject] = useState<Project | null>(null)
   const [git, setGit] = useState<GitState | null>(null)
@@ -150,6 +161,15 @@ export function ProjectDetailPage() {
   const activeDeployment = deployments.find((item) => !deploymentFinished(item))
   const currentDeployment = activeDeployment ?? deployments[0]
 
+  function selectTab(next: Tab) {
+    setError('')
+    setTab(next)
+    const params = new URLSearchParams(searchParams)
+    if (next === 'overview') params.delete('tab')
+    else params.set('tab', next)
+    setSearchParams(params, { replace: true })
+  }
+
   useEffect(() => {
     if (!activeDeployment) return
     let cancelled = false
@@ -180,7 +200,7 @@ export function ProjectDetailPage() {
   async function deploy() {
     setBusy('deploy')
     setError('')
-    setTab('deployments')
+    selectTab('deployments')
     try {
       await request<Job>(`/projects/${id}/deploy`, { method: 'POST' })
       await loadProject()
@@ -230,10 +250,18 @@ export function ProjectDetailPage() {
   return <>
     <div className="page-heading"><div><Link to="/apps" className="muted-link">← Aplikacje</Link><h1>{project.name}</h1><p className="muted">{project.description || project.local_path}</p></div>{user?.role !== 'viewer' && <button type="button" disabled={busy !== '' || Boolean(activeDeployment)} onClick={() => void deploy()}>{busy === 'deploy' ? 'Uruchamianie…' : activeDeployment ? `Deploy: ${deploymentStageLabels[activeDeployment.stage] ?? activeDeployment.stage}` : 'Deploy'}</button>}</div>
     {error && <div className="error-banner">{error}</div>}
-    <div className="tabs">{(['overview', 'git', 'deployments', 'logs', 'configuration'] as Tab[]).map((item) => <button key={item} type="button" className={tab === item ? 'active' : ''} onClick={() => { setError(''); setTab(item) }}>{item === 'overview' ? 'Overview' : item === 'git' ? 'Git' : item === 'deployments' ? 'Deployments' : item === 'logs' ? 'Logi' : 'Configuration'}</button>)}</div>
+    <nav className="tabs project-detail-tabs" aria-label="Sekcje aplikacji" role="tablist">
+      {projectDetailTabs.map((item) => <button
+        key={item.id}
+        type="button"
+        role="tab"
+        aria-selected={tab === item.id}
+        className={tab === item.id ? 'active' : ''}
+        onClick={() => selectTab(item.id)}
+      >{item.label}</button>)}
+    </nav>
     {tab === 'overview' && <div className="stack">
       <div className="summary-grid panel"><div><span>Status</span><strong>{project.status}</strong></div><div><span>Source</span><strong>{project.source_type}</strong></div><div><span>Runtime</span><strong>{project.runtime || 'auto-detect'}{project.runtime_version ? ` ${project.runtime_version}` : ''}</strong></div><div><span>Kontener</span><strong>{project.container_policy === 'custom' ? 'własny Docker' : 'automatyczny'}</strong></div><div><span>Branch</span><strong>{project.branch || '—'}</strong></div><div><span>Commit</span><strong><code>{project.current_commit?.slice(0, 12) || '—'}</code></strong></div><div><span>Port</span><strong>{project.port ?? '—'}</strong></div><div><span>Domain</span><strong>{project.domain ?? '—'}</strong></div><div className="span-2"><span>Adres aplikacji</span><strong>{applicationURL ? <a href={applicationURL} target="_blank" rel="noopener noreferrer" aria-label={`Otwórz aplikację ${project.name} w nowej karcie`}>{applicationURL}</a> : '—'}</strong></div><div className="span-2"><span>Local path</span><strong><code>{project.local_path}</code></strong></div></div>
-      <ProjectPHPModulesSection projectId={id} runtimeHint={project.runtime} />
     </div>}
     {tab === 'git' && <div className="stack">
       {gitLoading && <div className="panel"><p className="muted">Sprawdzanie repozytorium Git…</p></div>}
@@ -330,16 +358,27 @@ export function ProjectDetailPage() {
             </div>)}
       </div>
     </div>}
-    {tab === 'configuration' && <div className="stack">
-      <ProjectRuntimeSection projectId={id} />
+    {tab === 'runtime' && <div className="stack project-tab-content">
+      <ProjectRuntimeSection projectId={id} showPorts={false} />
+    </div>}
+    {tab === 'database' && <div className="stack project-tab-content">
       <ProjectDatabaseSection projectId={id} />
-      <form className="panel form-grid" onSubmit={save}>
+    </div>}
+    {tab === 'ports' && <div className="stack project-tab-content">
+      <ProjectPortsSection projectId={id} />
+    </div>}
+    {tab === 'settings' && <div className="stack project-tab-content">
+      <form className="panel form-grid project-settings-panel" onSubmit={save}>
+        <div className="span-2">
+          <h2>Ustawienia aplikacji</h2>
+          <p className="muted">Polecenia i zachowanie projektu niezależne od konfiguracji runtime, bazy danych i portów.</p>
+        </div>
         <label className="span-2">Working directory<input disabled={user?.role === 'viewer'} value={config.working_directory} onChange={(e) => setConfig({ ...config, working_directory: e.target.value })} /></label>
         <label className="span-2">Build command (własny Docker/Compose)<input disabled={user?.role === 'viewer'} value={config.build_command} onChange={(e) => setConfig({ ...config, build_command: e.target.value })} /></label>
         <label className="span-2">Start command (własny Docker/Compose)<input disabled={user?.role === 'viewer'} value={config.start_command} onChange={(e) => setConfig({ ...config, start_command: e.target.value })} /></label>
         <label className="span-2">Healthcheck<input disabled={user?.role === 'viewer'} value={config.healthcheck} onChange={(e) => setConfig({ ...config, healthcheck: e.target.value })} /></label>
         <label className="checkbox"><input disabled={user?.role === 'viewer'} type="checkbox" checked={config.auto_start} onChange={(e) => setConfig({ ...config, auto_start: e.target.checked })} /> Auto start</label>
-        {user?.role !== 'viewer' && <div className="span-2"><button type="submit" disabled={busy !== ''}>{busy === 'save' ? 'Zapisywanie…' : 'Zapisz konfigurację aplikacji'}</button></div>}
+        {user?.role !== 'viewer' && <div className="span-2"><button type="submit" disabled={busy !== ''}>{busy === 'save' ? 'Zapisywanie…' : 'Zapisz ustawienia aplikacji'}</button></div>}
       </form>
     </div>}
   </>
