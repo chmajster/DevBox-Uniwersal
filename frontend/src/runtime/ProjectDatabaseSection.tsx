@@ -430,7 +430,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
               value={draft.port ?? (selectedEngine === 'postgresql' ? 5432 : 3306)}
               onChange={(event) => setDraft({ ...draft, port: Number(event.target.value), host: dockerHostDatabaseHost, host_access_only: true })} />
           </label>
-          <label>Adres używany w kontenerze<input readOnly value={dockerHostDatabaseHost} /></label>
+          <label>Adres używany w kontenerze<input readOnly value={`${dockerHostDatabaseHost}:${draft.port || (selectedEngine === 'postgresql' ? 5432 : 3306)}`} /></label>
           <label>Status wykrytej usługi<input readOnly value={selectedHostDatabase ? (selectedHostDatabase.running ? 'działa' : 'zainstalowana, ale nie odpowiada') : 'port ustawiony ręcznie'} /></label>
           {selectedHostDatabase?.version && <label className="span-2">Wersja<input readOnly value={selectedHostDatabase.version} /></label>}
           <div className="database-host-help span-2">
