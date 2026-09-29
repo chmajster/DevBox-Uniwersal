@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -865,19 +866,24 @@ func (m *Module) mySQLStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) installMySQL(w http.ResponseWriter, r *http.Request) {
+	port, err := decodeApplicationDatabasePort(r, m.service.suggestedApplicationDatabasePort(3306))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_mysql_port", err.Error())
+		return
+	}
 	var actor *string
 	if user, ok := api.CurrentUser(r.Context()); ok {
 		id := user.ID
 		actor = &id
 	}
-	job, err := m.service.QueueMySQLInstall(r.Context(), actor)
+	job, err := m.service.QueueMySQLInstall(r.Context(), actor, port)
 	if err != nil {
 		writeError(w, http.StatusConflict, "mysql_install_unavailable", err.Error())
 		return
 	}
 	if m.audit != nil {
 		_ = m.audit.Record(r.Context(), actor, "plugin.mysql.install.enqueue", "plugin", nil, map[string]any{
-			"job_id": job.ID,
+			"job_id": job.ID, "port": port, "purpose": "applications",
 		}, nil)
 	}
 	writeData(w, http.StatusAccepted, job)
@@ -892,20 +898,27 @@ func (m *Module) postgreSQLStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) installPostgreSQL(w http.ResponseWriter, r *http.Request) {
-	status, err := m.service.InstallPostgreSQL(r.Context())
+	port, err := decodeApplicationDatabasePort(r, m.service.suggestedApplicationDatabasePort(5432))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "postgresql_install_failed", err.Error())
+		writeError(w, http.StatusBadRequest, "invalid_postgresql_port", err.Error())
+		return
+	}
+	var actor *string
+	if user, ok := api.CurrentUser(r.Context()); ok {
+		id := user.ID
+		actor = &id
+	}
+	job, err := m.service.QueuePostgreSQLInstall(r.Context(), actor, port)
+	if err != nil {
+		writeError(w, http.StatusConflict, "postgresql_install_unavailable", err.Error())
 		return
 	}
 	if m.audit != nil {
-		var actor *string
-		if user, ok := api.CurrentUser(r.Context()); ok {
-			id := user.ID
-			actor = &id
-		}
-		_ = m.audit.Record(r.Context(), actor, "plugin.postgresql.install", "plugin", nil, map[string]any{"path": status.Path, "version": status.Version, "running": status.Running}, nil)
+		_ = m.audit.Record(r.Context(), actor, "plugin.postgresql.install.enqueue", "plugin", nil, map[string]any{
+			"job_id": job.ID, "port": port, "purpose": "applications",
+		}, nil)
 	}
-	writeData(w, http.StatusOK, status)
+	writeData(w, http.StatusAccepted, job)
 }
 
 func (m *Module) phpFPMStatus(w http.ResponseWriter, r *http.Request) {
@@ -927,6 +940,23 @@ func (m *Module) installPHPFPM(w http.ResponseWriter, r *http.Request) {
 		_ = m.audit.Record(r.Context(), actor, "plugin.php_fpm.install", "plugin", nil, map[string]any{"path": status.Path, "version": status.Version}, nil)
 	}
 	writeData(w, http.StatusOK, status)
+}
+
+func decodeApplicationDatabasePort(r *http.Request, fallback int) (int, error) {
+	var input struct {
+		Port int `json:"port"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&input); err != nil && !errors.Is(err, io.EOF) {
+		return 0, errors.New("invalid JSON body")
+	}
+	if input.Port == 0 {
+		input.Port = fallback
+	}
+	if input.Port < 1024 || input.Port > 65535 {
+		return 0, errors.New("database port must be between 1024 and 65535")
+	}
+	return input.Port, nil
 }
 
 func writeData(w http.ResponseWriter, status int, data any) {
