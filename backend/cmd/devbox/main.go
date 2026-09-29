@@ -176,20 +176,19 @@ func serve() error {
 		MySQLBinary:             cfg.MySQLBinary,
 		DumpBinary:              cfg.MySQLDumpBinary,
 	}
-	var managedMySQL *databases.ManagedMySQLManager
+	managedMySQL := databases.NewManagedMySQLManager(dockerProvider, secretStore, databases.ManagedMySQLConfig{
+		Image:               cfg.ManagedMySQLImage,
+		Container:           cfg.ManagedMySQLContainer,
+		Network:             cfg.ManagedMySQLNetwork,
+		Volume:              cfg.ManagedMySQLVolume,
+		AdminHost:           "127.0.0.1",
+		AdminPort:           cfg.ManagedMySQLAdminPort,
+		InitialRootPassword: cfg.MySQLAdminPassword,
+	})
 	phpMySQLHost := cfg.MySQLHost
 	phpMySQLPort := cfg.MySQLPort
 	phpMySQLNetwork := cfg.SharedAppNetwork
 	if cfg.ManagedMySQLEnabled {
-		managedMySQL = databases.NewManagedMySQLManager(dockerProvider, secretStore, databases.ManagedMySQLConfig{
-			Image:               cfg.ManagedMySQLImage,
-			Container:           cfg.ManagedMySQLContainer,
-			Network:             cfg.ManagedMySQLNetwork,
-			Volume:              cfg.ManagedMySQLVolume,
-			AdminHost:           "127.0.0.1",
-			AdminPort:           cfg.ManagedMySQLAdminPort,
-			InitialRootPassword: cfg.MySQLAdminPassword,
-		})
 		adminScope, adminSecret := managedMySQL.AdminSecretRef()
 		adminEndpoint := managedMySQL.AdminEndpoint()
 		applicationEndpoint := managedMySQL.ApplicationEndpoint()
@@ -226,9 +225,9 @@ func serve() error {
 		logger.Warn("phpMyAdmin reconciliation failed; it will retry when opened", "error", err)
 	}
 	phpMyAdminReconcileCancel()
-	databaseOptions := []databases.ServiceOption{databases.WithComposeDatabaseProvider(dockerProvider)}
-	if managedMySQL != nil {
-		databaseOptions = append(databaseOptions, databases.WithManagedMySQL(managedMySQL))
+	databaseOptions := []databases.ServiceOption{
+		databases.WithComposeDatabaseProvider(dockerProvider),
+		databases.WithManagedMySQL(managedMySQL),
 	}
 	databaseService, err := databases.NewService(databaseRepo, mysqlProvider, secretStore, jobRunner, auditService, phpMyAdmin, cfg.MySQLBackupDir, databaseOptions...)
 	if err != nil {
@@ -279,10 +278,8 @@ func serve() error {
 	}
 	pluginOptions := []plugins.ServiceOption{
 		plugins.WithJobRunner(jobRunner),
+		plugins.WithMySQLDatabaseServer(managedMySQL),
 		plugins.WithPostgreSQLDatabaseServer(managedPostgreSQL),
-	}
-	if managedMySQL != nil {
-		pluginOptions = append(pluginOptions, plugins.WithMySQLDatabaseServer(managedMySQL))
 	}
 	pluginService := plugins.NewService(cfg.NginxHelperBinary, cfg.SudoBinary, pluginOptions...)
 	for _, handler := range pluginService.Handlers() {
