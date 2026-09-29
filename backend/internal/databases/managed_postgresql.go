@@ -169,6 +169,23 @@ func (m *ManagedPostgreSQLManager) Action(ctx context.Context, action string) er
 			return err
 		}
 		return m.docker.Restart(ctx, m.cfg.Container)
+	case "uninstall":
+		installed, running, err := m.ContainerState(ctx)
+		if err != nil {
+			return err
+		}
+		if !installed {
+			return nil
+		}
+		if running {
+			if err := m.docker.Stop(ctx, m.cfg.Container); err != nil {
+				return fmt.Errorf("stop managed PostgreSQL before uninstall: %w", err)
+			}
+		}
+		if err := m.docker.Remove(ctx, m.cfg.Container); err != nil {
+			return fmt.Errorf("remove managed PostgreSQL container: %w", err)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unsupported managed PostgreSQL action %q", action)
 	}
