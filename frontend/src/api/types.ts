@@ -355,6 +355,20 @@ export interface PHPFPMStatus {
   message?: string
 }
 
+export interface MySQLPluginStatus {
+  installed: boolean
+  running: boolean
+  engine?: 'mysql' | 'mariadb'
+  path?: string
+  server_path?: string
+  version?: string
+  host?: string
+  port?: number
+  container_host?: string
+  installable: boolean
+  message?: string
+}
+
 export interface PostgreSQLPluginStatus {
   installed: boolean
   running: boolean
