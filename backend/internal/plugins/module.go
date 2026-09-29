@@ -76,10 +76,10 @@ type HostDatabaseInstance struct {
 }
 
 type Service struct {
-	helperBinary       string
-	sudoBinary         string
-	jobs               jobs.JobRunner
-	reservedHostPorts  map[int]string
+	helperBinary      string
+	sudoBinary        string
+	jobs              jobs.JobRunner
+	reservedHostPorts map[int]string
 }
 
 type ServiceOption func(*Service)
