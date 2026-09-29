@@ -70,7 +70,6 @@ export function PluginsPage() {
   }
 
   async function installMySQL() {
-    let progressTimer: number | undefined
     let installSucceeded = false
 
     setBusyAction('mysql-install')
@@ -79,7 +78,7 @@ export function PluginsPage() {
     setMySQLInstallProgress(5)
     setMySQLInstallPhase('Dodawanie zadania instalacji do kolejki…')
 
-    progressTimer = window.setInterval(() => {
+    const progressTimer = window.setInterval(() => {
       setMySQLInstallProgress((current) => {
         const value = current ?? 5
         const next = Math.min(value + (value < 35 ? 8 : value < 70 ? 5 : 2), 94)
@@ -109,7 +108,7 @@ export function PluginsPage() {
       setMySQLInstallPhase('Instalacja zakończyła się błędem.')
       await load().catch(() => undefined)
     } finally {
-      if (progressTimer !== undefined) window.clearInterval(progressTimer)
+      window.clearInterval(progressTimer)
       setBusyAction(null)
       if (installSucceeded) {
         window.setTimeout(() => {
