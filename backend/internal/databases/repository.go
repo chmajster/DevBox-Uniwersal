@@ -22,7 +22,7 @@ func NewRepository(db *sql.DB) *Repository {
 func (r *Repository) ListDatabases(ctx context.Context) ([]Database, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT d.id,d.project_id,COALESCE(p.name,''),d.provider,d.engine,d.name,d.status,d.created_at,d.updated_at,
-		       COALESCE((SELECT du.username FROM database_users du WHERE du.database_id=d.id ORDER BY du.created_at LIMIT 1),'')
+		       COALESCE((SELECT da.username FROM database_user_grants dug JOIN database_accounts da ON da.id=dug.user_id WHERE dug.database_id=d.id ORDER BY dug.created_at LIMIT 1),'')
 		FROM databases d
 		LEFT JOIN projects p ON p.id=d.project_id
 		ORDER BY d.created_at DESC`)
@@ -61,7 +61,7 @@ func (r *Repository) DatabaseByID(ctx context.Context, id string) (Database, err
 	var created, updated string
 	err := r.db.QueryRowContext(ctx, `
 		SELECT d.id,d.project_id,COALESCE(p.name,''),d.provider,d.engine,d.name,d.status,d.created_at,d.updated_at,
-		       COALESCE((SELECT du.username FROM database_users du WHERE du.database_id=d.id ORDER BY du.created_at LIMIT 1),'')
+		       COALESCE((SELECT da.username FROM database_user_grants dug JOIN database_accounts da ON da.id=dug.user_id WHERE dug.database_id=d.id ORDER BY dug.created_at LIMIT 1),'')
 		FROM databases d
 		LEFT JOIN projects p ON p.id=d.project_id
 		WHERE d.id=?`, id).Scan(&item.ID, &projectID, &item.ApplicationName, &item.Provider, &item.Engine, &item.Name, &item.Status, &created, &updated, &item.Username)
@@ -137,7 +137,7 @@ func (r *Repository) ProjectByID(ctx context.Context, id string) (ProjectRef, er
 }
 
 func (r *Repository) ListUsers(ctx context.Context) ([]DatabaseUser, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,database_id,username,secret_id,privileges_json,created_at,updated_at FROM database_users ORDER BY created_at DESC`)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,engine,username,secret_id,created_at,updated_at FROM database_accounts ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list database users: %w", err)
 	}
@@ -145,7 +145,11 @@ func (r *Repository) ListUsers(ctx context.Context) ([]DatabaseUser, error) {
 
 	var out []DatabaseUser
 	for rows.Next() {
-		item, err := scanDatabaseUser(rows.Scan)
+		item, err := scanDatabaseAccount(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		item, err = r.decorateDatabaseUser(ctx, item)
 		if err != nil {
 			return nil, err
 		}
@@ -155,14 +159,24 @@ func (r *Repository) ListUsers(ctx context.Context) ([]DatabaseUser, error) {
 }
 
 func (r *Repository) UsersByDatabase(ctx context.Context, databaseID string) ([]DatabaseUser, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,database_id,username,secret_id,privileges_json,created_at,updated_at FROM database_users WHERE database_id=? ORDER BY created_at`, databaseID)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT da.id,da.engine,da.username,da.secret_id,da.created_at,da.updated_at
+		FROM database_accounts da
+		JOIN database_user_grants dug ON dug.user_id=da.id
+		WHERE dug.database_id=?
+		ORDER BY da.created_at`, databaseID)
 	if err != nil {
 		return nil, fmt.Errorf("list database users: %w", err)
 	}
 	defer rows.Close()
+
 	var out []DatabaseUser
 	for rows.Next() {
-		item, err := scanDatabaseUser(rows.Scan)
+		item, err := scanDatabaseAccount(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		item, err = r.decorateDatabaseUser(ctx, item)
 		if err != nil {
 			return nil, err
 		}
@@ -172,46 +186,116 @@ func (r *Repository) UsersByDatabase(ctx context.Context, databaseID string) ([]
 }
 
 func (r *Repository) UserByID(ctx context.Context, id string) (DatabaseUser, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT id,database_id,username,secret_id,privileges_json,created_at,updated_at FROM database_users WHERE id=?`, id)
-	item, err := scanDatabaseUser(row.Scan)
+	row := r.db.QueryRowContext(ctx, `SELECT id,engine,username,secret_id,created_at,updated_at FROM database_accounts WHERE id=?`, id)
+	item, err := scanDatabaseAccount(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DatabaseUser{}, ErrNotFound
 	}
-	return item, err
+	if err != nil {
+		return DatabaseUser{}, err
+	}
+	return r.decorateDatabaseUser(ctx, item)
+}
+
+func (r *Repository) UserDatabaseGrants(ctx context.Context, userID string) ([]DatabaseUserGrant, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT d.id,d.name,d.engine,dug.privileges_json
+		FROM database_user_grants dug
+		JOIN databases d ON d.id=dug.database_id
+		WHERE dug.user_id=?
+		ORDER BY d.name`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list database user grants: %w", err)
+	}
+	defer rows.Close()
+
+	var out []DatabaseUserGrant
+	for rows.Next() {
+		var item DatabaseUserGrant
+		var privileges string
+		if err := rows.Scan(&item.DatabaseID, &item.DatabaseName, &item.Engine, &privileges); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(privileges), &item.Privileges); err != nil {
+			return nil, fmt.Errorf("decode database privileges: %w", err)
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }
 
 func (r *Repository) CreateUser(ctx context.Context, item DatabaseUser) error {
-	privileges, err := json.Marshal(item.Privileges)
-	if err != nil {
-		return fmt.Errorf("marshal database privileges: %w", err)
+	if item.Engine == "" {
+		item.Engine = "mysql"
 	}
-	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO database_users(id,database_id,username,secret_id,privileges_json,created_at,updated_at)
-		VALUES(?,?,?,?,?,?,?)`, item.ID, item.DatabaseID, item.Username, item.SecretRef, string(privileges), item.CreatedAt.UTC().Format(time.RFC3339Nano), item.UpdatedAt.UTC().Format(time.RFC3339Nano))
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO database_accounts(id,engine,username,secret_id,created_at,updated_at)
+		VALUES(?,?,?,?,?,?)`, item.ID, item.Engine, item.Username, item.SecretRef, item.CreatedAt.UTC().Format(time.RFC3339Nano), item.UpdatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
 		return fmt.Errorf("insert database user: %w", err)
 	}
-	return nil
+	if item.DatabaseID != "" {
+		privileges, err := json.Marshal(item.Privileges)
+		if err != nil {
+			return fmt.Errorf("marshal database privileges: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO database_user_grants(user_id,database_id,privileges_json,created_at,updated_at)
+			VALUES(?,?,?,?,?)`, item.ID, item.DatabaseID, string(privileges), item.CreatedAt.UTC().Format(time.RFC3339Nano), item.UpdatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
+			return fmt.Errorf("insert database user grant: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
-func (r *Repository) UpdateUserPrivileges(ctx context.Context, id string, privileges []string) error {
+func (r *Repository) UpsertUserDatabaseGrant(ctx context.Context, userID, databaseID string, privileges []string) error {
 	payload, err := json.Marshal(privileges)
 	if err != nil {
 		return fmt.Errorf("marshal database privileges: %w", err)
 	}
-	result, err := r.db.ExecContext(ctx, `UPDATE database_users SET privileges_json=?,updated_at=? WHERE id=?`, string(payload), time.Now().UTC().Format(time.RFC3339Nano), id)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO database_user_grants(user_id,database_id,privileges_json,created_at,updated_at)
+		VALUES(?,?,?,?,?)
+		ON CONFLICT(user_id,database_id) DO UPDATE SET privileges_json=excluded.privileges_json,updated_at=excluded.updated_at`,
+		userID, databaseID, string(payload), now, now)
 	if err != nil {
-		return fmt.Errorf("update database privileges: %w", err)
+		return fmt.Errorf("upsert database user grant: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) DeleteUserDatabaseGrant(ctx context.Context, userID, databaseID string) error {
+	result, err := r.db.ExecContext(ctx, `DELETE FROM database_user_grants WHERE user_id=? AND database_id=?`, userID, databaseID)
+	if err != nil {
+		return fmt.Errorf("delete database user grant: %w", err)
 	}
 	return requireAffected(result)
 }
 
 func (r *Repository) DeleteUser(ctx context.Context, id string) error {
-	result, err := r.db.ExecContext(ctx, `DELETE FROM database_users WHERE id=?`, id)
+	result, err := r.db.ExecContext(ctx, `DELETE FROM database_accounts WHERE id=?`, id)
 	if err != nil {
 		return fmt.Errorf("delete database user metadata: %w", err)
 	}
 	return requireAffected(result)
+}
+
+func (r *Repository) decorateDatabaseUser(ctx context.Context, item DatabaseUser) (DatabaseUser, error) {
+	grants, err := r.UserDatabaseGrants(ctx, item.ID)
+	if err != nil {
+		return DatabaseUser{}, err
+	}
+	item.Databases = grants
+	if len(grants) > 0 {
+		item.DatabaseID = grants[0].DatabaseID
+		item.Privileges = append([]string(nil), grants[0].Privileges...)
+	}
+	return item, nil
 }
 
 func (r *Repository) CreateBackup(ctx context.Context, backup Backup) error {
@@ -292,18 +376,15 @@ func (r *Repository) DeleteBackup(ctx context.Context, id string) error {
 
 type rowScanner func(dest ...any) error
 
-func scanDatabaseUser(scan rowScanner) (DatabaseUser, error) {
+func scanDatabaseAccount(scan rowScanner) (DatabaseUser, error) {
 	var item DatabaseUser
 	var secret sql.NullString
-	var privileges, created, updated string
-	if err := scan(&item.ID, &item.DatabaseID, &item.Username, &secret, &privileges, &created, &updated); err != nil {
+	var created, updated string
+	if err := scan(&item.ID, &item.Engine, &item.Username, &secret, &created, &updated); err != nil {
 		return DatabaseUser{}, err
 	}
 	if secret.Valid {
 		item.SecretRef = secret.String
-	}
-	if err := json.Unmarshal([]byte(privileges), &item.Privileges); err != nil {
-		return DatabaseUser{}, fmt.Errorf("decode database privileges: %w", err)
 	}
 	var err error
 	item.CreatedAt, err = parseDBTime(created)
