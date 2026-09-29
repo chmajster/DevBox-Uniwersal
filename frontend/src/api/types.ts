@@ -380,6 +380,10 @@ export interface MySQLPluginStatus {
   host?: string
   port?: number
   container_host?: string
+  container_name?: string
+  image?: string
+  volume?: string
+  network?: string
   installable: boolean
   message?: string
 }
@@ -392,6 +396,10 @@ export interface PostgreSQLPluginStatus {
   host?: string
   port?: number
   container_host?: string
+  container_name?: string
+  image?: string
+  volume?: string
+  network?: string
   installable: boolean
   message?: string
 }
