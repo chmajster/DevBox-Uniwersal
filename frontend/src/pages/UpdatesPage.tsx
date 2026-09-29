@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { request } from '../api/client'
 import type {
   DockerStatus,
@@ -11,7 +11,7 @@ import type {
   UpdateStatus
 } from '../api/types'
 import { Icon } from '../components/Icon'
-import { UPDATE_STAGES, clampUpdatePercent, updateIsActive, updateStageState, updateStateLabel } from '../updates/progress'
+import { UPDATE_STAGES, buildUpdateHardRefreshURL, clampUpdatePercent, clearUpdateHardRefreshURL, updateIsActive, updateStageState, updateStateLabel } from '../updates/progress'
 
 const componentLabels: Record<string, string> = {
   git: 'Git',
@@ -65,6 +65,8 @@ export function UpdatesPage() {
   const [error,setError]=useState('')
   const [message,setMessage]=useState('')
   const [environmentWarning,setEnvironmentWarning]=useState('')
+  const updateWasActive=useRef(false)
+  const hardRefreshStarted=useRef(false)
 
   const load=useCallback(async()=>{
     setError('')
@@ -110,6 +112,8 @@ export function UpdatesPage() {
   },[])
 
   useEffect(()=>{
+    const cleanURL=clearUpdateHardRefreshURL(window.location.href)
+    if(cleanURL!==window.location.href)window.history.replaceState(window.history.state,'',cleanURL)
     load().catch(c=>setError(c instanceof Error?c.message:'Nie udało się sprawdzić aktualizacji'))
     loadProgress().catch(()=>undefined)
   },[load,loadProgress])
@@ -120,6 +124,17 @@ export function UpdatesPage() {
   },[loadProgress])
 
   useEffect(()=>{
+    if(progress?.state==='starting'||progress?.state==='running'){
+      updateWasActive.current=true
+      return
+    }
+    if(progress?.state==='succeeded'&&updateWasActive.current&&!hardRefreshStarted.current){
+      hardRefreshStarted.current=true
+      updateWasActive.current=false
+      const refreshURL=buildUpdateHardRefreshURL(window.location.href,Date.now())
+      window.location.replace(refreshURL)
+      return
+    }
     if(progress?.state==='succeeded'||progress?.state==='no_update'){
       load().catch(()=>undefined)
     }
@@ -207,7 +222,7 @@ export function UpdatesPage() {
         <div>
           <span className="eyebrow">POSTĘP AKTUALIZACJI</span>
           <h2>{progress?.message||'Brak aktywnej aktualizacji'}</h2>
-          <p className="muted small">Stan jest odczytywany z procesu <code>devbox-update.service</code>. Podczas restartu API panel automatycznie wznowi odświeżanie.</p>
+          <p className="muted small">Stan jest odczytywany z procesu <code>devbox-update.service</code>. Podczas restartu API panel automatycznie wznowi odświeżanie, a po udanej aktualizacji strona wykona jednorazowe przeładowanie z pominięciem starego dokumentu z cache.</p>
         </div>
         <div className="update-progress-value">
           <strong>{progressPercent}%</strong>
