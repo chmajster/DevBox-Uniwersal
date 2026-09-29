@@ -36,6 +36,7 @@ export interface UpdateProgress {
   updated_at?: string
   finished_at?: string
   error?: string
+  failure_detail?: string
   exit_code?: number
   log_path?: string
   log_tail?: string[]
