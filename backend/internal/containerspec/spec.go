@@ -207,12 +207,9 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 		_, _ = io.WriteString(h, strings.ToLower(strings.TrimSpace(module.Name))+"="+strings.TrimSpace(module.Version)+"\n")
 	}
 	fingerprint := hex.EncodeToString(h.Sum(nil))
-	short := sanitizeIdentifier(projectID)
-	if len(short) > 24 {
-		short = short[:24]
-	}
-	if short == "" {
-		return DeploymentSpec{}, fmt.Errorf("invalid project id")
+	short, err := projectResourceSuffix(projectID)
+	if err != nil {
+		return DeploymentSpec{}, err
 	}
 	image := "devbox/runtime-" + short + ":" + fingerprint[:16]
 	name := "devbox-app-" + short
@@ -280,9 +277,9 @@ func GenerateCustomDockerfile(projectID, workDir string, hostPort int) (Deployme
 	}
 	h := sha256.Sum256(append(data, []byte("\n"+digest)...))
 	fingerprint := hex.EncodeToString(h[:])
-	short := sanitizeIdentifier(projectID)
-	if len(short) > 24 {
-		short = short[:24]
+	short, err := projectResourceSuffix(projectID)
+	if err != nil {
+		return DeploymentSpec{}, err
 	}
 	port := dockerfileExposePort(string(data))
 	if port == 0 {
@@ -497,13 +494,31 @@ func sortedSet(values map[string]struct{}) []string {
 	return out
 }
 
+func projectResourceSuffix(projectID string) (string, error) {
+	short := sanitizeIdentifier(projectID)
+	if len(short) > 24 {
+		short = strings.TrimRight(short[:24], "-")
+	}
+	if short == "" {
+		return "", fmt.Errorf("invalid project id")
+	}
+	return short, nil
+}
+
 func sanitizeIdentifier(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	var b strings.Builder
+	pendingSeparator := false
 	for _, r := range value {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			if pendingSeparator && b.Len() > 0 {
+				b.WriteByte('-')
+			}
 			b.WriteRune(r)
+			pendingSeparator = false
+			continue
 		}
+		pendingSeparator = b.Len() > 0
 	}
-	return strings.Trim(b.String(), "-_")
+	return b.String()
 }

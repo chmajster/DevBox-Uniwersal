@@ -120,6 +120,48 @@ func TestDeploymentIntegrationManagedProxyFailureIsWarning(t *testing.T) {
 	}
 }
 
+func TestDeploymentIntegrationManagedImageInspectionFailureUsesDependencyStage(t *testing.T) {
+	repo, project, deploymentID := integrationProject(t, Project{
+		Runtime:         "static",
+		ContainerPolicy: ContainerPolicyAuto,
+	})
+
+	ports := &integrationPorts{port: 18126}
+	managed := &integrationManaged{imageExistsErr: errors.New("invalid image reference")}
+	handler := NewDeploymentHandler(repo, NewGitClient(nil), runtimes.NewRegistry(), &testJobLogger{}, DeploymentIntegrations{
+		Ports:   ports,
+		Managed: managed,
+	})
+
+	_, err := handler.Run(context.Background(), domain.Job{
+		ID: "integration-managed-image-inspection-failure",
+		Payload: map[string]any{
+			"project_id":    project.ID,
+			"deployment_id": deploymentID,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "inspect managed image") {
+		t.Fatalf("expected managed image inspection failure, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "devbox/runtime-") {
+		t.Fatalf("error must identify the generated image reference, got %v", err)
+	}
+
+	deployments, err := repo.ListDeployments(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deployments) != 1 {
+		t.Fatalf("unexpected deployment count: %d", len(deployments))
+	}
+	if deployments[0].Status != DeploymentFailed || deployments[0].Stage != DeploymentDependencies {
+		t.Fatalf("image inspection failure persisted at wrong stage: %+v", deployments[0])
+	}
+	if ports.released != 18126 {
+		t.Fatalf("reserved port = %d was not released", ports.released)
+	}
+}
+
 func TestDeploymentIntegrationManagedFailureReleasesPortAndPersistsFailure(t *testing.T) {
 	repo, project, deploymentID := integrationProject(t, Project{
 		Runtime:         "static",
@@ -496,17 +538,18 @@ func (r *integrationRoutes) EnsureProjectRoute(_ context.Context, projectID, hos
 }
 
 type integrationManaged struct {
-	built       bool
-	replaced    bool
-	imageExists bool
-	replaceErr  error
-	spec        containerspec.DeploymentSpec
+	built          bool
+	replaced       bool
+	imageExists    bool
+	imageExistsErr error
+	replaceErr     error
+	spec           containerspec.DeploymentSpec
 }
 
 func (m *integrationManaged) Available(context.Context) error { return nil }
 
 func (m *integrationManaged) ManagedImageExists(context.Context, string) (bool, error) {
-	return m.imageExists, nil
+	return m.imageExists, m.imageExistsErr
 }
 
 func (m *integrationManaged) BuildManaged(_ context.Context, spec containerspec.DeploymentSpec) error {
