@@ -456,8 +456,12 @@ func (s *Service) DatabaseUserConnection(ctx context.Context, userID, password s
 	if err != nil {
 		return ConnectionConfig{}, err
 	}
-	host, port := s.engine.Endpoint()
-	if endpointEngine, ok := s.engine.(endpointDatabaseEngine); ok {
+	provider, err := s.engineFor(database.Engine)
+	if err != nil {
+		return ConnectionConfig{}, err
+	}
+	host, port := provider.Endpoint()
+	if endpointEngine, ok := provider.(endpointDatabaseEngine); ok {
 		endpoint := endpointEngine.ApplicationEndpoint()
 		host, port = endpoint.Host, endpoint.Port
 	}
