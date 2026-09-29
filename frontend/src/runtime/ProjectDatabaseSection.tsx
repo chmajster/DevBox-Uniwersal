@@ -183,6 +183,23 @@ export function ProjectDatabaseSection({ projectId }: Props) {
 
   async function saveBinding() {
     await perform('save', async () => {
+      if (draft.mode === 'managed') {
+        await request<ProjectDatabaseServices>(`/projects/${encodeURIComponent(projectId)}/database-services`, {
+          method: 'PUT',
+          body: JSON.stringify({ engines: serviceEngines(serviceSelection) }),
+        })
+        if (binding?.mode !== 'none') {
+          await request<DatabaseBinding>(`/projects/${encodeURIComponent(projectId)}/database-binding`, { method: 'DELETE' })
+        }
+        await load()
+        setMessage(`Zapisano dostęp do serwerów DevBox: ${serviceSelection === 'both' ? 'MySQL/MariaDB i PostgreSQL' : serviceSelection === 'postgresql' ? 'PostgreSQL' : 'MySQL/MariaDB'}.`)
+        return
+      }
+
+      await request<ProjectDatabaseServices>(`/projects/${encodeURIComponent(projectId)}/database-services`, {
+        method: 'PUT',
+        body: JSON.stringify({ engines: [] }),
+      })
       if (draft.mode === 'none') {
         await request<DatabaseBinding>(`/projects/${encodeURIComponent(projectId)}/database-binding`, { method: 'DELETE' })
       } else {
@@ -193,21 +210,6 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       }
       await load()
       setMessage(`Tryb bazy został zapisany: ${modeLabel(draft.mode)}.`)
-    })
-  }
-
-  async function provisionManaged() {
-    await perform('provision', async () => {
-      await request<unknown>(`/projects/${encodeURIComponent(projectId)}/database/provision`, {
-        method: 'POST',
-        body: JSON.stringify({
-          engine: draft.engine || 'mysql',
-          charset: 'utf8mb4',
-          application_service: draft.application_service || '',
-        }),
-      })
-      await load()
-      setMessage('Baza, użytkownik i ograniczone granty zostały utworzone. Poświadczenia zapisano w SecretStore.')
     })
   }
 
@@ -222,19 +224,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     })
   }
 
-  async function rotatePassword() {
-    if (!window.confirm('Zmienić hasło zarządzanego użytkownika bazy? Kolejny deploy otrzyma nowe hasło z SecretStore.')) return
-    await perform('password', async () => {
-      await request<{ status: string }>(`/projects/${encodeURIComponent(projectId)}/database-binding/password`, {
-        method: 'POST',
-        body: '{}',
-      })
-      setMessage('Hasło użytkownika bazy zostało zmienione i zapisane w SecretStore.')
-      await load()
-    })
-  }
-
-  async function addPHPDatabaseDriver(driver: 'pdo_mysql') {
+  async function addPHPDatabaseDriver(driver: 'pdo_mysql' | 'pgsql') {
     if (!runtimeConfig) {
       setError('Nie udało się pobrać konfiguracji runtime projektu. Odśwież widok i spróbuj ponownie.')
       return
@@ -250,18 +240,9 @@ export function ProjectDatabaseSection({ projectId }: Props) {
         body: JSON.stringify(payload),
       })
       setRuntimeConfig(saved)
-      setMessage('PDO MySQL dodano do runtime PHP. Zostanie zainstalowane przy przebudowie obrazu.')
-    })
-  }
-
-  async function openPHPMyAdmin() {
-    await perform('phpmyadmin', async () => {
-      let status = await request<PHPMyAdminStatus>('/phpmyadmin/install', { method: 'POST', body: '{}' })
-      if (!status.running) {
-        status = await request<PHPMyAdminStatus>('/phpmyadmin/start', { method: 'POST', body: '{}' })
-      }
-      if (!status.url) throw new Error('phpMyAdmin nie zwrócił adresu aplikacji')
-      window.open(status.url, '_blank', 'noopener,noreferrer')
+      setMessage(driver === 'pgsql'
+        ? 'Sterownik PostgreSQL dodano do runtime PHP. Zostanie zainstalowany przy przebudowie obrazu.'
+        : 'PDO MySQL dodano do runtime PHP. Zostanie zainstalowane przy przebudowie obrazu.')
     })
   }
 
