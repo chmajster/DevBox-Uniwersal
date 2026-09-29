@@ -43,9 +43,9 @@ New managed installations use:
 - external Docker network: `devbox-apps`;
 - persistent volume: `devbox-mysql-data`;
 - restart policy: `unless-stopped`;
-- admin publication bound to `127.0.0.1` only.
+- admin publication bound to `127.0.0.1` only, on a dedicated configurable host port (default `13306`) so a host MySQL/MariaDB application service can use the conventional `3306` port independently.
 
-Network, volume, image and container reconciliation are idempotent. Standard restart never removes the persistent volume. The managed root credential is stored in SecretStore and is supplied to Docker through a mode-0600 temporary environment file rather than a command argument or image layer.
+Network, volume, image and container reconciliation are idempotent. The managed container carries DevBox-owned reconciliation labels; a configuration change such as the admin host-port split recreates only the container while retaining the named `devbox-mysql-data` volume and stored root secret. Standard restart never removes the persistent volume. The managed root credential is stored in SecretStore and is supplied to Docker through a mode-0600 temporary environment file rather than a command argument or image layer.
 
 Managed lifecycle mutations use the durable Job Engine. A clean installer uses managed MySQL and installs only a MySQL client on the host. Existing installations that predate this ADR and contain the old host-MySQL admin credential remain in legacy host mode on repair/update unless `DEVBOX_MYSQL_MANAGED=true` is explicitly selected; DevBox does not silently stop an existing host database server.
 

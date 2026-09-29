@@ -94,8 +94,13 @@ func TestManagedMySQLEnsureUsesPersistentVolumeLoopbackAndSharedNetwork(t *testi
 		t.Fatalf("shared network missing: %+v", docker.spec.Networks)
 	}
 	if len(docker.spec.PortBindings) != 1 || docker.spec.PortBindings[0].HostIP != "127.0.0.1" ||
+		docker.spec.PortBindings[0].HostPort != DefaultManagedMySQLAdminPort ||
 		docker.spec.PortBindings[0].ContainerPort != 3306 {
-		t.Fatalf("admin endpoint must be loopback-only: %+v", docker.spec.PortBindings)
+		t.Fatalf("admin endpoint must use dedicated loopback port: %+v", docker.spec.PortBindings)
+	}
+	if docker.spec.Labels["io.devbox.managed-mysql"] != "true" ||
+		docker.spec.Labels["io.devbox.managed-mysql.admin-port"] != "13306" {
+		t.Fatalf("managed MySQL reconciliation labels missing: %+v", docker.spec.Labels)
 	}
 	if docker.spec.SensitiveEnvironment["MYSQL_ROOT_PASSWORD"] == "" {
 		t.Fatal("root password was not injected through sensitive environment")

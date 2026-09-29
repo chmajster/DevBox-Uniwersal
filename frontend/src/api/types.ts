@@ -391,6 +391,7 @@ export interface PostgreSQLPluginStatus {
   version?: string
   host?: string
   port?: number
+  container_host?: string
   installable: boolean
   message?: string
 }

@@ -24,6 +24,7 @@ type Config struct {
 	AppVersion             string
 
 	ManagedMySQLEnabled   bool
+	ManagedMySQLAdminPort int
 	ManagedMySQLImage     string
 	ManagedMySQLContainer string
 	ManagedMySQLNetwork   string
@@ -84,6 +85,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("parse DEVBOX_MYSQL_MANAGED: %w", err)
 	}
+	managedMySQLAdminPort, err := getEnvInt("DEVBOX_MANAGED_MYSQL_ADMIN_PORT", 13306)
+	if err != nil {
+		return Config{}, err
+	}
 	phpMyAdminPort, err := getEnvInt("DEVBOX_PHPMYADMIN_PORT", 8081)
 	if err != nil {
 		return Config{}, err
@@ -136,6 +141,7 @@ func Load() (Config, error) {
 		MasterKeyBase64:            strings.TrimSpace(os.Getenv("DEVBOX_MASTER_KEY")),
 		AppVersion:                 getEnv("DEVBOX_VERSION", "dev"),
 		ManagedMySQLEnabled:        managedMySQL,
+		ManagedMySQLAdminPort:      managedMySQLAdminPort,
 		ManagedMySQLImage:          getEnv("DEVBOX_MYSQL_IMAGE", "mysql:8.4"),
 		ManagedMySQLContainer:      getEnv("DEVBOX_MYSQL_CONTAINER", "devbox-mysql"),
 		ManagedMySQLNetwork:        getEnv("DEVBOX_MYSQL_NETWORK", "devbox-apps"),
@@ -176,6 +182,9 @@ func Load() (Config, error) {
 	}
 	if cfg.MySQLPort < 1 || cfg.MySQLPort > 65535 {
 		return Config{}, fmt.Errorf("DEVBOX_MYSQL_PORT must be between 1 and 65535")
+	}
+	if cfg.ManagedMySQLAdminPort < 1 || cfg.ManagedMySQLAdminPort > 65535 {
+		return Config{}, fmt.Errorf("DEVBOX_MANAGED_MYSQL_ADMIN_PORT must be between 1 and 65535")
 	}
 	if cfg.PHPMyAdminHostPort < 1 || cfg.PHPMyAdminHostPort > 65535 {
 		return Config{}, fmt.Errorf("DEVBOX_PHPMYADMIN_PORT must be between 1 and 65535")

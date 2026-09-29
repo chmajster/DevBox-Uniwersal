@@ -18,6 +18,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HTTPAddr != "127.0.0.1:8787" {
 		t.Fatalf("unexpected HTTPAddr: %s", cfg.HTTPAddr)
 	}
+	if cfg.ManagedMySQLAdminPort != 13306 {
+		t.Fatalf("unexpected managed MySQL admin port: %d", cfg.ManagedMySQLAdminPort)
+	}
 }
 
 func TestLoadAllowsPasswordlessBootstrapAdminByDefault(t *testing.T) {

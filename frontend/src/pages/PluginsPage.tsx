@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 
 type PHPMyAdminAction = 'install' | 'start' | 'stop' | 'restart'
+type SQLInstallEngine = 'mysql' | 'postgresql'
 
 export function PluginsPage() {
   const { user } = useAuth()
@@ -15,7 +16,8 @@ export function PluginsPage() {
   const [mysql, setMySQL] = useState<MySQLPluginStatus | null>(null)
   const [postgresql, setPostgreSQL] = useState<PostgreSQLPluginStatus | null>(null)
   const [phpMyAdmin, setPHPMyAdmin] = useState<PHPMyAdminStatus | null>(null)
-  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'mysql-install' | 'postgresql-install' | null>(null)
+  const [selectedSQLEngines, setSelectedSQLEngines] = useState<SQLInstallEngine[]>([])
+  const [busyAction, setBusyAction] = useState<PHPMyAdminAction | 'docker-compose-install' | 'php-fpm-install' | 'mysql-install' | 'postgresql-install' | 'sql-install' | null>(null)
   const [installProgress, setInstallProgress] = useState<number | null>(null)
   const [installPhase, setInstallPhase] = useState('')
   const [error, setError] = useState('')
@@ -82,7 +84,7 @@ export function PluginsPage() {
       }
       await new Promise((resolve) => window.setTimeout(resolve, 1000))
     }
-    throw new Error('Instalacja MySQL/MariaDB nadal trwa. Sprawdź status zadania w zakładce Zadania.')
+    throw new Error('Instalacja serwera SQL nadal trwa. Sprawdź status zadania w zakładce Zadania.')
   }
 
   async function installMySQL() {
@@ -108,11 +110,50 @@ export function PluginsPage() {
     setError('')
     setMessage('')
     try {
-      const status = await request<PostgreSQLPluginStatus>('/plugins/postgresql/install', { method: 'POST' })
-      setPostgreSQL(status)
-      setMessage('PostgreSQL został zainstalowany.')
+      const job = await request<Job>('/plugins/postgresql/install', { method: 'POST' })
+      setMessage(`Instalacja PostgreSQL została dodana do kolejki jako zadanie ${job.id.slice(0, 12)}.`)
+      await waitForJob(job.id)
+      await load()
+      setMessage('Hostowy PostgreSQL został zainstalowany, uruchomiony i zweryfikowany.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Instalacja PostgreSQL nie powiodła się')
+      await load().catch(() => undefined)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  function toggleSQLEngine(engine: SQLInstallEngine, checked: boolean) {
+    setSelectedSQLEngines((current) => checked
+      ? Array.from(new Set([...current, engine]))
+      : current.filter((item) => item !== engine))
+  }
+
+  async function installSelectedSQL() {
+    const engines = selectedSQLEngines.filter((engine) =>
+      engine === 'mysql' ? !mysql?.installed : !postgresql?.installed)
+    if (engines.length === 0) {
+      setError('Wybierz co najmniej jeden niezainstalowany silnik SQL.')
+      return
+    }
+
+    setBusyAction('sql-install')
+    setError('')
+    setMessage('')
+    try {
+      const jobs: Job[] = []
+      for (const engine of engines) {
+        const endpoint = engine === 'mysql' ? '/plugins/mysql/install' : '/plugins/postgresql/install'
+        jobs.push(await request<Job>(endpoint, { method: 'POST' }))
+      }
+      const labels = engines.map((engine) => engine === 'mysql' ? 'MySQL/MariaDB' : 'PostgreSQL')
+      setMessage(`Instalacja ${labels.join(' + ')} została dodana do kolejki.`)
+      await Promise.all(jobs.map((job) => waitForJob(job.id)))
+      await load()
+      setSelectedSQLEngines([])
+      setMessage(`${labels.join(' + ')} są gotowe jako hostowe serwery SQL dla aplikacji.`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Instalacja wybranych serwerów SQL nie powiodła się')
       await load().catch(() => undefined)
     } finally {
       setBusyAction(null)
@@ -301,14 +342,72 @@ export function PluginsPage() {
         <div className="actions">
           <Icon name="database" size={24} />
           <div>
-            <h2>MySQL / MariaDB na hoście</h2>
-            <p className="muted">Opcjonalny serwer MySQL/MariaDB instalowany bezpośrednio w systemie hosta przez manager pakietów.</p>
+            <h2>Bazy SQL dla aplikacji</h2>
+            <p className="muted">Zainstaluj MySQL/MariaDB, PostgreSQL albo oba silniki jako usługi hosta dostępne dla aplikacji uruchamianych przez DevBox.</p>
+          </div>
+        </div>
+        <p className="muted small">
+          Te serwery przechowują dane aplikacji. Nie są bazą kontrolną DevBox Universal — stan samego DevBox pozostaje w SQLite.
+          Po instalacji silniki pojawią się automatycznie w konfiguracji <strong>Baza danych</strong> projektu.
+        </p>
+      </div>
+
+      <div className="phpmyadmin-status">
+        <label className="actions">
+          <input
+            type="checkbox"
+            checked={mysql?.installed || selectedSQLEngines.includes('mysql')}
+            disabled={busy || Boolean(mysql?.installed) || !canInstallSystemPackages || !mysql?.installable}
+            onChange={(event) => toggleSQLEngine('mysql', event.target.checked)}
+          />
+          <strong>MySQL / MariaDB</strong>
+          <span className="status-chip" data-ok={mysql?.installed ? 'true' : 'false'}>
+            {mysql?.installed ? 'Zainstalowany' : 'Do instalacji'}
+          </span>
+          <code>host.docker.internal:3306</code>
+        </label>
+        <label className="actions">
+          <input
+            type="checkbox"
+            checked={postgresql?.installed || selectedSQLEngines.includes('postgresql')}
+            disabled={busy || Boolean(postgresql?.installed) || !canInstallSystemPackages || !postgresql?.installable}
+            onChange={(event) => toggleSQLEngine('postgresql', event.target.checked)}
+          />
+          <strong>PostgreSQL</strong>
+          <span className="status-chip" data-ok={postgresql?.installed ? 'true' : 'false'}>
+            {postgresql?.installed ? 'Zainstalowany' : 'Do instalacji'}
+          </span>
+          <code>host.docker.internal:{postgresql?.port ?? 5432}</code>
+        </label>
+
+        {canInstallSystemPackages && (
+          <div className="actions">
+            <button
+              type="button"
+              onClick={() => void installSelectedSQL()}
+              disabled={busy || selectedSQLEngines.length === 0}
+            >
+              {busyAction === 'sql-install' ? 'Instalowanie SQL…' : 'Zainstaluj zaznaczone'}
+            </button>
+          </div>
+        )}
+        {!canInstallSystemPackages && <span className="muted small">Instalacja serwerów SQL wymaga roli administratora.</span>}
+      </div>
+    </section>
+
+    <section className="panel phpmyadmin-panel">
+      <div>
+        <div className="actions">
+          <Icon name="database" size={24} />
+          <div>
+            <h2>MySQL / MariaDB — SQL aplikacji</h2>
+            <p className="muted">Hostowy serwer SQL przeznaczony do baz danych aplikacji. Nie jest używany jako baza kontrolna DevBox Universal.</p>
           </div>
         </div>
         <p className="muted small">
           {mysql?.installed
-            ? 'Serwer hostowy został wykryty. Jest niezależny od zarządzanego kontenera devbox-mysql.'
-            : 'Zainstaluj hostowy MySQL/MariaDB, jeżeli aplikacje mają łączyć się z bazą działającą bezpośrednio na hoście.'}
+            ? 'Serwer hostowy został wykryty. Aplikacje mogą wybrać go w konfiguracji bazy i łączyć się przez host.docker.internal:3306.'
+            : 'Zainstaluj hostowy MySQL/MariaDB, jeżeli dane aplikacji mają być przechowywane w bazie działającej bezpośrednio na hoście.'}
         </p>
       </div>
 
@@ -329,7 +428,7 @@ export function PluginsPage() {
         {mysql?.host && mysql?.port && <p className="muted small">Adres hosta: <code>{mysql.host}:{mysql.port}</code></p>}
         {mysql?.container_host && mysql?.port && <p className="muted small">Adres z kontenera: <code>{mysql.container_host}:{mysql.port}</code></p>}
         {mysql?.message && <p className="muted small">{mysql.message}</p>}
-        <p className="muted small">Instalacja hostowa nie zastępuje zarządzanego MySQL DevBox (<code>devbox-mysql</code>). DevBox blokuje instalację, jeżeli port 3306 jest już zarezerwowany przez zarządzany MySQL lub inny listener.</p>
+        <p className="muted small">DevBox przechowuje własny stan w SQLite. Kontener <code>devbox-mysql</code> zachowuje wewnętrzny endpoint <code>devbox-mysql:3306</code>, ale jego loopbackowy port administracyjny jest oddzielony od hostowego portu 3306.</p>
 
         <div className="actions">
           {!mysql?.installed && canInstallSystemPackages && mysql?.installable && (
@@ -352,14 +451,14 @@ export function PluginsPage() {
         <div className="actions">
           <Icon name="database" size={24} />
           <div>
-            <h2>PostgreSQL</h2>
-            <p className="muted">Opcjonalny lokalny serwer PostgreSQL instalowany przez systemowy manager pakietów.</p>
+            <h2>PostgreSQL — SQL aplikacji</h2>
+            <p className="muted">Hostowy serwer PostgreSQL przeznaczony do baz danych aplikacji. Nie jest używany jako baza kontrolna DevBox Universal.</p>
           </div>
         </div>
         <p className="muted small">
           {postgresql?.installed
-            ? 'PostgreSQL jest zainstalowany. Status poniżej pokazuje, czy lokalny serwer odpowiada.'
-            : 'PostgreSQL nie jest wymagany przez DevBox. Możesz go doinstalować, jeżeli projekty potrzebują lokalnego serwera PostgreSQL.'}
+            ? 'PostgreSQL jest zainstalowany. Aplikacje mogą wybrać wykryty klaster i port w konfiguracji bazy danych.'
+            : 'Zainstaluj PostgreSQL, jeżeli aplikacje mają korzystać z hostowego serwera PostgreSQL.'}
         </p>
       </div>
 
@@ -376,6 +475,7 @@ export function PluginsPage() {
         {postgresql?.version && <p className="muted small">Wersja: <code>{postgresql.version}</code></p>}
         {postgresql?.path && <p className="muted small">Klient: <code>{postgresql.path}</code></p>}
         {postgresql?.host && postgresql?.port && <p className="muted small">Adres lokalny: <code>{postgresql.host}:{postgresql.port}</code></p>}
+        {postgresql?.container_host && postgresql?.port && <p className="muted small">Adres z kontenera: <code>{postgresql.container_host}:{postgresql.port}</code></p>}
         {postgresql?.message && <p className="muted small">{postgresql.message}</p>}
 
         <div className="actions">

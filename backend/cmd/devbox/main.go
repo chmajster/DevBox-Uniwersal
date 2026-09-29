@@ -187,7 +187,7 @@ func serve() error {
 			Network:             cfg.ManagedMySQLNetwork,
 			Volume:              cfg.ManagedMySQLVolume,
 			AdminHost:           "127.0.0.1",
-			AdminPort:           cfg.MySQLPort,
+			AdminPort:           cfg.ManagedMySQLAdminPort,
 			InitialRootPassword: cfg.MySQLAdminPassword,
 		})
 		adminScope, adminSecret := managedMySQL.AdminSecretRef()
@@ -278,8 +278,8 @@ func serve() error {
 	pluginOptions := []plugins.ServiceOption{plugins.WithJobRunner(jobRunner)}
 	if cfg.ManagedMySQLEnabled {
 		pluginOptions = append(pluginOptions, plugins.WithReservedHostPort(
-			cfg.MySQLPort,
-			fmt.Sprintf("zarządzany MySQL DevBox (%s)", cfg.ManagedMySQLContainer),
+			cfg.ManagedMySQLAdminPort,
+			fmt.Sprintf("administracyjny port zarządzanego MySQL DevBox (%s)", cfg.ManagedMySQLContainer),
 		))
 	}
 	pluginService := plugins.NewService(cfg.NginxHelperBinary, cfg.SudoBinary, pluginOptions...)

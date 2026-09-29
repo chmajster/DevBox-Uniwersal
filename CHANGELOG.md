@@ -25,7 +25,9 @@
 
 ### Unified project database connectivity
 
-- Added the optional host MySQL/MariaDB plugin with status discovery and durable Job Engine installation. The installer sudoers policy now explicitly allows only `devbox-helper install-package mysql`, and the plugin refuses installation when TCP 3306 is reserved by managed `devbox-mysql` or another listener.
+- Added a selectable application-SQL section to Plugins: administrators can choose MySQL/MariaDB, PostgreSQL, or both, and both server installations now execute through durable Job Engine jobs. Installed host engines are discovered automatically by the per-project database configuration and exposed to containers through `host.docker.internal`.
+- Kept host SQL strictly application-facing: the DevBox control plane continues to use SQLite. Moved the managed `devbox-mysql` loopback administrative publication to configurable `DEVBOX_MANAGED_MYSQL_ADMIN_PORT` (default `13306`) while preserving `devbox-mysql:3306` inside Docker, so host MySQL/MariaDB can use TCP 3306 simultaneously.
+- Added managed-MySQL reconciliation labels so upgrades recreate only the `devbox-mysql` container when its managed configuration changes while preserving `devbox-mysql-data` and the SecretStore root credential. The privileged helper sudoers policy now permits the allowlisted MySQL/MariaDB/PostgreSQL service restarts required after package installation.
 - phpMyAdmin now reconciles host-gateway access and can expose both managed MySQL and host MySQL/MariaDB targets; the plugin routes are included in OpenAPI discovery.
 - Fixed database-user connection details so newly created or rotated credentials include the actual application-facing `DB_HOST`, `DB_PORT`, database and username; loopback control-plane MySQL endpoints are normalized to `host.docker.internal` for application containers.
 - Opening phpMyAdmin now reconciles its container/database target first, avoiding stale `PMA_HOST`/`PMA_PORT` configuration after database topology changes.

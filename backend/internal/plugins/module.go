@@ -53,14 +53,15 @@ type MySQLPluginStatus struct {
 }
 
 type PostgreSQLStatus struct {
-	Installed   bool   `json:"installed"`
-	Running     bool   `json:"running"`
-	Path        string `json:"path,omitempty"`
-	Version     string `json:"version,omitempty"`
-	Host        string `json:"host,omitempty"`
-	Port        int    `json:"port,omitempty"`
-	Installable bool   `json:"installable"`
-	Message     string `json:"message,omitempty"`
+	Installed     bool   `json:"installed"`
+	Running       bool   `json:"running"`
+	Path          string `json:"path,omitempty"`
+	Version       string `json:"version,omitempty"`
+	Host          string `json:"host,omitempty"`
+	Port          int    `json:"port,omitempty"`
+	ContainerHost string `json:"container_host,omitempty"`
+	Installable   bool   `json:"installable"`
+	Message       string `json:"message,omitempty"`
 }
 
 type HostDatabaseInstance struct {
@@ -213,6 +214,23 @@ func (s *Service) installSystemPackage(ctx context.Context, component string) er
 	return nil
 }
 
+func (s *Service) restartSystemService(ctx context.Context, component string) error {
+	sudo := s.sudoBinary
+	if sudo == "" {
+		sudo = "sudo"
+	}
+	cmd := exec.CommandContext(ctx, sudo, s.helperBinary, "restart-service", component)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(out))
+		if message == "" {
+			message = err.Error()
+		}
+		return errors.New(message)
+	}
+	return nil
+}
+
 func firstLine(value string) string {
 	value = strings.TrimSpace(value)
 	if line, _, ok := strings.Cut(value, "\n"); ok {
@@ -269,7 +287,7 @@ func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
 	status.ContainerHost = instance.Host
 
 	if status.Running {
-		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany i aktywna usługa odpowiada na TCP 3306."
+		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany i gotowy jako serwer SQL dla aplikacji na TCP 3306."
 	} else if owner, reserved := s.reservedHostPorts[3306]; reserved {
 		status.Installable = false
 		if owner == "" {
@@ -296,7 +314,7 @@ func (s *Service) mysqlInstallConflict() string {
 }
 
 func (s *Service) InstallMySQL(ctx context.Context) (MySQLPluginStatus, error) {
-	if status := s.MySQLStatus(ctx); status.Installed {
+	if status := s.MySQLStatus(ctx); status.Installed && status.Running {
 		return status, nil
 	}
 	if conflict := s.mysqlInstallConflict(); conflict != "" {
@@ -305,12 +323,25 @@ func (s *Service) InstallMySQL(ctx context.Context) (MySQLPluginStatus, error) {
 	if s.helperBinary == "" {
 		return MySQLPluginStatus{}, errors.New("privileged helper is not configured")
 	}
-	if err := s.installSystemPackage(ctx, "mysql"); err != nil {
-		return MySQLPluginStatus{}, fmt.Errorf("install MySQL/MariaDB: %w", err)
-	}
 	status := s.MySQLStatus(ctx)
 	if !status.Installed {
+		if err := s.installSystemPackage(ctx, "mysql"); err != nil {
+			return MySQLPluginStatus{}, fmt.Errorf("install MySQL/MariaDB: %w", err)
+		}
+		status = s.MySQLStatus(ctx)
+	}
+	if !status.Installed {
 		return status, errors.New("MySQL/MariaDB installation completed but the server executable was not detected")
+	}
+	if !status.Running {
+		serviceName := status.Engine
+		if serviceName != "mariadb" {
+			serviceName = "mysql"
+		}
+		if err := s.restartSystemService(ctx, serviceName); err != nil {
+			return status, fmt.Errorf("start MySQL/MariaDB service: %w", err)
+		}
+		status = s.MySQLStatus(ctx)
 	}
 	if !status.Running {
 		return status, errors.New("MySQL/MariaDB was installed but the host service is not running on TCP 3306")
@@ -319,7 +350,7 @@ func (s *Service) InstallMySQL(ctx context.Context) (MySQLPluginStatus, error) {
 }
 
 func (s *Service) PostgreSQLStatus(ctx context.Context) PostgreSQLStatus {
-	status := PostgreSQLStatus{Installable: s.helperBinary != "", Host: "127.0.0.1", Port: 5432}
+	status := PostgreSQLStatus{Installable: s.helperBinary != "", Host: "127.0.0.1", Port: 5432, ContainerHost: "host.docker.internal"}
 	instances := detectHostPostgreSQL(ctx)
 	if len(instances) == 0 {
 		if psql, err := exec.LookPath("psql"); err == nil {
@@ -348,7 +379,7 @@ func (s *Service) PostgreSQLStatus(ctx context.Context) PostgreSQLStatus {
 		status.Path = psql
 	}
 	if status.Running {
-		status.Message = "PostgreSQL jest zainstalowany i odpowiada na 127.0.0.1:" + strconv.Itoa(status.Port) + "."
+		status.Message = "PostgreSQL jest zainstalowany i gotowy jako serwer SQL dla aplikacji na 127.0.0.1:" + strconv.Itoa(status.Port) + "."
 	} else {
 		status.Message = "PostgreSQL jest zainstalowany, ale wybrany klaster nie odpowiada na 127.0.0.1:" + strconv.Itoa(status.Port) + "."
 	}
@@ -522,18 +553,30 @@ func hostTCPPortOpen(port int) bool {
 }
 
 func (s *Service) InstallPostgreSQL(ctx context.Context) (PostgreSQLStatus, error) {
-	if status := s.PostgreSQLStatus(ctx); status.Installed {
+	status := s.PostgreSQLStatus(ctx)
+	if status.Installed && status.Running {
 		return status, nil
 	}
 	if s.helperBinary == "" {
 		return PostgreSQLStatus{}, errors.New("privileged helper is not configured")
 	}
-	if err := s.installSystemPackage(ctx, "postgresql"); err != nil {
-		return PostgreSQLStatus{}, fmt.Errorf("install PostgreSQL: %w", err)
+	if !status.Installed {
+		if err := s.installSystemPackage(ctx, "postgresql"); err != nil {
+			return PostgreSQLStatus{}, fmt.Errorf("install PostgreSQL: %w", err)
+		}
+		status = s.PostgreSQLStatus(ctx)
 	}
-	status := s.PostgreSQLStatus(ctx)
 	if !status.Installed {
 		return status, errors.New("PostgreSQL installation completed but the server executable was not detected")
+	}
+	if !status.Running {
+		if err := s.restartSystemService(ctx, "postgresql"); err != nil {
+			return status, fmt.Errorf("start PostgreSQL service: %w", err)
+		}
+		status = s.PostgreSQLStatus(ctx)
+	}
+	if !status.Running {
+		return status, errors.New("PostgreSQL was installed but no local cluster is running")
 	}
 	return status, nil
 }
@@ -688,7 +731,8 @@ func (m *Module) installMySQL(w http.ResponseWriter, r *http.Request) {
 	}
 	if m.audit != nil {
 		_ = m.audit.Record(r.Context(), actor, "plugin.mysql.install.enqueue", "plugin", nil, map[string]any{
-			"job_id": job.ID,
+			"job_id":  job.ID,
+			"purpose": "application_database",
 		}, nil)
 	}
 	writeData(w, http.StatusAccepted, job)
@@ -703,20 +747,23 @@ func (m *Module) postgreSQLStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) installPostgreSQL(w http.ResponseWriter, r *http.Request) {
-	status, err := m.service.InstallPostgreSQL(r.Context())
+	var actor *string
+	if user, ok := api.CurrentUser(r.Context()); ok {
+		id := user.ID
+		actor = &id
+	}
+	job, err := m.service.QueuePostgreSQLInstall(r.Context(), actor)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "postgresql_install_failed", err.Error())
+		writeError(w, http.StatusConflict, "postgresql_install_unavailable", err.Error())
 		return
 	}
 	if m.audit != nil {
-		var actor *string
-		if user, ok := api.CurrentUser(r.Context()); ok {
-			id := user.ID
-			actor = &id
-		}
-		_ = m.audit.Record(r.Context(), actor, "plugin.postgresql.install", "plugin", nil, map[string]any{"path": status.Path, "version": status.Version, "running": status.Running}, nil)
+		_ = m.audit.Record(r.Context(), actor, "plugin.postgresql.install.enqueue", "plugin", nil, map[string]any{
+			"job_id":  job.ID,
+			"purpose": "application_database",
+		}, nil)
 	}
-	writeData(w, http.StatusOK, status)
+	writeData(w, http.StatusAccepted, job)
 }
 
 func (m *Module) phpFPMStatus(w http.ResponseWriter, r *http.Request) {

@@ -80,12 +80,32 @@ func (p *CLIProvider) EnsureContainer(ctx context.Context, spec providers.Contai
 	if err := validateContainerRef(spec.Name); err != nil {
 		return providers.ContainerInfo{}, err
 	}
-	item, err := p.Inspect(ctx, spec.Name)
+	item, err := p.InspectContainer(ctx, spec.Name)
 	if err == nil {
-		return item, nil
+		if item.Image == spec.Image && containerLabelsMatch(item.Labels, spec.Labels) {
+			return providers.ContainerInfo{ID: item.ID, Name: item.Name, State: item.State}, nil
+		}
+		if item.Running {
+			if err := p.Stop(ctx, spec.Name); err != nil {
+				return providers.ContainerInfo{}, err
+			}
+		}
+		if err := p.Remove(ctx, spec.Name); err != nil {
+			return providers.ContainerInfo{}, err
+		}
+		return p.Create(ctx, spec)
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return providers.ContainerInfo{}, err
 	}
 	return p.Create(ctx, spec)
+}
+
+func containerLabelsMatch(actual, desired map[string]string) bool {
+	for key, value := range desired {
+		if actual[key] != value {
+			return false
+		}
+	}
+	return true
 }

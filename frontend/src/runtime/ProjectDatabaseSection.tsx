@@ -313,7 +313,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     <div className="section-heading">
       <div>
         <h2>Baza danych</h2>
-        <p className="muted">Wybierz, czy DevBox ma utworzyć nową bazę dla aplikacji, czy aplikacja ma korzystać z już istniejącego hosta MySQL/MariaDB.</p>
+        <p className="muted">Wybierz bazę dla aplikacji. Hostowe MySQL/MariaDB i PostgreSQL zainstalowane w Pluginach są wykrywane automatycznie i udostępniane kontenerowi przez <code>host.docker.internal</code>.</p>
       </div>
       <span className="status-chip" data-ok={binding?.status === 'ready' || binding?.status === 'configured' ? 'true' : 'false'}>
         {binding?.mode ? modeLabel(binding.mode, Boolean(binding.host_access_only)) : 'Ładowanie'}
