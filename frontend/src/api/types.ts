@@ -382,7 +382,7 @@ export interface MySQLPluginStatus {
   port?: number
   suggested_port?: number
   container_host?: string
-  purpose?: 'applications'
+  purpose?: 'applications' | 'control-plane'
   installable: boolean
   message?: string
 }
