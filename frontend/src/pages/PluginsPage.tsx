@@ -304,7 +304,7 @@ export function PluginsPage() {
           <Icon name="database" size={24} />
           <div>
             <h2>MySQL / MariaDB</h2>
-            <p className="muted">Osobny moduł serwera baz danych dla aplikacji. Jeden serwer może przechowywać wiele baz, wielu użytkowników i obsługiwać wiele aplikacji jednocześnie.</p>
+            <p className="muted">Trwały serwer MySQL/MariaDB uruchamiany w osobnym kontenerze Docker. Jeden serwer może przechowywać wiele baz, wielu użytkowników i obsługiwać wiele aplikacji jednocześnie.</p>
           </div>
         </div>
         <p className="muted small">
@@ -330,6 +330,10 @@ export function PluginsPage() {
           <div><span>Bazy</span><strong>Wiele</strong></div>
           <div><span>Aplikacje</span><strong>Wiele</strong></div>
           <div><span>PHP</span><strong>mysqli / PDO MySQL</strong></div>
+          <div><span>Kontener</span><strong><code>{mysql?.container_name ?? 'devbox-mysql'}</code></strong></div>
+          <div><span>Sieć Docker</span><strong><code>{mysql?.network ?? 'devbox-apps'}</code></strong></div>
+          <div><span>Wolumen danych</span><strong><code>{mysql?.volume ?? 'devbox-mysql-data'}</code></strong></div>
+          <div><span>Obraz</span><strong><code>{mysql?.image ?? 'mysql:8.4'}</code></strong></div>
           {mysql?.version && <div><span>Wersja</span><strong><code>{mysql.version}</code></strong></div>}
         </div>
 
@@ -355,7 +359,7 @@ export function PluginsPage() {
           <Icon name="database" size={24} />
           <div>
             <h2>PostgreSQL</h2>
-            <p className="muted">Osobny moduł serwera PostgreSQL dla aplikacji. Jeden serwer może przechowywać wiele baz, wielu użytkowników i obsługiwać wiele aplikacji jednocześnie.</p>
+            <p className="muted">Trwały serwer PostgreSQL uruchamiany w osobnym kontenerze Docker. Jeden serwer może przechowywać wiele baz, wielu użytkowników i obsługiwać wiele aplikacji jednocześnie.</p>
           </div>
         </div>
         <p className="muted small">Aplikacje PHP korzystają z modułu <code>pgsql</code> lub <code>PDO PostgreSQL</code> do połączenia z tym serwerem.</p>
@@ -378,6 +382,10 @@ export function PluginsPage() {
           <div><span>Bazy</span><strong>Wiele</strong></div>
           <div><span>Aplikacje</span><strong>Wiele</strong></div>
           <div><span>PHP</span><strong>pgsql / PDO PostgreSQL</strong></div>
+          <div><span>Kontener</span><strong><code>{postgresql?.container_name ?? 'devbox-postgresql'}</code></strong></div>
+          <div><span>Sieć Docker</span><strong><code>{postgresql?.network ?? 'devbox-apps'}</code></strong></div>
+          <div><span>Wolumen danych</span><strong><code>{postgresql?.volume ?? 'devbox-postgresql-data'}</code></strong></div>
+          <div><span>Obraz</span><strong><code>{postgresql?.image ?? 'postgres:17'}</code></strong></div>
           {postgresql?.version && <div><span>Wersja</span><strong><code>{postgresql.version}</code></strong></div>}
         </div>
 
