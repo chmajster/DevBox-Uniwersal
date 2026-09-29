@@ -211,6 +211,23 @@ func serve() error {
 		Volume:    cfg.ManagedPostgreSQLVolume,
 	})
 	mysqlProvider := databases.NewMySQLProvider(mysqlConfig, secretStore)
+
+	managedMySQLScope, managedMySQLSecret := managedMySQL.AdminSecretRef()
+	managedMySQLAdminEndpoint := managedMySQL.AdminEndpoint()
+	managedMySQLApplicationEndpoint := managedMySQL.ApplicationEndpoint()
+	managedMySQLProvider := databases.NewMySQLProvider(databases.MySQLConfig{
+		Host:                    managedMySQLAdminEndpoint.Host,
+		Port:                    managedMySQLAdminEndpoint.Port,
+		AdminUser:               "root",
+		AdminSecretScope:        managedMySQLScope,
+		AdminSecretRef:          managedMySQLSecret,
+		ApplicationHost:         "%",
+		ApplicationEndpointHost: managedMySQLApplicationEndpoint.Host,
+		ApplicationEndpointPort: managedMySQLApplicationEndpoint.Port,
+		MySQLBinary:             cfg.MySQLBinary,
+		DumpBinary:              cfg.MySQLDumpBinary,
+	}, secretStore)
+
 	postgresqlProvider := databases.NewPostgreSQLProvider(databases.PostgreSQLConfig{
 		DockerBinary:    cfg.PHPMyAdminDockerBinary,
 		Container:       cfg.ManagedPostgreSQLContainer,
@@ -236,6 +253,8 @@ func serve() error {
 	databaseOptions := []databases.ServiceOption{
 		databases.WithComposeDatabaseProvider(dockerProvider),
 		databases.WithManagedMySQL(managedMySQL),
+		databases.WithDatabaseEngine("mysql", managedMySQLProvider),
+		databases.WithDatabaseEngine("mariadb", managedMySQLProvider),
 		databases.WithDatabaseEngine("postgresql", postgresqlProvider),
 	}
 	databaseService, err := databases.NewService(databaseRepo, mysqlProvider, secretStore, jobRunner, auditService, phpMyAdmin, cfg.MySQLBackupDir, databaseOptions...)
