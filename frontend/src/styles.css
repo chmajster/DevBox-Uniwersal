@@ -384,6 +384,87 @@ input:disabled { opacity: .65; cursor: not-allowed; }
 .docker-status.is-up { border-left-color: #2ea043; }
 .docker-status.is-down { border-left-color: #d29922; }
 .docker-status span { color: var(--muted); }
+
+.docker-container-groups {
+  display: grid;
+  gap: 12px;
+}
+.docker-container-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--panel);
+}
+.docker-container-card-project { border-left: 3px solid var(--accent); }
+.docker-container-card-infrastructure { border-left: 3px solid #6b7787; }
+.docker-container-card-header {
+  width: 100%;
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 0;
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  box-shadow: none;
+}
+.docker-container-card-header:hover { background: var(--panel-alt); }
+.docker-container-card-header:focus-visible { outline-offset: -3px; }
+.docker-container-card-chevron {
+  width: 20px;
+  color: var(--muted);
+  font-size: 24px;
+  line-height: 1;
+  text-align: center;
+}
+.docker-container-card-title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.docker-container-card-title strong {
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.docker-container-card-title small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.docker-container-card-summary {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.docker-container-card-body {
+  border-top: 1px solid var(--border-soft);
+}
+.docker-container-table-wrap {
+  border: 0;
+  border-radius: 0;
+}
+.docker-container-table-wrap table {
+  border-radius: 0;
+}
+.docker-container-table-wrap th {
+  background: var(--panel-alt);
+}
+@media (max-width: 760px) {
+  .docker-container-card-header {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .docker-container-card-summary {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
 .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0 14px; }
 .tabs button { background: var(--panel); color: var(--muted); }
 .tabs button.active { background: var(--panel-alt); color: var(--text); border-color: var(--border); }
