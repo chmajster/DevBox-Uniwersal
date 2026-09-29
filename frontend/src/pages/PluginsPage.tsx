@@ -322,7 +322,7 @@ export function PluginsPage() {
           </div>
         </div>
         <p className="muted small">
-          MySQLi i PDO MySQL są sterownikami PHP do tego serwera. Kontenery aplikacji DevBox łączą się z nim przez wspólną sieć Docker.
+          Serwer MySQL/MariaDB działa w kontenerze <code>{mysql?.container_name ?? 'devbox-mysql'}</code>. <code>mysqli</code> i <code>PDO MySQL</code> są sterownikami PHP instalowanymi osobno w kontenerach aplikacji.
         </p>
         {mysql?.message && <p className="muted small">{mysql.message}</p>}
       </div>
@@ -520,17 +520,16 @@ export function PluginsPage() {
           <span className="status-chip" data-ok={phpMyAdmin?.running ? 'true' : 'false'}>
             {busyAction === 'install' ? 'installing' : phpMyAdmin?.running ? 'Uruchomiony' : phpMyAdmin?.state ?? 'Zatrzymany'}
           </span>
-          {phpMyAdmin?.installed && <span className="status-chip" data-ok={phpMyAdmin.host_database_access ? 'true' : 'false'}>
-            {phpMyAdmin.host_database_access ? 'Host gateway skonfigurowany' : 'Wymaga rekonfiguracji host MySQL'}
+          {phpMyAdmin?.installed && <span className="status-chip" data-ok="true">
+            MySQL: {phpMyAdmin.database_host ?? mysql?.container_host ?? 'devbox-mysql'}:{phpMyAdmin.database_port ?? mysql?.port ?? 3306}
           </span>}
-          {phpMyAdmin?.running && phpMyAdmin.host_database_access && <span className="status-chip" data-ok={phpMyAdmin.host_database_reachable ? 'true' : 'false'}>
-            {phpMyAdmin.host_database_reachable ? 'Host MySQL osiągalny' : 'Host MySQL nieosiągalny'}
+          {phpMyAdmin?.installed && (phpMyAdmin.network ?? mysql?.network) && <span className="status-chip" data-ok="true">
+            Sieć: {phpMyAdmin.network ?? mysql?.network}
           </span>}
         </div>
 
         <p className="muted small">
-          phpMyAdmin działa na tej samej sieci Docker co serwer MySQL i aplikacje. Domyślny serwer to <code>{mysql?.container_host ?? 'devbox-mysql'}:{mysql?.port ?? 3306}</code>.
-          Tryb arbitrary server nadal pozwala wskazać inny serwer MySQL/MariaDB.
+          phpMyAdmin działa na tej samej sieci Docker co zarządzany serwer MySQL/MariaDB i domyślnie łączy się bezpośrednio z <code>{phpMyAdmin?.database_host ?? mysql?.container_host ?? 'devbox-mysql'}:{phpMyAdmin?.database_port ?? mysql?.port ?? 3306}</code>. Nie potrzebuje hostowego MySQL ani mapowania <code>host.docker.internal</code>.
         </p>
 
         <div className="actions">
