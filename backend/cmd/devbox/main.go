@@ -221,6 +221,11 @@ func serve() error {
 		MySQLPort:    phpMySQLPort,
 		Network:      phpMySQLNetwork,
 	})
+	phpMyAdminReconcileCtx, phpMyAdminReconcileCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	if _, err := phpMyAdmin.Reconcile(phpMyAdminReconcileCtx); err != nil {
+		logger.Warn("phpMyAdmin reconciliation failed; it will retry when opened", "error", err)
+	}
+	phpMyAdminReconcileCancel()
 	databaseOptions := []databases.ServiceOption{databases.WithComposeDatabaseProvider(dockerProvider)}
 	if managedMySQL != nil {
 		databaseOptions = append(databaseOptions, databases.WithManagedMySQL(managedMySQL))
