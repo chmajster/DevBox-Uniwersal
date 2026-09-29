@@ -48,16 +48,18 @@ type PostgreSQLStatus struct {
 	Message     string `json:"message,omitempty"`
 }
 
-type HostDatabaseInstance struct {
-	ID        string `json:"id"`
-	Engine    string `json:"engine"`
-	Label     string `json:"label"`
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	Installed bool   `json:"installed"`
-	Running   bool   `json:"running"`
-	Version   string `json:"version,omitempty"`
-	Source    string `json:"source,omitempty"`
+type MySQLPluginStatus struct {
+	Installed     bool   `json:"installed"`
+	Running       bool   `json:"running"`
+	Engine        string `json:"engine,omitempty"`
+	Path          string `json:"path,omitempty"`
+	ServerPath    string `json:"server_path,omitempty"`
+	Version       string `json:"version,omitempty"`
+	Host          string `json:"host,omitempty"`
+	Port          int    `json:"port,omitempty"`
+	ContainerHost string `json:"container_host,omitempty"`
+	Installable   bool   `json:"installable"`
+	Message       string `json:"message,omitempty"`
 }
 
 type Service struct {
@@ -169,183 +171,141 @@ func firstLine(value string) string {
 	return value
 }
 
-func (s *Service) PostgreSQLStatus(ctx context.Context) PostgreSQLStatus {
-	status := PostgreSQLStatus{Installable: s.helperBinary != "", Host: "127.0.0.1", Port: 5432}
-	instances := detectHostPostgreSQL(ctx)
-	if len(instances) == 0 {
-		if psql, err := exec.LookPath("psql"); err == nil {
-			status.Path = psql
-			status.Message = "Wykryto klienta PostgreSQL, ale nie znaleziono działającej instalacji serwera."
+func (s *Service) MySQLStatus(ctx context.Context) MySQLPluginStatus {
+	status := MySQLPluginStatus{
+		Installable:   s.helperBinary != "",
+		Host:          "127.0.0.1",
+		Port:          3306,
+		ContainerHost: "host.docker.internal",
+	}
+
+	clientPath, _ := findMySQLClient()
+	serverPath, engine, serverErr := findMySQLServer()
+	if serverErr != nil {
+		status.Path = clientPath
+		if clientPath != "" {
+			status.Message = "Wykryto klienta MySQL/MariaDB, ale serwer nie jest zainstalowany. Możesz doinstalować serwer z panelu Pluginy."
 		} else {
-			status.Message = "PostgreSQL nie jest zainstalowany. Możesz doinstalować serwer z panelu Pluginy."
+			status.Message = "Hostowy MySQL/MariaDB nie jest zainstalowany. Możesz zainstalować lokalny serwer z panelu Pluginy."
 		}
 		if !status.Installable {
 			status.Message += " Instalacja z panelu jest niedostępna, ponieważ DEVBOX_PRIVILEGED_HELPER nie jest skonfigurowany."
 		}
 		return status
 	}
-	selected := instances[0]
-	for _, instance := range instances {
-		if instance.Running {
-			selected = instance
-			break
+
+	status.Installed = true
+	status.Engine = engine
+	status.Path = clientPath
+	status.ServerPath = serverPath
+	versionBinary := serverPath
+	if clientPath != "" {
+		versionBinary = clientPath
+	}
+	if out, versionErr := exec.CommandContext(ctx, versionBinary, "--version").CombinedOutput(); versionErr == nil {
+		status.Version = firstLine(string(out))
+		if strings.Contains(strings.ToLower(status.Version), "mariadb") {
+			status.Engine = "mariadb"
 		}
 	}
-	status.Installed = true
-	status.Running = selected.Running
-	status.Version = selected.Version
-	status.Port = selected.Port
-	if psql, err := exec.LookPath("psql"); err == nil {
-		status.Path = psql
+
+	address := net.JoinHostPort(status.Host, strconv.Itoa(status.Port))
+	conn, dialErr := net.DialTimeout("tcp", address, 750*time.Millisecond)
+	if dialErr == nil {
+		status.Running = true
+		_ = conn.Close()
 	}
+
 	if status.Running {
-		status.Message = "PostgreSQL jest zainstalowany i odpowiada na 127.0.0.1:" + strconv.Itoa(status.Port) + "."
+		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany i nasłuchuje na 127.0.0.1:3306."
 	} else {
-		status.Message = "PostgreSQL jest zainstalowany, ale wybrany klaster nie odpowiada na 127.0.0.1:" + strconv.Itoa(status.Port) + "."
+		status.Message = "Hostowy MySQL/MariaDB jest zainstalowany, ale nie odpowiada przez TCP na 127.0.0.1:3306."
 	}
 	return status
 }
 
-func (s *Service) HostDatabases(ctx context.Context) []HostDatabaseInstance {
-	instances := make([]HostDatabaseInstance, 0, 4)
-	if mysql, ok := detectHostMySQL(ctx); ok {
-		instances = append(instances, mysql)
+func (s *Service) InstallMySQL(ctx context.Context) (MySQLPluginStatus, error) {
+	if status := s.MySQLStatus(ctx); status.Installed {
+		return status, nil
 	}
-	instances = append(instances, detectHostPostgreSQL(ctx)...)
-	sort.Slice(instances, func(i, j int) bool {
-		if instances[i].Engine == instances[j].Engine {
-			return instances[i].Port < instances[j].Port
-		}
-		return instances[i].Engine < instances[j].Engine
-	})
-	return instances
+	if s.helperBinary == "" {
+		return MySQLPluginStatus{}, errors.New("privileged helper is not configured")
+	}
+	if err := s.installSystemPackage(ctx, "mysql"); err != nil {
+		return MySQLPluginStatus{}, fmt.Errorf("install MySQL/MariaDB: %w", err)
+	}
+	status := s.MySQLStatus(ctx)
+	if !status.Installed {
+		return status, errors.New("MySQL/MariaDB installation completed but the server executable was not detected")
+	}
+	return status, nil
 }
 
-func detectHostMySQL(ctx context.Context) (HostDatabaseInstance, bool) {
-	path, err := findMySQLServer()
-	if err != nil {
-		return HostDatabaseInstance{}, false
-	}
-	version := ""
-	if out, versionErr := exec.CommandContext(ctx, path, "--version").CombinedOutput(); versionErr == nil {
-		version = firstLine(string(out))
-	}
-	engine := "mysql"
-	label := "MySQL"
-	lower := strings.ToLower(path + " " + version)
-	if strings.Contains(lower, "mariadb") {
-		engine = "mariadb"
-		label = "MariaDB"
-	}
-	const port = 3306
-	return HostDatabaseInstance{
-		ID:        engine + ":host:" + strconv.Itoa(port),
-		Engine:    engine,
-		Label:     label,
-		Host:      "host.docker.internal",
-		Port:      port,
-		Installed: true,
-		Running:   hostTCPPortOpen(port),
-		Version:   version,
-		Source:    path,
-	}, true
-}
-
-func detectHostPostgreSQL(ctx context.Context) []HostDatabaseInstance {
-	psql, err := exec.LookPath("psql")
-	if err != nil {
-		return nil
-	}
-	if _, serverErr := findPostgreSQLServer(); serverErr != nil {
-		return nil
-	}
-	version := ""
-	if out, versionErr := exec.CommandContext(ctx, psql, "--version").CombinedOutput(); versionErr == nil {
-		version = firstLine(string(out))
-	}
-	if pgClusters, clustersErr := exec.LookPath("pg_lsclusters"); clustersErr == nil {
-		if out, runErr := exec.CommandContext(ctx, pgClusters, "--no-header").CombinedOutput(); runErr == nil {
-			if clusters := parsePostgreSQLClusters(string(out), version); len(clusters) > 0 {
-				return clusters
-			}
-		}
-	}
-	const port = 5432
-	return []HostDatabaseInstance{{
-		ID:        "postgresql:host:" + strconv.Itoa(port),
-		Engine:    "postgresql",
-		Label:     "PostgreSQL",
-		Host:      "host.docker.internal",
-		Port:      port,
-		Installed: true,
-		Running:   hostTCPPortOpen(port),
-		Version:   version,
-		Source:    psql,
-	}}
-}
-
-func parsePostgreSQLClusters(raw, version string) []HostDatabaseInstance {
-	var result []HostDatabaseInstance
-	for _, line := range strings.Split(raw, "\n") {
-		fields := strings.Fields(strings.TrimSpace(line))
-		if len(fields) < 4 {
-			continue
-		}
-		port, err := strconv.Atoi(fields[2])
-		if err != nil || port < 1 || port > 65535 {
-			continue
-		}
-		clusterVersion := fields[0]
-		clusterName := fields[1]
-		status := strings.ToLower(fields[3])
-		label := "PostgreSQL " + clusterVersion
-		if clusterName != "" {
-			label += " / " + clusterName
-		}
-		result = append(result, HostDatabaseInstance{
-			ID:        "postgresql:" + clusterVersion + ":" + clusterName + ":" + strconv.Itoa(port),
-			Engine:    "postgresql",
-			Label:     label,
-			Host:      "host.docker.internal",
-			Port:      port,
-			Installed: true,
-			Running:   status == "online",
-			Version:   version,
-			Source:    "pg_lsclusters",
-		})
-	}
-	return result
-}
-
-func findMySQLServer() (string, error) {
-	for _, candidate := range []string{"mysqld", "mariadbd"} {
+func findMySQLClient() (string, error) {
+	for _, candidate := range []string{"mysql", "mariadb"} {
 		if path, err := exec.LookPath(candidate); err == nil {
 			return path, nil
 		}
 	}
-	for _, candidate := range []string{
-		"/usr/sbin/mysqld",
-		"/usr/sbin/mariadbd",
-		"/usr/local/mysql/bin/mysqld",
-		"/usr/local/sbin/mysqld",
-	} {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-			return candidate, nil
-		}
-	}
-	return "", errors.New("mysql server executable not found")
+	return "", errors.New("mysql client executable not found")
 }
 
-func hostTCPPortOpen(port int) bool {
-	if port < 1 || port > 65535 {
-		return false
+func findMySQLServer() (string, string, error) {
+	for _, candidate := range []struct {
+		name   string
+		engine string
+	}{
+		{name: "mysqld", engine: "mysql"},
+		{name: "mariadbd", engine: "mariadb"},
+	} {
+		if path, err := exec.LookPath(candidate.name); err == nil {
+			return path, candidate.engine, nil
+		}
 	}
-	connection, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 250*time.Millisecond)
+	for _, candidate := range []struct {
+		path   string
+		engine string
+	}{
+		{path: "/usr/sbin/mysqld", engine: "mysql"},
+		{path: "/usr/sbin/mariadbd", engine: "mariadb"},
+		{path: "/usr/libexec/mysqld", engine: "mysql"},
+	} {
+		if info, err := os.Stat(candidate.path); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return candidate.path, candidate.engine, nil
+		}
+	}
+	return "", "", errors.New("mysql server executable not found")
+}
+
+func (s *Service) PostgreSQLStatus(ctx context.Context) PostgreSQLStatus {
+	status := PostgreSQLStatus{Installable: s.helperBinary != "", Host: "127.0.0.1", Port: 5432}
+	psql, err := exec.LookPath("psql")
 	if err != nil {
-		return false
+		status.Message = "PostgreSQL nie jest zainstalowany. Możesz doinstalować serwer z panelu Pluginy."
+		if !status.Installable {
+			status.Message += " Instalacja z panelu jest niedostępna, ponieważ DEVBOX_PRIVILEGED_HELPER nie jest skonfigurowany."
+		}
+		return status
 	}
-	_ = connection.Close()
-	return true
+	if _, serverErr := findPostgreSQLServer(); serverErr != nil {
+		status.Path = psql
+		status.Message = "Wykryto klienta PostgreSQL, ale nie znaleziono binarki serwera postgres."
+		return status
+	}
+	status.Installed = true
+	status.Path = psql
+	if out, versionErr := exec.CommandContext(ctx, psql, "--version").CombinedOutput(); versionErr == nil {
+		status.Version = firstLine(string(out))
+	}
+	if ready, readyErr := exec.LookPath("pg_isready"); readyErr == nil {
+		status.Running = exec.CommandContext(ctx, ready, "-q", "-h", status.Host, "-p", strconv.Itoa(status.Port)).Run() == nil
+	}
+	if status.Running {
+		status.Message = "PostgreSQL jest zainstalowany i odpowiada na 127.0.0.1:5432."
+	} else {
+		status.Message = "PostgreSQL jest zainstalowany, ale serwer nie odpowiada na 127.0.0.1:5432."
+	}
+	return status
 }
 
 func (s *Service) InstallPostgreSQL(ctx context.Context) (PostgreSQLStatus, error) {
@@ -468,9 +428,10 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/plugins/docker-compose/install", admin(m.installDockerCompose))
 	mux.Handle("GET /api/v1/plugins/php-fpm/status", viewer(m.phpFPMStatus))
 	mux.Handle("POST /api/v1/plugins/php-fpm/install", admin(m.installPHPFPM))
+	mux.Handle("GET /api/v1/plugins/mysql/status", viewer(m.mySQLStatus))
+	mux.Handle("POST /api/v1/plugins/mysql/install", admin(m.installMySQL))
 	mux.Handle("GET /api/v1/plugins/postgresql/status", viewer(m.postgreSQLStatus))
 	mux.Handle("POST /api/v1/plugins/postgresql/install", admin(m.installPostgreSQL))
-	mux.Handle("GET /api/v1/plugins/databases/host", viewer(m.hostDatabases))
 	mux.Handle("GET /api/v1/plugins/php/extensions", viewer(m.phpExtensions))
 	mux.Handle("POST /api/v1/plugins/php/extensions/install", admin(m.installPHPExtensions))
 }
@@ -496,8 +457,28 @@ func (m *Module) installDockerCompose(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, status)
 }
 
-func (m *Module) hostDatabases(w http.ResponseWriter, r *http.Request) {
-	writeData(w, http.StatusOK, m.service.HostDatabases(r.Context()))
+func (m *Module) mySQLStatus(w http.ResponseWriter, r *http.Request) {
+	writeData(w, http.StatusOK, m.service.MySQLStatus(r.Context()))
+}
+
+func (m *Module) installMySQL(w http.ResponseWriter, r *http.Request) {
+	status, err := m.service.InstallMySQL(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "mysql_install_failed", err.Error())
+		return
+	}
+	if m.audit != nil {
+		var actor *string
+		if user, ok := api.CurrentUser(r.Context()); ok {
+			id := user.ID
+			actor = &id
+		}
+		_ = m.audit.Record(r.Context(), actor, "plugin.mysql.install", "plugin", nil, map[string]any{
+			"engine": status.Engine, "path": status.Path, "server_path": status.ServerPath,
+			"version": status.Version, "running": status.Running,
+		}, nil)
+	}
+	writeData(w, http.StatusOK, status)
 }
 
 func (m *Module) postgreSQLStatus(w http.ResponseWriter, r *http.Request) {
