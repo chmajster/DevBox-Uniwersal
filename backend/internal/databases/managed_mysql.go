@@ -154,6 +154,32 @@ func (m *ManagedMySQLManager) Network() string {
 	return m.cfg.Network
 }
 
+func (m *ManagedMySQLManager) ContainerName() string {
+	return m.cfg.Container
+}
+
+func (m *ManagedMySQLManager) Image() string {
+	return m.cfg.Image
+}
+
+func (m *ManagedMySQLManager) Volume() string {
+	return m.cfg.Volume
+}
+
+func (m *ManagedMySQLManager) ContainerState(ctx context.Context) (installed bool, running bool, err error) {
+	if m == nil || m.docker == nil {
+		return false, false, errors.New("managed MySQL Docker provider is not configured")
+	}
+	if err := m.docker.Available(ctx); err != nil {
+		return false, false, err
+	}
+	item, err := m.docker.Inspect(ctx, m.cfg.Container)
+	if err != nil {
+		return false, false, nil
+	}
+	return true, strings.EqualFold(item.State, "running"), nil
+}
+
 func (m *ManagedMySQLManager) Action(ctx context.Context, action string) error {
 	switch strings.ToLower(strings.TrimSpace(action)) {
 	case "install", "start":
