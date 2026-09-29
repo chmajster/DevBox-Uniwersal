@@ -16,14 +16,23 @@ type Database struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+type DatabaseUserGrant struct {
+	DatabaseID   string   `json:"database_id"`
+	DatabaseName string   `json:"database_name"`
+	Engine       string   `json:"engine"`
+	Privileges   []string `json:"privileges"`
+}
+
 type DatabaseUser struct {
-	ID         string    `json:"id"`
-	DatabaseID string    `json:"database_id"`
-	Username   string    `json:"username"`
-	SecretRef  string    `json:"-"`
-	Privileges []string  `json:"privileges"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID         string              `json:"id"`
+	Engine     string              `json:"engine"`
+	Username   string              `json:"username"`
+	SecretRef  string              `json:"-"`
+	Databases  []DatabaseUserGrant `json:"databases"`
+	DatabaseID string              `json:"database_id,omitempty"`
+	Privileges []string            `json:"privileges,omitempty"`
+	CreatedAt  time.Time           `json:"created_at"`
+	UpdatedAt  time.Time           `json:"updated_at"`
 }
 
 type Backup struct {
