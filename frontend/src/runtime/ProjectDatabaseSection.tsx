@@ -360,10 +360,39 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       </>}
 
       {modeFields.includes('host') && draft.mode === 'external' && <>
-        {hostMySQLSelected ? <div className="validation-box span-2">
-          <strong>Dostęp sieciowy do MySQL/MariaDB na hoście.</strong>
-          <span>DevBox nie zapisuje nazwy bazy, użytkownika ani hasła i nie wstrzykuje <code>DB_DATABASE</code>, <code>DB_USERNAME</code> ani <code>DB_PASSWORD</code>. Kontener otrzyma wyłącznie mapowanie <code>host.docker.internal:host-gateway</code>. Aplikacja korzysta z adresu <code>host.docker.internal:3306</code> i zarządza własnymi credentialami w swojej konfiguracji.</span>
-        </div> : <>
+        {hostMySQLSelected ? <>
+          <div className="validation-box span-2">
+            <strong>Dostęp sieciowy do MySQL/MariaDB na hoście.</strong>
+            <span>DevBox nie zapisuje nazwy bazy, użytkownika ani hasła i nie wstrzykuje <code>DB_DATABASE</code>, <code>DB_USERNAME</code> ani <code>DB_PASSWORD</code>. Kontener otrzyma wyłącznie mapowanie <code>host.docker.internal:host-gateway</code>. Aplikacja korzysta z adresu <code>host.docker.internal:3306</code> i zarządza własnymi credentialami w swojej konfiguracji.</span>
+          </div>
+          <div className="database-host-help span-2">
+            <div>
+              <strong>Jak ustawić połączenie wewnątrz aplikacji</strong>
+              <p>Jako host bazy wpisz <code>host.docker.internal</code>, a nie <code>localhost</code> ani <code>127.0.0.1</code>. W kontenerze adresy loopback wskazują na sam kontener, nie na host DevBox.</p>
+            </div>
+            <div className="database-host-help-grid">
+              <div>
+                <span className="database-host-help-label">Przykład .env / konfiguracji aplikacji</span>
+                <pre><code>{`DB_HOST=host.docker.internal
+DB_PORT=3306
+DB_DATABASE=moja_baza
+DB_USERNAME=moj_uzytkownik
+DB_PASSWORD=moje_haslo`}</code></pre>
+              </div>
+              <div>
+                <span className="database-host-help-label">PHP — MySQLi</span>
+                <pre><code>{`$mysqli = new mysqli(
+    getenv('DB_HOST') ?: 'host.docker.internal',
+    getenv('DB_USERNAME'),
+    getenv('DB_PASSWORD'),
+    getenv('DB_DATABASE'),
+    (int) (getenv('DB_PORT') ?: 3306)
+);`}</code></pre>
+              </div>
+            </div>
+            <p className="database-host-warning"><strong>Wymagane po stronie hosta:</strong> MySQL/MariaDB musi nasłuchiwać na interfejsie dostępnym z Dockera, a użytkownik bazy musi mieć odpowiedni grant. Jeżeli aplikacja PHP używa MySQLi lub PDO MySQL, dodaj odpowiednio moduł <code>mysqli</code> albo <code>pdo_mysql</code> w zakładce Runtime projektu.</p>
+          </div>
+        </> : <>
           <div className="validation-box span-2">
             <strong>Użyj istniejącej bazy na innym serwerze.</strong>
             <span>DevBox nie utworzy bazy ani użytkownika. Podaj osiągalny z kontenera adres DNS lub IP serwera MySQL/MariaDB.</span>
