@@ -212,6 +212,19 @@ func (p *CLIProvider) Create(ctx context.Context, spec providers.ContainerSpec) 
 	if envFile != "" {
 		args = append(args, "--env-file", envFile)
 	}
+	labelKeys := sortedKeys(spec.Labels)
+	for _, key := range labelKeys {
+		if err := validateValue(key, "label name"); err != nil {
+			return providers.ContainerInfo{}, err
+		}
+		if err := validateValue(spec.Labels[key], "label value"); err != nil {
+			return providers.ContainerInfo{}, err
+		}
+		if strings.TrimSpace(key) == "" || strings.Contains(key, "=") {
+			return providers.ContainerInfo{}, fmt.Errorf("%w: invalid label name", ErrInvalidInput)
+		}
+		args = append(args, "--label", key+"="+spec.Labels[key])
+	}
 	hostPorts := make([]int, 0, len(spec.Ports))
 	for host := range spec.Ports {
 		hostPorts = append(hostPorts, host)
