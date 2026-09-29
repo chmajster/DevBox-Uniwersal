@@ -142,12 +142,14 @@ func (m *Module) createUser(w http.ResponseWriter, r *http.Request) {
 		writeModuleError(w, err)
 		return
 	}
+	credential, err := m.service.DatabaseUserConnection(r.Context(), user.ID, password)
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
 	writeData(w, http.StatusCreated, map[string]any{
-		"user": user,
-		"credential": map[string]string{
-			"username": user.Username,
-			"password": password,
-		},
+		"user":       user,
+		"credential": credential,
 	})
 }
 
@@ -171,12 +173,18 @@ func (m *Module) changePassword(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	actor, remote := requestIdentity(r)
-	password, err := m.service.ChangeUserPassword(r.Context(), r.PathValue("id"), input.Password, actor, remote)
+	userID := r.PathValue("id")
+	password, err := m.service.ChangeUserPassword(r.Context(), userID, input.Password, actor, remote)
 	if err != nil {
 		writeModuleError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, map[string]string{"password": password})
+	credential, err := m.service.DatabaseUserConnection(r.Context(), userID, password)
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]any{"password": password, "credential": credential})
 }
 
 func (m *Module) changeGrants(w http.ResponseWriter, r *http.Request) {
