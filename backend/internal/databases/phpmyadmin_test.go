@@ -114,6 +114,39 @@ func TestPHPMyAdminAutoLoginWhenManagedMySQLPluginIsInstalled(t *testing.T) {
 	}
 }
 
+func TestPHPMyAdminInstalledPluginOverridesLegacyHostAndUsesAutoLogin(t *testing.T) {
+	docker := &managedDockerFake{state: "running", exists: true}
+	store := &fakeSecretStore{values: map[string][]byte{
+		managedMySQLSecretScope + ":" + managedMySQLSecretName: []byte("secret"),
+	}}
+	managed := NewManagedMySQLManager(docker, store, ManagedMySQLConfig{})
+	manager := NewPHPMyAdminManager(PHPMyAdminConfig{
+		MySQLHost:    "127.0.0.1",
+		MySQLPort:    3306,
+		Network:      "devbox-apps",
+		ManagedMySQL: managed,
+	})
+
+	environment, err := manager.requiredEnvironment(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if environment["PMA_HOST"] != "devbox-mysql" || environment["PMA_PORT"] != "3306" {
+		t.Fatalf("installed managed plugin must override legacy host target: %#v", environment)
+	}
+	if environment["PMA_ARBITRARY"] != "0" || environment["PMA_USER"] != "root" {
+		t.Fatalf("installed managed plugin must enable config authentication: %#v", environment)
+	}
+	if environment["PMA_PASSWORD_FILE"] != phpMyAdminManagedPasswordPath {
+		t.Fatalf("PMA_PASSWORD_FILE = %q, want %q", environment["PMA_PASSWORD_FILE"], phpMyAdminManagedPasswordPath)
+	}
+
+	args := manager.createArgs(environment)
+	if containsAdjacent(args, "--add-host", "host.docker.internal:host-gateway") {
+		t.Fatalf("managed MySQL target must not keep legacy host gateway mapping: %#v", args)
+	}
+}
+
 func TestPHPMyAdminKeepsLoginScreenWhenManagedMySQLPluginIsNotInstalled(t *testing.T) {
 	docker := &managedDockerFake{}
 	managed := NewManagedMySQLManager(docker, &fakeSecretStore{values: map[string][]byte{}}, ManagedMySQLConfig{})
