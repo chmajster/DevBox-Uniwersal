@@ -131,7 +131,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
     setHostDatabasesLoading(true)
     try {
       const items = await request<HostDatabaseInstance[]>('/plugins/databases/host')
-      setHostDatabases((items ?? []).filter((item) => item.installed && item.application_ready))
+      setHostDatabases((items ?? []).filter((item) => item.installed && item.application_ready && item.purpose === 'applications'))
     } catch {
       setHostDatabases([])
     } finally {
