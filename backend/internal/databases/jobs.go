@@ -28,14 +28,21 @@ type backupEngine interface {
 	RestoreDatabase(context.Context, string, io.Reader) error
 }
 
+type backupEngineResolver func(string) (backupEngine, error)
+
 type BackupJobHandler struct {
 	store     backupStore
 	engine    backupEngine
+	resolver  backupEngineResolver
 	backupDir string
 }
 
 func NewBackupJobHandler(store backupStore, engine backupEngine, backupDir string) *BackupJobHandler {
 	return &BackupJobHandler{store: store, engine: engine, backupDir: backupDir}
+}
+
+func NewBackupJobHandlerWithResolver(store backupStore, resolver backupEngineResolver, backupDir string) *BackupJobHandler {
+	return &BackupJobHandler{store: store, resolver: resolver, backupDir: backupDir}
 }
 
 func (h *BackupJobHandler) Type() string {
@@ -62,6 +69,16 @@ func (h *BackupJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 	if backup.DatabaseID != database.ID {
 		return nil, errors.New("backup does not belong to database")
 	}
+	engine := h.engine
+	if h.resolver != nil {
+		engine, err = h.resolver(database.Engine)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if engine == nil {
+		return nil, errors.New("database backup engine is not configured")
+	}
 	path, err := backupPath(h.backupDir, backup.FileName)
 	if err != nil {
 		return nil, err
@@ -73,7 +90,7 @@ func (h *BackupJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 	if err != nil {
 		return nil, fmt.Errorf("create backup file: %w", err)
 	}
-	dumpErr := h.engine.DumpDatabase(ctx, database.Name, file)
+	dumpErr := engine.DumpDatabase(ctx, database.Name, file)
 	closeErr := file.Close()
 	if dumpErr != nil || closeErr != nil {
 		_ = os.Remove(path)
@@ -99,11 +116,16 @@ func (h *BackupJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 type RestoreJobHandler struct {
 	store     backupStore
 	engine    backupEngine
+	resolver  backupEngineResolver
 	backupDir string
 }
 
 func NewRestoreJobHandler(store backupStore, engine backupEngine, backupDir string) *RestoreJobHandler {
 	return &RestoreJobHandler{store: store, engine: engine, backupDir: backupDir}
+}
+
+func NewRestoreJobHandlerWithResolver(store backupStore, resolver backupEngineResolver, backupDir string) *RestoreJobHandler {
+	return &RestoreJobHandler{store: store, resolver: resolver, backupDir: backupDir}
 }
 
 func (h *RestoreJobHandler) Type() string {
@@ -130,6 +152,16 @@ func (h *RestoreJobHandler) Run(ctx context.Context, job domain.Job) (map[string
 	if backup.DatabaseID != database.ID || backup.Status != "ready" {
 		return nil, errors.New("backup is not restorable for this database")
 	}
+	engine := h.engine
+	if h.resolver != nil {
+		engine, err = h.resolver(database.Engine)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if engine == nil {
+		return nil, errors.New("database restore engine is not configured")
+	}
 	path, err := backupPath(h.backupDir, backup.FileName)
 	if err != nil {
 		return nil, err
@@ -139,7 +171,7 @@ func (h *RestoreJobHandler) Run(ctx context.Context, job domain.Job) (map[string
 		return nil, fmt.Errorf("open backup: %w", err)
 	}
 	defer file.Close()
-	if err := h.engine.RestoreDatabase(ctx, database.Name, file); err != nil {
+	if err := engine.RestoreDatabase(ctx, database.Name, file); err != nil {
 		return nil, err
 	}
 	return map[string]any{"backup_id": backup.ID, "database_id": database.ID}, nil
