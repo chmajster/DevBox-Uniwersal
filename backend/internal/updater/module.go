@@ -23,9 +23,38 @@ const (
 	defaultRepository   = "https://github.com/chmajster/DevBox-Uniwersal.git"
 	defaultRef          = "main"
 	defaultProgressFile = "/var/lib/devbox/update-status"
+	defaultUpdateLog    = "/var/log/devbox-update.log"
+	updateLogTailLines  = 40
+	updateLogTailBytes  = 32 * 1024
 )
 
-var gitRefPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+var (
+	gitRefPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+package updater
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
+)
+
+)
+	sensitiveAssignmentPattern = regexp.MustCompile(`(?i)(password|passwd|token|secret|api[_-]?key|authorization)([[:space:]]*[:=][[:space:]]*)([^[:space:]]+)`)
+	bearerPattern = regexp.MustCompile(`(?i)(bearer[[:space:]]+)[A-Za-z0-9._~+/=-]+`)
+	mysqlPasswordPattern = regexp.MustCompile(`(?i)(-p|--password=)([^[:space:]]+)`)
+)
 
 type Status struct {
 	CurrentVersion  string `json:"current_version"`
@@ -41,16 +70,19 @@ type Status struct {
 }
 
 type Progress struct {
-	State          string `json:"state"`
-	Percent        int    `json:"percent"`
-	Stage          string `json:"stage"`
-	Message        string `json:"message,omitempty"`
-	CurrentVersion string `json:"current_version,omitempty"`
-	TargetVersion  string `json:"target_version,omitempty"`
-	StartedAt      string `json:"started_at,omitempty"`
-	UpdatedAt      string `json:"updated_at,omitempty"`
-	FinishedAt     string `json:"finished_at,omitempty"`
-	Error          string `json:"error,omitempty"`
+	State          string   `json:"state"`
+	Percent        int      `json:"percent"`
+	Stage          string   `json:"stage"`
+	Message        string   `json:"message,omitempty"`
+	CurrentVersion string   `json:"current_version,omitempty"`
+	TargetVersion  string   `json:"target_version,omitempty"`
+	StartedAt      string   `json:"started_at,omitempty"`
+	UpdatedAt      string   `json:"updated_at,omitempty"`
+	FinishedAt     string   `json:"finished_at,omitempty"`
+	Error          string   `json:"error,omitempty"`
+	ExitCode       *int     `json:"exit_code,omitempty"`
+	LogPath        string   `json:"log_path,omitempty"`
+	LogTail        []string `json:"log_tail,omitempty"`
 }
 
 func (p Progress) Active() bool {
@@ -64,12 +96,17 @@ type Service struct {
 	repository     string
 	ref            string
 	progressFile   string
+	updateLogFile  string
 }
 
 func NewService(currentVersion, helperBinary, sudoBinary string) *Service {
 	progressFile := strings.TrimSpace(os.Getenv("DEVBOX_UPDATE_PROGRESS_FILE"))
 	if progressFile == "" {
 		progressFile = defaultProgressFile
+	}
+	updateLogFile := strings.TrimSpace(os.Getenv("DEVBOX_UPDATE_LOG"))
+	if updateLogFile == "" {
+		updateLogFile = defaultUpdateLog
 	}
 	return &Service{
 		currentVersion: strings.TrimSpace(currentVersion),
@@ -78,6 +115,7 @@ func NewService(currentVersion, helperBinary, sudoBinary string) *Service {
 		repository:     defaultRepository,
 		ref:            defaultRef,
 		progressFile:   progressFile,
+		updateLogFile:  updateLogFile,
 	}
 }
 
@@ -110,7 +148,13 @@ func (s *Service) Progress(ctx context.Context) Progress {
 		if progress.Active() && !updateServiceActive(ctx) {
 			progress.State = "failed"
 			progress.Message = "Proces aktualizacji nie jest już aktywny."
-			progress.Error = "Zapisany stan wskazuje trwającą aktualizację, ale devbox-update.service nie jest aktywny. Sprawdź /var/log/devbox-update.log."
+			progress.Error = "Zapisany stan wskazuje trwającą aktualizację, ale devbox-update.service nie jest aktywny."
+		}
+		if progress.State == "failed" {
+			progress.LogPath = s.updateLogFile
+			if logTail, tailErr := readUpdateLogTail(s.updateLogFile, updateLogTailLines, updateLogTailBytes); tailErr == nil {
+				progress.LogTail = logTail
+			}
 		}
 		return progress
 	}
@@ -180,6 +224,12 @@ func readProgressFile(path string) (Progress, error) {
 	}
 
 	percent, _ := strconv.Atoi(values["PERCENT"])
+	var exitCode *int
+	if rawExitCode := strings.TrimSpace(values["EXIT_CODE"]); rawExitCode != "" {
+		if parsed, err := strconv.Atoi(rawExitCode); err == nil {
+			exitCode = &parsed
+		}
+	}
 	if percent < 0 {
 		percent = 0
 	}
@@ -205,7 +255,64 @@ func readProgressFile(path string) (Progress, error) {
 		UpdatedAt:      values["UPDATED_AT"],
 		FinishedAt:     values["FINISHED_AT"],
 		Error:          values["ERROR"],
+		ExitCode:       exitCode,
 	}, nil
+}
+
+func readUpdateLogTail(path string, maxLines, maxBytes int) ([]string, error) {
+	if maxLines <= 0 || maxBytes <= 0 {
+		return nil, nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	start := info.Size() - int64(maxBytes)
+	if start < 0 {
+		start = 0
+	}
+	if _, err := file.Seek(start, 0); err != nil {
+		return nil, err
+	}
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 4096), maxBytes)
+	lines := make([]string, 0, maxLines)
+	if start > 0 && scanner.Scan() {
+		// The seek can start in the middle of a line. Discard that fragment.
+	}
+	for scanner.Scan() {
+		line := sanitizeUpdateLogLine(scanner.Text())
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines = append(lines, line)
+		if len(lines) > maxLines {
+			lines = lines[len(lines)-maxLines:]
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read update log tail: %w", err)
+	}
+	return lines, nil
+}
+
+func sanitizeUpdateLogLine(line string) string {
+	line = sensitiveAssignmentPattern.ReplaceAllString(line, "$1$2[REDACTED]")
+	line = bearerPattern.ReplaceAllString(line, "$1[REDACTED]")
+	line = mysqlPasswordPattern.ReplaceAllString(line, "$1[REDACTED]")
+	return strings.Map(func(r rune) rune {
+		if r == '\t' || r >= 0x20 {
+			return r
+		}
+		return -1
+	}, line)
 }
 
 func remoteCommitInfo(ctx context.Context, repository, ref string) (string, string, error) {
