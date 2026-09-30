@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-var ErrNotFound = errors.New("database resource not found")
+var (
+	ErrNotFound           = errors.New("database resource not found")
+	ErrDatabaseUserExists = errors.New("database user already exists")
+)
 
 type Repository struct {
 	db *sql.DB
@@ -211,6 +214,18 @@ func (r *Repository) UserByID(ctx context.Context, id string) (DatabaseUser, err
 	}
 	if err != nil {
 		return DatabaseUser{}, err
+	}
+	return r.decorateDatabaseUser(ctx, item)
+}
+
+func (r *Repository) UserByEngineUsername(ctx context.Context, engine, username string) (DatabaseUser, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT id,engine,username,secret_id,created_at,updated_at FROM database_accounts WHERE engine=? AND username=?`, engine, username)
+	item, err := scanDatabaseAccount(row.Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return DatabaseUser{}, ErrNotFound
+	}
+	if err != nil {
+		return DatabaseUser{}, fmt.Errorf("find database user: %w", err)
 	}
 	return r.decorateDatabaseUser(ctx, item)
 }
