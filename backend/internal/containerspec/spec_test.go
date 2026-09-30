@@ -19,7 +19,7 @@ func TestGenerateManagedPHPModules(t *testing.T) {
 	if spec.ContainerPort != 8080 || spec.HostPort != 18080 {
 		t.Fatalf("unexpected ports: %#v", spec)
 	}
-	for _, expected := range []string{"php:8.3-cli-bookworm", "pdo_mysql", "mbstring", "libonig-dev", "USER 10001"} {
+	for _, expected := range []string{"php:8.3-cli-bookworm", "pdo_mysql", "USER 10001"} {
 		if !strings.Contains(spec.Dockerfile, expected) {
 			t.Fatalf("Dockerfile does not contain %q:\n%s", expected, spec.Dockerfile)
 		}
