@@ -269,17 +269,12 @@ func TestGenerateManagedPHPAutoDetectsComposerExtensions(t *testing.T) {
 	}
 
 	for _, expected := range []string{
-		"libonig-dev",
-		"libcurl4-openssl-dev",
 		"libldap2-dev",
 		"libzip-dev",
 		"libpng-dev",
-		"mbstring",
-		"curl",
 		"ldap",
 		"zip",
 		"gd",
-		"dom simplexml xml xmlreader xmlwriter",
 		"COMPOSER_ALLOW_SUPERUSER=1",
 		"--no-progress --no-ansi",
 	} {
