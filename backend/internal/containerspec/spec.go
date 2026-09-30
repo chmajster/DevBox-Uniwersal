@@ -65,19 +65,19 @@ var catalogs = map[string][]moduleDef{
 		{option: ModuleOption{Name: "pdo_mysql", Label: "PDO MySQL", Description: "Sterownik PDO dla MySQL/MariaDB."}, phpExtension: "pdo_mysql"},
 		{option: ModuleOption{Name: "mysqli", Label: "MySQLi", Description: "Rozszerzenie MySQL Improved."}, phpExtension: "mysqli"},
 		{option: ModuleOption{Name: "pgsql", Label: "PostgreSQL", Description: "Sterowniki PostgreSQL oraz PDO PostgreSQL."}, aptPackages: []string{"libpq-dev"}, phpExtension: "pgsql pdo_pgsql"},
-		{option: ModuleOption{Name: "sqlite3", Label: "SQLite3", Description: "SQLite3 oraz PDO SQLite."}, aptPackages: []string{"libsqlite3-dev"}, phpExtension: "sqlite3 pdo_sqlite"},
-		{option: ModuleOption{Name: "mbstring", Label: "mbstring", Description: "Obsługa wielobajtowych ciągów znaków."}, aptPackages: []string{"libonig-dev"}, phpExtension: "mbstring"},
+		{option: ModuleOption{Name: "sqlite3", Label: "SQLite3", Description: "SQLite3 oraz PDO SQLite; dostępne w bazowym obrazie PHP."}},
+		{option: ModuleOption{Name: "mbstring", Label: "mbstring", Description: "Obsługa wielobajtowych ciągów znaków; dostępna w bazowym obrazie PHP."}},
 		{option: ModuleOption{Name: "intl", Label: "intl", Description: "Internationalization / ICU."}, aptPackages: []string{"libicu-dev"}, phpExtension: "intl"},
 		{option: ModuleOption{Name: "gd", Label: "GD", Description: "Przetwarzanie obrazów JPEG/PNG/FreeType."}, aptPackages: []string{"libpng-dev", "libjpeg62-turbo-dev", "libfreetype6-dev"}, phpExtension: "gd", phpConfigure: "docker-php-ext-configure gd --with-freetype --with-jpeg"},
 		{option: ModuleOption{Name: "imagick", Label: "Imagick", Description: "Zaawansowane przetwarzanie obrazów przez ImageMagick."}, aptPackages: []string{"libmagickwand-dev", "pkg-config"}, peclExtension: "imagick"},
-		{option: ModuleOption{Name: "curl", Label: "cURL", Description: "Klient HTTP/libcurl."}, aptPackages: []string{"libcurl4-openssl-dev"}, phpExtension: "curl"},
+		{option: ModuleOption{Name: "curl", Label: "cURL", Description: "Klient HTTP/libcurl; dostępny w bazowym obrazie PHP."}},
 		{option: ModuleOption{Name: "zip", Label: "ZIP", Description: "Obsługa archiwów ZIP."}, aptPackages: []string{"libzip-dev"}, phpExtension: "zip"},
 		{option: ModuleOption{Name: "bcmath", Label: "BCMath", Description: "Arytmetyka dużej precyzji."}, phpExtension: "bcmath"},
 		{option: ModuleOption{Name: "gmp", Label: "GMP", Description: "Arytmetyka dużych liczb i operacje kryptograficzne."}, aptPackages: []string{"libgmp-dev"}, phpExtension: "gmp"},
 		{option: ModuleOption{Name: "opcache", Label: "OPcache", Description: "Cache kodu bajtowego PHP."}, phpExtension: "opcache"},
-		{option: ModuleOption{Name: "xml", Label: "XML", Description: "DOM, SimpleXML, XML, XMLReader i XMLWriter."}, aptPackages: []string{"libxml2-dev"}, phpExtension: "dom simplexml xml xmlreader xmlwriter"},
+		{option: ModuleOption{Name: "xml", Label: "XML", Description: "DOM, SimpleXML, XML, XMLReader i XMLWriter; dostępne w bazowym obrazie PHP."}},
 		{option: ModuleOption{Name: "soap", Label: "SOAP", Description: "Klient/serwer SOAP."}, aptPackages: []string{"libxml2-dev"}, phpExtension: "soap"},
-		{option: ModuleOption{Name: "ldap", Label: "LDAP", Description: "Integracja z LDAP i Active Directory."}, aptPackages: []string{"dpkg-dev", "libldap2-dev"}, phpExtension: "ldap", phpConfigure: "docker-php-ext-configure ldap --with-libdir=lib/$(dpkg-architecture --query DEB_HOST_MULTIARCH)"},
+		{option: ModuleOption{Name: "ldap", Label: "LDAP", Description: "Integracja z LDAP i Active Directory."}, aptPackages: []string{"dpkg-dev", "libldap2-dev"}, phpExtension: "ldap", phpConfigure: "docker-php-ext-configure ldap --with-libdir=lib/$(dpkg-architecture --query DEB_BUILD_MULTIARCH)"},
 		{option: ModuleOption{Name: "redis", Label: "Redis", Description: "Natywny klient Redis dla cache, sesji i kolejek."}, peclExtension: "redis"},
 		{option: ModuleOption{Name: "memcached", Label: "Memcached", Description: "Natywny klient Memcached."}, aptPackages: []string{"libmemcached-dev", "pkg-config", "zlib1g-dev"}, peclExtension: "memcached"},
 		{option: ModuleOption{Name: "xdebug", Label: "Xdebug", Description: "Debugger i profiler przeznaczony do środowiska development."}, peclExtension: "xdebug"},
@@ -471,7 +471,7 @@ func dockerfileFor(runtime, version string, modules []Module) (string, int, bool
 		}
 		runLine := ""
 		if len(run) > 0 {
-			runLine = "RUN " + strings.Join(run, " && ") + "\n"
+			runLine = "RUN set -eux; " + strings.Join(run, " && ") + "\n"
 		}
 		return "FROM composer:2 AS composer\nFROM php:" + version + "-cli-bookworm\n" +
 				"COPY --from=composer /usr/bin/composer /usr/local/bin/composer\n" +
