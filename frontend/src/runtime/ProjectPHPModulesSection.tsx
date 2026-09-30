@@ -3,6 +3,7 @@ import { request } from '../api/client'
 import type { Job, ProjectRuntimeInfo, RuntimeContainerConfig, RuntimeModuleOption } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { effectiveRuntimeName, preparePHPModuleConfig, updatePHPModuleSelection } from './phpModuleConfig'
+import { PHPModulePicker } from './PHPModulePicker'
 
 interface Props {
   projectId: string
@@ -15,7 +16,6 @@ export function ProjectPHPModulesSection({ projectId, runtimeHint = '' }: Props)
   const [config, setConfig] = useState<RuntimeContainerConfig | null>(null)
   const [runtime, setRuntime] = useState<ProjectRuntimeInfo | null>(null)
   const [catalog, setCatalog] = useState<RuntimeModuleOption[]>([])
-  const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [busy, setBusy] = useState('')
@@ -50,7 +50,6 @@ export function ProjectPHPModulesSection({ projectId, runtimeHint = '' }: Props)
   useEffect(() => {
     if (effectiveRuntime !== 'php') {
       setCatalog([])
-      setQuery('')
       return
     }
     let cancelled = false
@@ -72,19 +71,16 @@ export function ProjectPHPModulesSection({ projectId, runtimeHint = '' }: Props)
   }, [effectiveRuntime])
 
   const selected = useMemo(() => new Set((config?.modules ?? []).map((item) => item.name)), [config?.modules])
-  const filteredCatalog = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return catalog
-    return catalog.filter((item) =>
-      item.name.toLowerCase().includes(needle) ||
-      item.label.toLowerCase().includes(needle) ||
-      item.description.toLowerCase().includes(needle)
-    )
-  }, [catalog, query])
-
   function toggleModule(name: string, enabled: boolean) {
     setConfig((current) => current
       ? { ...preparePHPModuleConfig(current), modules: updatePHPModuleSelection(current.modules, name, enabled) }
+      : current)
+    setMessage('')
+  }
+
+  function replaceModules(names: string[]) {
+    setConfig((current) => current
+      ? { ...preparePHPModuleConfig(current), modules: names.map((name) => ({ name })) }
       : current)
     setMessage('')
   }
@@ -138,39 +134,24 @@ export function ProjectPHPModulesSection({ projectId, runtimeHint = '' }: Props)
     {config?.container_policy === 'custom' && <div className="warning-banner">Własny Dockerfile lub Docker Compose pozostaje źródłem prawdy. DevBox nie dopisuje rozszerzeń PHP do plików kontenera należących do projektu.</div>}
 
     <div className="runtime-modules">
-      <div className="section-heading">
+      <div className="runtime-modules-heading">
         <div>
           <h3>Rozszerzenia obrazu PHP</h3>
-          <p className="muted small">Wybrane: <strong>{selected.size}</strong></p>
+          <p className="muted">Wybierz potrzebne moduły. Lista jest pogrupowana według zastosowania i sposobu dostarczenia.</p>
         </div>
-        <input
-          aria-label="Szukaj modułów PHP"
-          placeholder="Szukaj modułu PHP…"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <span className="runtime-module-count">{selected.size} wybranych</span>
       </div>
 
-      {catalogLoading
-        ? <p className="muted">Wczytywanie katalogu modułów PHP…</p>
-        : <div className="runtime-module-list">
-          {filteredCatalog.map((item) => <label className="runtime-module-row" key={item.name}>
-            <input
-              type="checkbox"
-              disabled={readOnly || busy !== ''}
-              checked={selected.has(item.name)}
-              onChange={(event) => toggleModule(item.name, event.target.checked)}
-            />
-            <span>
-              <strong>{item.label}</strong>
-              <code>{item.name}</code>
-              <small>{item.description}</small>
-            </span>
-          </label>)}
-          {filteredCatalog.length === 0 && <p className="muted">Brak modułów PHP pasujących do wyszukiwania.</p>}
-        </div>}
+      <PHPModulePicker
+        catalog={catalog}
+        selected={selected}
+        disabled={readOnly || busy !== ''}
+        loading={catalogLoading}
+        onToggle={toggleModule}
+        onSelectionChange={replaceModules}
+      />
 
-      {!readOnly && <div className="actions">
+      {!readOnly && <div className="actions php-module-save-actions">
         <button type="button" disabled={busy !== '' || !config} onClick={() => void saveModules(false)}>
           {busy === 'save' ? 'Zapisywanie…' : 'Zapisz moduły'}
         </button>
