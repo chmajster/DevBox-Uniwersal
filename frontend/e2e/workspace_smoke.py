@@ -47,7 +47,14 @@ def install_api(context, role='admin', authenticated=True):
         ('job', 'info', 'Backup job queued'), ('devbox', 'warn', 'Slow query detected (320ms)'),
         ('project', 'error', 'Worker process exited with code 1'), ('docker', 'info', 'Image pulled: php:8.2-fpm'),
         ('devbox', 'info', 'System health check completed'), ('job', 'info', 'Deployment completed')])]
-    responses = {'/docker/containers': [dict(id=str(i), state='running') for i in range(6)],
+    responses = {'/docker/containers': [
+                     dict(id='portal-container', name='devbox-app-portal', image='portal:test', state='running', status='Up', project_id='portal'),
+                     dict(id='api-container', name='devbox-app-api', image='api:test', state='running', status='Up', project_id='api'),
+                     dict(id='worker-container', name='devbox-app-worker', image='worker:test', state='exited', status='Exited (0)', project_id='worker'),
+                     dict(id='mysql-container', name='devbox-mysql', image='mysql:8.4', state='running', status='Up'),
+                     dict(id='proxy-container', name='devbox-proxy', image='nginx:latest', state='running', status='Up'),
+                     dict(id='helper-container', name='devbox-helper', image='helper:test', state='running', status='Up'),
+                 ],
                  '/databases': [dict(id='db1'), dict(id='db2')], '/ports': [dict(port=8080), dict(port=8081)],
                  '/health': {'status': 'ok'}, '/docker/status': {'available': True, 'server_version': 'Docker Engine'},
                  '/mysql/status': {'running': True, 'version': 'MySQL'},
