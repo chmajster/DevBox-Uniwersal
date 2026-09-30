@@ -68,14 +68,24 @@ func (g *GitClient) Revision(ctx context.Context, workDir string) (string, error
 	return strings.TrimSpace(out), err
 }
 
-func (g *GitClient) IsRepository(ctx context.Context, workDir string) bool {
+func (g *GitClient) CheckRepository(ctx context.Context, workDir string) error {
 	out, err := g.run(ctx, workDir, nil, "rev-parse", "--is-inside-work-tree")
-	return err == nil && strings.TrimSpace(out) == "true"
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(out) != "true" {
+		return errors.New("git rev-parse did not report a working tree")
+	}
+	return nil
+}
+
+func (g *GitClient) IsRepository(ctx context.Context, workDir string) bool {
+	return g.CheckRepository(ctx, workDir) == nil
 }
 
 func (g *GitClient) State(ctx context.Context, workDir string) (GitState, error) {
-	if !g.IsRepository(ctx, workDir) {
-		return GitState{}, errors.New("provider unavailable: path is not a Git repository")
+	if err := g.CheckRepository(ctx, workDir); err != nil {
+		return GitState{}, fmt.Errorf("provider unavailable: path is not a Git repository: %w", err)
 	}
 	branch, err := g.run(ctx, workDir, nil, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
@@ -200,7 +210,13 @@ func trustedGitArgs(workDir string, args ...string) (string, []string, error) {
 	if resolved, resolveErr := filepath.EvalSymlinks(absolute); resolveErr == nil {
 		absolute = resolved
 	}
-	commandArgs = append([]string{"-c", "safe.directory=" + absolute}, commandArgs...)
+	// This trust override is scoped to this single Git process via -c. A local
+	// project may point at a subdirectory of a repository, while Git validates
+	// ownership against the repository root. WSL/DrvFs path canonicalization can
+	// also make the selected path differ from the path Git compares internally.
+	// Using a process-local wildcard avoids false "dubious ownership" failures
+	// without changing the user's global or system Git configuration.
+	commandArgs = append([]string{"-c", "safe.directory=*"}, commandArgs...)
 	return absolute, commandArgs, nil
 }
 
