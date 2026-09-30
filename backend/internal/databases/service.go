@@ -441,6 +441,12 @@ func (s *Service) CreateUser(ctx context.Context, databaseID, username string, r
 	if err := validateUsername(username); err != nil {
 		return DatabaseUser{}, "", err
 	}
+	engineName := databaseAccountEngine(database.Engine)
+	if _, err := s.repo.UserByEngineUsername(ctx, engineName, username); err == nil {
+		return DatabaseUser{}, "", fmt.Errorf("%w: %s", ErrDatabaseUserExists, username)
+	} else if !errors.Is(err, ErrNotFound) {
+		return DatabaseUser{}, "", err
+	}
 	if len(privileges) == 0 {
 		privileges = defaultPrivilegesForEngine(database.Engine)
 	}
@@ -453,7 +459,7 @@ func (s *Service) CreateUser(ctx context.Context, databaseID, username string, r
 		return DatabaseUser{}, "", err
 	}
 	now := time.Now().UTC()
-	user := DatabaseUser{ID: newID(), Engine: databaseAccountEngine(database.Engine), DatabaseID: database.ID, Username: username, SecretRef: "", Privileges: privileges, CreatedAt: now, UpdatedAt: now}
+	user := DatabaseUser{ID: newID(), Engine: engineName, DatabaseID: database.ID, Username: username, SecretRef: "", Privileges: privileges, CreatedAt: now, UpdatedAt: now}
 	user.SecretRef = user.ID
 	if err := s.secrets.Put(ctx, "database-user", user.SecretRef, []byte(password)); err != nil {
 		return DatabaseUser{}, "", err

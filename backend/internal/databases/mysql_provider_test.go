@@ -182,8 +182,15 @@ func TestCreateUserSupportsEmptyPasswordSecret(t *testing.T) {
 	if len(executor.statements) != 1 {
 		t.Fatalf("expected one statement, got %d", len(executor.statements))
 	}
-	if !strings.Contains(executor.statements[0], "IDENTIFIED BY ''") {
-		t.Fatalf("expected explicit empty MySQL password, got %s", executor.statements[0])
+	statement := executor.statements[0]
+	if !strings.Contains(statement, "CREATE USER IF NOT EXISTS") {
+		t.Fatalf("expected idempotent MySQL user creation, got %s", statement)
+	}
+	if !strings.Contains(statement, "ALTER USER") {
+		t.Fatalf("expected existing MySQL account password reconciliation, got %s", statement)
+	}
+	if strings.Count(statement, "IDENTIFIED BY ''") != 2 {
+		t.Fatalf("expected the requested password on create and alter statements, got %s", statement)
 	}
 }
 
