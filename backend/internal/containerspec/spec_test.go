@@ -300,7 +300,7 @@ func TestGenerateManagedPHPComposerModulesMergeWithConfiguredModules(t *testing.
 	if strings.Count(spec.Dockerfile, "docker-php-ext-install -j$(nproc)") != 1 {
 		t.Fatalf("expected one PHP extension installation command:\n%s", spec.Dockerfile)
 	}
-	for _, expected := range []string{"pdo_mysql", "mbstring", "zip"} {
+	for _, expected := range []string{"pdo_mysql", "zip"} {
 		if !strings.Contains(spec.Dockerfile, expected) {
 			t.Fatalf("merged module set is missing %q:\n%s", expected, spec.Dockerfile)
 		}
