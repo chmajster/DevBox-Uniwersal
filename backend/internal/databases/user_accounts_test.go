@@ -55,6 +55,13 @@ func TestDatabaseUserAccountCanHaveMultipleDatabaseGrants(t *testing.T) {
 	if got.Engine != "mysql" || got.Username != "app_user" {
 		t.Fatalf("unexpected account: %+v", got)
 	}
+	byName, err := repo.UserByEngineUsername(ctx, "mysql", "app_user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byName.ID != user.ID {
+		t.Fatalf("unexpected account returned by engine/username lookup: %+v", byName)
+	}
 	if len(got.Databases) != 2 {
 		t.Fatalf("expected two database grants, got %+v", got.Databases)
 	}
