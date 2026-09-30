@@ -1,4 +1,4 @@
-import type { DockerContainer, OperationalStatus, Project } from '../api/types'
+import type { DockerContainer, Project } from '../api/types'
 import { normalizeOperationalStatus } from '../status'
 import { dockerContainersForProject } from './dockerContainerGroups'
 
@@ -37,6 +37,3 @@ export function resolveApplicationRuntimeStatus(
   return 'STOPPED'
 }
 
-export function isLiveRuntimeStatus(status: string): status is OperationalStatus {
-  return ['RUNNING', 'STOPPED', 'FAILED', 'BUILDING', 'DEPLOYING', 'UNHEALTHY'].includes(status)
-}
