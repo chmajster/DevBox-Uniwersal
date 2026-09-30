@@ -64,13 +64,11 @@ func TestGenerateManagedPHPInstallsSelectedContainerModules(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"libpq-dev",
-		"libsqlite3-dev",
 		"libldap2-dev",
 		"libmagickwand-dev",
 		"libmemcached-dev",
 		"docker-php-ext-install -j$(nproc)",
 		"pgsql pdo_pgsql",
-		"sqlite3 pdo_sqlite",
 		"docker-php-ext-configure ldap",
 		"pecl install imagick && docker-php-ext-enable imagick",
 		"pecl install redis && docker-php-ext-enable redis",
