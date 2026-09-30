@@ -4,6 +4,7 @@ import { request } from '../api/client'
 import type { Job, ProjectRuntimeInfo, RuntimeContainerConfig, RuntimeModuleOption } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { effectiveRuntimeName, preparePHPModuleConfig, updatePHPModuleSelection } from './phpModuleConfig'
+import { PHPModulePicker } from './PHPModulePicker'
 
 interface Props {
   projectId: string
@@ -32,7 +33,6 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
   const [runtime, setRuntime] = useState<ProjectRuntimeInfo | null>(null)
   const [config, setConfig] = useState<RuntimeContainerConfig>({ ...emptyConfig, project_id: projectId })
   const [catalog, setCatalog] = useState<RuntimeModuleOption[]>([])
-  const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -56,7 +56,6 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
   useEffect(() => {
     if (effectiveRuntime !== 'php') {
       setCatalog([])
-      setQuery('')
       return
     }
     request<RuntimeModuleOption[]>('/runtimes/php/modules')
@@ -68,20 +67,17 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
   }, [effectiveRuntime])
 
   const selected = useMemo(() => new Set(config.modules.map((item) => item.name)), [config.modules])
-  const filteredCatalog = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return catalog
-    return catalog.filter((item) =>
-      item.name.toLowerCase().includes(needle) ||
-      item.label.toLowerCase().includes(needle) ||
-      item.description.toLowerCase().includes(needle)
-    )
-  }, [catalog, query])
-
   function toggleModule(name: string, enabled: boolean) {
     setConfig((current) => ({
       ...preparePHPModuleConfig(current),
       modules: updatePHPModuleSelection(current.modules, name, enabled),
+    }))
+  }
+
+  function replaceModules(names: string[]) {
+    setConfig((current) => ({
+      ...preparePHPModuleConfig(current),
+      modules: names.map((name) => ({ name })),
     }))
   }
 
@@ -166,31 +162,21 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
     </dl>}
 
     {effectiveRuntime === 'php' && <div className="runtime-modules">
-      <div className="section-heading">
+      <div className="runtime-modules-heading">
         <div>
-          <h3>Moduły PHP w kontenerze</h3>
-          <p className="muted">Wybierz rozszerzenia wymagane przez tę aplikację. DevBox instaluje je podczas budowania obrazu PHP wewnątrz kontenera; PHP na hoście nie jest modyfikowane.</p>
-          <p className="muted small">Wybrane moduły: <strong>{selected.size}</strong>. Zmiana listy wymaga przebudowania kontenera.</p>
+          <h3>Moduły PHP</h3>
+          <p className="muted">Wybierz rozszerzenia dostępne wewnątrz kontenera aplikacji. Kliknięcie całego wiersza zaznacza moduł.</p>
         </div>
-        <input
-          aria-label="Szukaj modułów PHP"
-          placeholder="Szukaj modułu PHP…"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <span className="runtime-module-count">{selected.size} wybranych</span>
       </div>
-      <div className="runtime-module-list">
-        {filteredCatalog.map((item) => <label className="runtime-module-row" key={item.name}>
-          <input
-            type="checkbox"
-            disabled={readOnly}
-            checked={selected.has(item.name)}
-            onChange={(event) => toggleModule(item.name, event.target.checked)}
-          />
-          <span><strong>{item.label}</strong><code>{item.name}</code><small>{item.description}</small></span>
-        </label>)}
-        {filteredCatalog.length === 0 && <p className="muted">Brak modułów PHP pasujących do wyszukiwania.</p>}
-      </div>
+      <PHPModulePicker
+        catalog={catalog}
+        selected={selected}
+        disabled={readOnly || busy}
+        onToggle={toggleModule}
+        onSelectionChange={replaceModules}
+      />
+      <p className="muted small runtime-modules-note">PHP na hoście pozostaje bez zmian. DevBox modyfikuje wyłącznie generowany obraz kontenera.</p>
     </div>}
   </section>{showPorts && <ProjectPortsSection key={projectId} projectId={projectId} />}</>
 }
