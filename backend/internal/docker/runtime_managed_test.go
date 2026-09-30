@@ -53,7 +53,6 @@ func TestManagedMountArgsRejectsRelativeSource(t *testing.T) {
 	}
 }
 
-
 func TestBuildManagedPrefersBuildxWhenAvailable(t *testing.T) {
 	dir := t.TempDir()
 	runner := &stubRunner{responses: []runnerResponse{
