@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { request } from '../api/client'
 import { listProjects } from '../api/operations'
-import type { Job, Project } from '../api/types'
+import type { DockerContainer, Job, Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { Icon } from '../components/Icon'
 import { Modal } from '../components/Modal'
@@ -10,9 +10,17 @@ import { StatusBadge } from '../components/StatusBadge'
 import { jobState } from '../control-room/model'
 import { usePolling } from '../control-room/usePolling'
 import { readPreference, savePreference } from '../layout/navigation'
+import { resolveApplicationRuntimeStatus } from './applicationRuntimeStatus'
 import { filterProjects, projectStatuses } from './projectFilters'
 
 type JobCollection = Job[] | { items?: Job[] }
+type DockerContainerCollection = DockerContainer[] | { items?: DockerContainer[]; containers?: DockerContainer[] }
+
+async function loadDockerContainers(signal: AbortSignal) {
+  const payload = await request<DockerContainerCollection>('/docker/containers', { signal })
+  if (Array.isArray(payload)) return payload
+  return payload.items ?? payload.containers ?? []
+}
 
 async function loadProjectJobs(signal: AbortSignal) {
   const payload = await request<JobCollection>('/jobs?limit=200', { signal })
@@ -103,8 +111,16 @@ export function ProjectsPage() {
   const statusParam = params.get('status') ?? ''
   const status = projectStatuses.some((value) => value === statusParam) ? statusParam : ''
   const canManage = user?.role === 'admin' || user?.role === 'operator'
-  const filtered = useMemo(() => filterProjects(projects, query, status), [projects, query, status])
   const jobListing = usePolling(loadProjectJobs, 2000, loaded)
+  const dockerListing = usePolling(loadDockerContainers, 2500, loaded)
+  const projectsWithLiveStatus = useMemo(() => {
+    const dockerStateAvailable = dockerListing.data !== null && !dockerListing.error
+    return projects.map((project) => ({
+      ...project,
+      status: resolveApplicationRuntimeStatus(project, dockerListing.data ?? [], dockerStateAvailable),
+    }))
+  }, [projects, dockerListing.data, dockerListing.error])
+  const filtered = useMemo(() => filterProjects(projectsWithLiveStatus, query, status), [projectsWithLiveStatus, query, status])
   const jobsByProject = useMemo(() => latestProjectJobs(jobListing.data ?? []), [jobListing.data])
 
   useEffect(() => {
@@ -202,7 +218,7 @@ export function ProjectsPage() {
   return <>
     <div className="page-heading workspace-heading">
       <div><span className="eyebrow">WORKSPACE</span><h1>Aplikacje</h1><p className="muted">Od kodu do działającej aplikacji. Wszystko w jednym miejscu.</p></div>
-      <div className="heading-actions"><button className="secondary-button" disabled={loading} onClick={() => setReload((value) => value + 1)}><Icon name="refresh" size={17} />Odśwież</button>
+      <div className="heading-actions"><button className="secondary-button" disabled={loading} onClick={() => { setReload((value) => value + 1); dockerListing.refresh(); jobListing.refresh() }}><Icon name="refresh" size={17} />Odśwież</button>
         {user?.role === 'admin' && <Link className="button-link secondary-button" to="/script-apps"><Icon name="code" size={17} />Instalator URL / curl</Link>}{canManage && <Link className="button-link" to="/apps/new"><Icon name="plus" size={18} />Dodaj aplikację</Link>}
       </div>
     </div>

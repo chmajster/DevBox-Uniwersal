@@ -20,6 +20,7 @@ DevBox Universal is an integrated local development control plane.
 - Session charts retain up to two hours / 721 real samples; no synthetic history, network counters or temperature readings. See `docs/control-room-ui.md` for exact semantics.
 - Persistent compact sidebar, mobile drawer and role-aware Ctrl/Cmd+K navigation/application search.
 - Searchable applications in persistent card/table views, status filtering, deployment queue feedback and archive confirmation.
+- Workspace application badges and status filtering use live Docker ownership/state; a running managed/Compose deployment overrides stale persisted project errors, with stopped/failed/unhealthy container states reflected directly.
 - Project Overview exposes the active HTTP application address as a direct new-tab link using the DevBox browser host and the project's resolved host port.
 - Application Settings allow operators to change the selected runtime/technology and the source directory of local-source applications; path changes use backend directory validation and Git/empty managed paths stay read-only.
 - Project Ports uses a compact host-to-container mapping table with inline TCP type, automatic internal HTTP port detection, optional HTTPS passthrough and the existing save/deploy workflow.

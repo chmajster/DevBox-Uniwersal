@@ -21,14 +21,28 @@ function localDirectoryName(path: string) {
   return index >= 0 ? normalized.slice(index + 1) : normalized
 }
 
-function projectForCompose(composeProject: string, projects: Project[]) {
+function composeBelongsToProject(composeProject: string, project: Project) {
   const normalized = normalizeProjectName(composeProject)
-  return projects.find((project) =>
-    project.slug === composeProject ||
+  return project.slug === composeProject ||
     normalizeProjectName(project.slug) === normalized ||
     normalizeProjectName(project.name) === normalized ||
     normalizeProjectName(localDirectoryName(project.local_path)) === normalized
-  )
+}
+
+export function dockerContainerBelongsToProject(container: DockerContainer, project: Project) {
+  const projectID = container.project_id?.trim()
+  if (projectID) return projectID === project.id
+
+  const composeProject = container.compose_project?.trim()
+  return composeProject ? composeBelongsToProject(composeProject, project) : false
+}
+
+export function dockerContainersForProject(containers: DockerContainer[], project: Project) {
+  return containers.filter((container) => dockerContainerBelongsToProject(container, project))
+}
+
+function projectForCompose(composeProject: string, projects: Project[]) {
+  return projects.find((project) => composeBelongsToProject(composeProject, project))
 }
 
 export function groupDockerContainers(containers: DockerContainer[], projects: Project[]): DockerContainerGroup[] {

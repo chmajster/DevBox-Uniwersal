@@ -15,6 +15,14 @@
 
 ## Unreleased
 
+### Live workspace application status
+
+- The Workspace → Applications list now derives application status from the real Docker containers owned by each project instead of blindly rendering the persisted project status.
+- Managed containers are matched by DevBox project ownership and Compose services by the same project/Compose ownership rules used by the Docker UI.
+- Running containers override stale project errors, while stopped, failed, partially running and Docker-unhealthy deployments resolve to STOPPED, FAILED or UNHEALTHY.
+- The live Docker inventory is polled while the page is visible and the status filter uses the same resolved runtime state.
+
+
 ### Universal managed runtime builds
 
 - Generated PHP images now inspect `composer.json` `require` and `require-dev` entries and automatically add matching allowlisted PHP modules instead of requiring operators to manually mirror common `ext-*` requirements.
