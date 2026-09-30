@@ -62,7 +62,7 @@ func TestBrowseProjectFilesNavigatesNestedDirectory(t *testing.T) {
 
 func TestBrowseProjectFilesRejectsTraversalAndAbsolutePaths(t *testing.T) {
 	root := t.TempDir()
-	for _, path := range []string{"../outside", "/tmp"} {
+	for _, path := range []string{"../outside", root} {
 		if _, err := browseProjectFiles(root, path); !errors.Is(err, ErrInvalidInput) {
 			t.Fatalf("path %q: expected ErrInvalidInput, got %v", path, err)
 		}
