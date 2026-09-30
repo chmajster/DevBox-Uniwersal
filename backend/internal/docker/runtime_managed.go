@@ -64,6 +64,9 @@ func (p *CLIProvider) BuildManaged(ctx context.Context, spec containerspec.Deplo
 	}
 
 	args := []string{"image", "build", "--pull", "--file", dockerfile, "--tag", spec.Image}
+	if _, _, buildxErr := p.runner.Run(ctx, "buildx", "version"); buildxErr == nil {
+		args = []string{"buildx", "build", "--load", "--progress=plain", "--pull", "--file", dockerfile, "--tag", spec.Image}
+	}
 	labelKeys := make([]string, 0, len(spec.Labels))
 	for key := range spec.Labels {
 		labelKeys = append(labelKeys, key)
