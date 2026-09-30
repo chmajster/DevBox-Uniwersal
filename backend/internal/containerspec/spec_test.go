@@ -69,7 +69,7 @@ func TestGenerateManagedPHPInstallsSelectedContainerModules(t *testing.T) {
 		"libmemcached-dev",
 		"docker-php-ext-install -j$(nproc)",
 		"pgsql pdo_pgsql",
-		"docker-php-ext-configure ldap",
+		"DEB_BUILD_MULTIARCH",
 		"pecl install imagick && docker-php-ext-enable imagick",
 		"pecl install redis && docker-php-ext-enable redis",
 		"pecl install memcached && docker-php-ext-enable memcached",
