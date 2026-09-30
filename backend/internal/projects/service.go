@@ -344,9 +344,6 @@ func (s *Service) GitState(ctx context.Context, id string) (GitState, error) {
 	if err != nil {
 		return GitState{}, err
 	}
-	if !s.git.IsRepository(ctx, p.LocalPath) {
-		return GitState{}, fmt.Errorf("%w: Git repository is not available", ErrProviderUnavailable)
-	}
 	state, err := s.git.State(ctx, p.LocalPath)
 	if err != nil {
 		return GitState{}, err
@@ -359,8 +356,8 @@ func (s *Service) EnqueueGit(ctx context.Context, id, operation string, actor *s
 	if err != nil {
 		return domain.Job{}, err
 	}
-	if !s.git.IsRepository(ctx, p.LocalPath) {
-		return domain.Job{}, fmt.Errorf("%w: Git repository is not available", ErrProviderUnavailable)
+	if err := s.git.CheckRepository(ctx, p.LocalPath); err != nil {
+		return domain.Job{}, fmt.Errorf("%w: Git repository is not available: %v", ErrProviderUnavailable, err)
 	}
 	jobType := ""
 	switch operation {
@@ -381,8 +378,8 @@ func (s *Service) EnqueueCheckout(ctx context.Context, id, branch string, actor 
 	if err != nil {
 		return domain.Job{}, err
 	}
-	if !s.git.IsRepository(ctx, p.LocalPath) {
-		return domain.Job{}, fmt.Errorf("%w: Git repository is not available", ErrProviderUnavailable)
+	if err := s.git.CheckRepository(ctx, p.LocalPath); err != nil {
+		return domain.Job{}, fmt.Errorf("%w: Git repository is not available: %v", ErrProviderUnavailable, err)
 	}
 	return s.jobRunner.Enqueue(ctx, jobs.Request{Type: JobCheckout, ProjectID: &p.ID, RequestedBy: actor, Payload: map[string]any{"project_id": p.ID, "branch": branch}})
 }

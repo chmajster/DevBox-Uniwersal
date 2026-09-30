@@ -71,7 +71,7 @@ func TestTrustedGitArgsMarksProjectAsSafeDirectory(t *testing.T) {
 	if resolved != absolute {
 		t.Fatalf("trustedGitArgs() dir = %q, want %q", resolved, absolute)
 	}
-	want := []string{"-c", "safe.directory=" + absolute, "status", "--porcelain"}
+	want := []string{"-c", "safe.directory=*", "status", "--porcelain"}
 	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("trustedGitArgs() = %#v, want %#v", args, want)
 	}
@@ -88,6 +88,47 @@ func TestTrustedGitArgsLeavesCloneWithoutWorkTreeUntouched(t *testing.T) {
 	want := []string{"clone", "https://example.invalid/repo.git", "/tmp/repo"}
 	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("trustedGitArgs() = %#v, want %#v", args, want)
+	}
+}
+
+func TestGitStateFromNestedLocalDirectory(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary unavailable")
+	}
+	ctx := context.Background()
+	root := t.TempDir()
+	runGitTest(t, root, "init", "-b", "main")
+	runGitTest(t, root, "config", "user.name", "DevBox Test")
+	runGitTest(t, root, "config", "user.email", "devbox@example.invalid")
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("hello\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, root, "add", "README.md")
+	runGitTest(t, root, "commit", "-m", "initial")
+	nested := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(nested, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := NewGitClient(nil).State(ctx, nested)
+	if err != nil {
+		t.Fatalf("State() from nested directory error = %v", err)
+	}
+	if state.Branch != "main" || state.Commit == "" {
+		t.Fatalf("unexpected nested-directory state: %+v", state)
+	}
+}
+
+func TestCheckRepositoryKeepsGitDiagnostic(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary unavailable")
+	}
+	err := NewGitClient(nil).CheckRepository(context.Background(), t.TempDir())
+	if err == nil {
+		t.Fatal("expected a repository detection error")
+	}
+	if !strings.Contains(err.Error(), "not a git repository") {
+		t.Fatalf("repository diagnostic missing from error: %v", err)
 	}
 }
 
