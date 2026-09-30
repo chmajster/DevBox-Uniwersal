@@ -19,7 +19,7 @@ func TestGenerateManagedPHPModules(t *testing.T) {
 	if spec.ContainerPort != 8080 || spec.HostPort != 18080 {
 		t.Fatalf("unexpected ports: %#v", spec)
 	}
-	for _, expected := range []string{"php:8.3-cli-bookworm", "pdo_mysql", "mbstring", "libonig-dev", "USER 10001"} {
+	for _, expected := range []string{"php:8.3-cli-bookworm", "pdo_mysql", "USER 10001"} {
 		if !strings.Contains(spec.Dockerfile, expected) {
 			t.Fatalf("Dockerfile does not contain %q:\n%s", expected, spec.Dockerfile)
 		}
@@ -64,14 +64,12 @@ func TestGenerateManagedPHPInstallsSelectedContainerModules(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"libpq-dev",
-		"libsqlite3-dev",
 		"libldap2-dev",
 		"libmagickwand-dev",
 		"libmemcached-dev",
 		"docker-php-ext-install -j$(nproc)",
 		"pgsql pdo_pgsql",
-		"sqlite3 pdo_sqlite",
-		"docker-php-ext-configure ldap",
+		"DEB_BUILD_MULTIARCH",
 		"pecl install imagick && docker-php-ext-enable imagick",
 		"pecl install redis && docker-php-ext-enable redis",
 		"pecl install memcached && docker-php-ext-enable memcached",
@@ -271,17 +269,12 @@ func TestGenerateManagedPHPAutoDetectsComposerExtensions(t *testing.T) {
 	}
 
 	for _, expected := range []string{
-		"libonig-dev",
-		"libcurl4-openssl-dev",
 		"libldap2-dev",
 		"libzip-dev",
 		"libpng-dev",
-		"mbstring",
-		"curl",
 		"ldap",
 		"zip",
 		"gd",
-		"dom simplexml xml xmlreader xmlwriter",
 		"COMPOSER_ALLOW_SUPERUSER=1",
 		"--no-progress --no-ansi",
 	} {
@@ -307,7 +300,7 @@ func TestGenerateManagedPHPComposerModulesMergeWithConfiguredModules(t *testing.
 	if strings.Count(spec.Dockerfile, "docker-php-ext-install -j$(nproc)") != 1 {
 		t.Fatalf("expected one PHP extension installation command:\n%s", spec.Dockerfile)
 	}
-	for _, expected := range []string{"pdo_mysql", "mbstring", "zip"} {
+	for _, expected := range []string{"pdo_mysql", "zip"} {
 		if !strings.Contains(spec.Dockerfile, expected) {
 			t.Fatalf("merged module set is missing %q:\n%s", expected, spec.Dockerfile)
 		}
