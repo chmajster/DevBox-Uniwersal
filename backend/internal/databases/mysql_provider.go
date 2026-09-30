@@ -210,7 +210,11 @@ func (p *MySQLProvider) CreateUser(ctx context.Context, username, secretRef stri
 	if err != nil {
 		return err
 	}
-	sql := "CREATE USER " + account + " IDENTIFIED BY " + quoteLiteral(string(password)) + ";"
+	passwordLiteral := quoteLiteral(string(password))
+	// Reconcile an account that exists in MySQL/MariaDB but is missing from DevBox metadata.
+	// This commonly happens after an interrupted create operation or control-plane restore.
+	sql := "CREATE USER IF NOT EXISTS " + account + " IDENTIFIED BY " + passwordLiteral + ";\n" +
+		"ALTER USER " + account + " IDENTIFIED BY " + passwordLiteral + ";"
 	if err := p.exec.ExecSQL(ctx, sql); err != nil {
 		return fmt.Errorf("create database user: %w", err)
 	}
