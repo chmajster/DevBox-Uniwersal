@@ -5,12 +5,13 @@ import { listLogs, logQuery } from '../api/operations'
 import type { Deployment, GitState, Job, LogEntry, Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { DirectoryPathField } from '../components/DirectoryPathField'
+import { ProjectFilesSection } from '../components/ProjectFilesSection'
 import { ProjectRuntimeSection } from '../runtime/ProjectRuntimeSection'
 import { ProjectDatabaseSection } from '../runtime/ProjectDatabaseSection'
 import { ProjectPortsSection } from '../runtime/ProjectPortsSection'
 import { publishedApplicationURL } from '../runtime/portSettings'
 
-type Tab = 'overview' | 'git' | 'deployments' | 'logs' | 'runtime' | 'database' | 'ports' | 'settings'
+type Tab = 'overview' | 'git' | 'files' | 'deployments' | 'logs' | 'runtime' | 'database' | 'ports' | 'settings'
 
 const runtimeOptions = [
   { value: '', label: 'Automatycznie wykryj' },
@@ -24,6 +25,7 @@ const runtimeOptions = [
 const projectDetailTabs: Array<{ id: Tab; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'git', label: 'Git' },
+  { id: 'files', label: 'Pliki' },
   { id: 'deployments', label: 'Deployments' },
   { id: 'logs', label: 'Logi' },
   { id: 'runtime', label: 'Runtime' },
@@ -303,6 +305,7 @@ export function ProjectDetailPage() {
       <div className="panel"><h2>Branches</h2><div className="branch-list">{git.branches.map((branch) => <span key={branch}>{branch}</span>)}</div></div>
       <div className="table-wrap"><table><thead><tr><th>Commit</th><th>Author</th><th>Date</th><th>Subject</th></tr></thead><tbody>{git.history.map((commit) => <tr key={commit.hash}><td><code>{commit.hash.slice(0, 10)}</code></td><td>{commit.author}</td><td>{new Date(commit.date).toLocaleString()}</td><td>{commit.subject}</td></tr>)}</tbody></table></div></>}
     </div>}
+    {tab === 'files' && <div className="stack project-tab-content"><ProjectFilesSection projectId={id} rootPath={project.local_path} /></div>}
     {tab === 'deployments' && <div className="stack">
       {currentDeployment && <section className={`panel deployment-live ${currentDeployment.status === 'FAILED' ? 'deployment-live-failed' : currentDeployment.status === 'SUCCESS' ? 'deployment-live-success' : ''}`} aria-live="polite">
         <div className="section-heading">

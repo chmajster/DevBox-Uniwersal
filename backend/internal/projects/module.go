@@ -33,6 +33,7 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("GET /api/v1/project-directories", secure(domain.RoleOperator, m.browseDirectories))
 	mux.Handle("GET /api/v1/projects/directories", secure(domain.RoleOperator, m.browseDirectories)) // legacy alias
 	mux.Handle("GET /api/v1/projects/{id}", secure(domain.RoleViewer, m.get))
+	mux.Handle("GET /api/v1/projects/{id}/files", secure(domain.RoleViewer, m.files))
 	mux.Handle("PATCH /api/v1/projects/{id}", secure(domain.RoleOperator, m.update))
 	mux.Handle("DELETE /api/v1/projects/{id}", secure(domain.RoleAdmin, m.delete))
 	mux.Handle("POST /api/v1/projects/{id}/archive", secure(domain.RoleOperator, m.archive))
@@ -147,6 +148,15 @@ func (m *Module) get(w http.ResponseWriter, r *http.Request) {
 	}
 	writeData(w, http.StatusOK, project)
 }
+func (m *Module) files(w http.ResponseWriter, r *http.Request) {
+	listing, err := m.service.BrowseProjectFiles(r.Context(), r.PathValue("id"), r.URL.Query().Get("path"))
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, listing)
+}
+
 func (m *Module) update(w http.ResponseWriter, r *http.Request) {
 	var input UpdateInput
 	if err := decodeJSON(w, r, &input); err != nil {
