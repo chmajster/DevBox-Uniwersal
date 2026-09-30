@@ -244,7 +244,6 @@ func TestDatabaseSecretIsNeverWrittenToManagedDockerfile(t *testing.T) {
 	}
 }
 
-
 func TestGenerateManagedPHPAutoDetectsComposerExtensions(t *testing.T) {
 	dir := t.TempDir()
 	composer := `{
