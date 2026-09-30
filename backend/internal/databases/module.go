@@ -483,7 +483,8 @@ func writeModuleError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error(), nil)
 	case errors.Is(err, ErrSecretsUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "secret_store_unavailable", err.Error(), nil)
-	case strings.Contains(err.Error(), "already has database"), strings.Contains(err.Error(), "UNIQUE constraint failed"):
+	case errors.Is(err, ErrDatabaseUserExists),
+		strings.Contains(err.Error(), "already has database"), strings.Contains(err.Error(), "UNIQUE constraint failed"):
 		writeError(w, http.StatusConflict, "conflict", err.Error(), nil)
 	case strings.Contains(err.Error(), "mysql"), strings.Contains(err.Error(), "database backup failed"), strings.Contains(err.Error(), "database restore failed"):
 		writeError(w, http.StatusServiceUnavailable, "provider_unavailable", err.Error(), nil)
