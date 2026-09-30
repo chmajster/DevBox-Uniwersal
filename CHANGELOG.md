@@ -15,6 +15,15 @@
 
 ## Unreleased
 
+### Universal managed runtime builds
+
+- Generated PHP images now inspect `composer.json` `require` and `require-dev` entries and automatically add matching allowlisted PHP modules instead of requiring operators to manually mirror common `ext-*` requirements.
+- XML requirements such as DOM, SimpleXML, XMLReader and XMLWriter resolve to one managed XML module that installs the complete XML extension family.
+- Managed image builds prefer Docker BuildKit through `docker buildx build --load --progress=plain`; environments without buildx retain the compatible legacy `docker image build` fallback.
+- Docker command failures retain a bounded head and actionable tail of stderr so Composer/package errors are not hidden behind legacy-builder warnings.
+- Added regressions for Composer extension auto-detection, configured/automatic module merging, BuildKit selection and long Docker error output.
+
+
 ### Synchronized application path picker
 
 - Unified the application path input and directory tree into one synchronized component used by both project creation and application Settings.

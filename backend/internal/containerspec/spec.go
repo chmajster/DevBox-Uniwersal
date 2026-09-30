@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -74,7 +75,7 @@ var catalogs = map[string][]moduleDef{
 		{option: ModuleOption{Name: "bcmath", Label: "BCMath", Description: "Arytmetyka dużej precyzji."}, phpExtension: "bcmath"},
 		{option: ModuleOption{Name: "gmp", Label: "GMP", Description: "Arytmetyka dużych liczb i operacje kryptograficzne."}, aptPackages: []string{"libgmp-dev"}, phpExtension: "gmp"},
 		{option: ModuleOption{Name: "opcache", Label: "OPcache", Description: "Cache kodu bajtowego PHP."}, phpExtension: "opcache"},
-		{option: ModuleOption{Name: "xml", Label: "XML", Description: "Obsługa XML."}, aptPackages: []string{"libxml2-dev"}, phpExtension: "xml"},
+		{option: ModuleOption{Name: "xml", Label: "XML", Description: "DOM, SimpleXML, XML, XMLReader i XMLWriter."}, aptPackages: []string{"libxml2-dev"}, phpExtension: "dom simplexml xml xmlreader xmlwriter"},
 		{option: ModuleOption{Name: "soap", Label: "SOAP", Description: "Klient/serwer SOAP."}, aptPackages: []string{"libxml2-dev"}, phpExtension: "soap"},
 		{option: ModuleOption{Name: "ldap", Label: "LDAP", Description: "Integracja z LDAP i Active Directory."}, aptPackages: []string{"dpkg-dev", "libldap2-dev"}, phpExtension: "ldap", phpConfigure: "docker-php-ext-configure ldap --with-libdir=lib/$(dpkg-architecture --query DEB_HOST_MULTIARCH)"},
 		{option: ModuleOption{Name: "redis", Label: "Redis", Description: "Natywny klient Redis dla cache, sesji i kolejek."}, peclExtension: "redis"},
@@ -195,11 +196,18 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 	if err != nil || !info.IsDir() {
 		return DeploymentSpec{}, fmt.Errorf("build context is not an existing directory")
 	}
+	resolvedModules, err := resolveManagedModules(abs, runtime, modules)
+	if err != nil {
+		return DeploymentSpec{}, err
+	}
+	if err := Validate(runtime, version, resolvedModules); err != nil {
+		return DeploymentSpec{}, err
+	}
 	digest, err := contextDigest(abs)
 	if err != nil {
 		return DeploymentSpec{}, err
 	}
-	sorted := append([]Module(nil), modules...)
+	sorted := append([]Module(nil), resolvedModules...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
 	h := sha256.New()
 	_, _ = io.WriteString(h, runtime+"\n"+version+"\n"+revision+"\n"+digest+"\n")
@@ -253,6 +261,123 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 		Labels:      labels,
 		Fingerprint: fingerprint, ReadOnly: readOnly,
 	}, nil
+}
+
+type composerProjectManifest struct {
+	Require    map[string]string `json:"require"`
+	RequireDev map[string]string `json:"require-dev"`
+}
+
+func resolveManagedModules(workDir, runtime string, configured []Module) ([]Module, error) {
+	result := append([]Module(nil), configured...)
+	if NormalizeRuntime(runtime) != "php" {
+		return result, nil
+	}
+
+	auto, err := phpComposerModules(workDir)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(result)+len(auto))
+	for _, module := range result {
+		seen[strings.ToLower(strings.TrimSpace(module.Name))] = struct{}{}
+	}
+	for _, module := range auto {
+		name := strings.ToLower(strings.TrimSpace(module.Name))
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		result = append(result, module)
+	}
+	return result, nil
+}
+
+func phpComposerModules(workDir string) ([]Module, error) {
+	path := filepath.Join(workDir, "composer.json")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read composer.json: %w", err)
+	}
+
+	var manifest composerProjectManifest
+	if err := json.Unmarshal(content, &manifest); err != nil {
+		return nil, fmt.Errorf("parse composer.json for managed PHP runtime: %w", err)
+	}
+
+	found := map[string]struct{}{}
+	collect := func(requirements map[string]string) {
+		for requirement := range requirements {
+			if module, ok := composerExtensionModule(requirement); ok {
+				found[module] = struct{}{}
+			}
+		}
+	}
+	collect(manifest.Require)
+	collect(manifest.RequireDev)
+
+	names := sortedSet(found)
+	modules := make([]Module, 0, len(names))
+	for _, name := range names {
+		modules = append(modules, Module{Name: name})
+	}
+	return modules, nil
+}
+
+func composerExtensionModule(requirement string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(requirement)) {
+	case "ext-pdo":
+		return "pdo", true
+	case "ext-pdo_mysql":
+		return "pdo_mysql", true
+	case "ext-mysqli":
+		return "mysqli", true
+	case "ext-pgsql", "ext-pdo_pgsql":
+		return "pgsql", true
+	case "ext-sqlite3", "ext-pdo_sqlite":
+		return "sqlite3", true
+	case "ext-mbstring":
+		return "mbstring", true
+	case "ext-intl":
+		return "intl", true
+	case "ext-gd":
+		return "gd", true
+	case "ext-imagick":
+		return "imagick", true
+	case "ext-curl":
+		return "curl", true
+	case "ext-zip":
+		return "zip", true
+	case "ext-bcmath":
+		return "bcmath", true
+	case "ext-gmp":
+		return "gmp", true
+	case "ext-opcache":
+		return "opcache", true
+	case "ext-dom", "ext-simplexml", "ext-xml", "ext-xmlreader", "ext-xmlwriter":
+		return "xml", true
+	case "ext-soap":
+		return "soap", true
+	case "ext-ldap":
+		return "ldap", true
+	case "ext-redis":
+		return "redis", true
+	case "ext-memcached":
+		return "memcached", true
+	case "ext-xdebug":
+		return "xdebug", true
+	case "ext-sockets":
+		return "sockets", true
+	case "ext-pcntl":
+		return "pcntl", true
+	case "ext-exif":
+		return "exif", true
+	default:
+		return "", false
+	}
 }
 
 func GenerateCustomDockerfile(projectID, workDir string, hostPort int) (DeploymentSpec, error) {
@@ -352,7 +477,8 @@ func dockerfileFor(runtime, version string, modules []Module) (string, int, bool
 				"COPY --from=composer /usr/bin/composer /usr/local/bin/composer\n" +
 				runLine +
 				"WORKDIR /app\nCOPY . /app\n" +
-				"RUN if [ -f composer.json ]; then composer install --no-interaction --prefer-dist --optimize-autoloader; fi\n" +
+				"ENV COMPOSER_ALLOW_SUPERUSER=1\n" +
+				"RUN if [ -f composer.json ]; then composer install --no-interaction --prefer-dist --no-progress --no-ansi --optimize-autoloader; fi\n" +
 				"RUN useradd -u 10001 -r -s /usr/sbin/nologin devbox && chown -R 10001:0 /app\n" +
 				"USER 10001\nENV APP_PORT=8080\nEXPOSE 8080\n" +
 				"CMD [\"sh\",\"-lc\",\"if [ -d public ]; then exec php -S 0.0.0.0:8080 -t public; else exec php -S 0.0.0.0:8080 -t .; fi\"]\n",

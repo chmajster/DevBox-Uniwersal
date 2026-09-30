@@ -48,6 +48,7 @@ DevBox Universal is an integrated local development control plane.
 - Application runtimes execute in Docker; native host execution is no longer a supported deployment mode.
 - Host PHP-FPM is optional and is labelled as such in Plugins; managed PHP applications use the PHP runtime built into their Docker image rather than host PHP-FPM.
 - Per-project runtime version and allowlisted image modules are persisted and editable from the application configuration.
+- Managed PHP deployments automatically translate supported Composer `ext-*` requirements from both `require` and `require-dev` into the same allowlisted image-module catalog; manual module selections remain additive.
 - PHP managed images expose per-project module selection directly on the application Overview and Runtime configuration, including projects whose PHP runtime was auto-detected. Selections are persisted per project, participate in the managed-image fingerprint and are installed on the next managed deployment. Available container extensions include PDO MySQL, MySQLi, PostgreSQL, SQLite3, mbstring, intl, GD, Imagick, cURL, ZIP, BCMath, GMP, OPcache, XML, SOAP, LDAP, Redis, Memcached, Xdebug, sockets, PCNTL and EXIF.
 - Node.js, Python and Go managed images support controlled build dependencies while application dependencies continue to come from package-lock/pnpm/yarn, requirements/pyproject and go.mod.
 - Generated images are keyed by deterministic build fingerprints; unchanged images are reused and explicit rebuilds are supported.
@@ -59,6 +60,7 @@ DevBox Universal is an integrated local development control plane.
 - Images, volumes, networks and Docker Compose project management.
 - Docker Containers are grouped into expandable application cards using real Compose/DevBox ownership metadata; project services such as `plan-web-1` and `plan-db-1` stay together, DevBox infrastructure has its own card, and per-container lifecycle/log actions remain available inside each group.
 - Managed application image generation for projects without Compose/Dockerfile.
+- Managed image builds prefer Docker BuildKit/buildx with plain build output and retain the legacy image-builder fallback only when buildx is unavailable; bounded Docker failures preserve the final actionable error lines.
 - Managed image/container names are normalized to Docker-safe repository components, including legacy project IDs; malformed references are rejected before invoking Docker and image-inspection failures are recorded in the dependency/runtime deployment stage.
 - Atomic managed-container replacement with rollback, no-new-privileges and reduced capabilities.
 - Managed build contexts exclude secret environment files and common local dependency/cache directories.

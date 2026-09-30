@@ -23,6 +23,8 @@ For each deployment DevBox resolves the container source in this order:
 
 Runtime selection, runtime version and image modules are configured per project. Modules are selected from runtime-specific allowlists. The API does not accept arbitrary OS package names or shell fragments as module definitions.
 
+For generated PHP images DevBox may also infer modules from Composer platform requirements. Only `ext-*` requirements that map to the existing allowlisted PHP module catalog are added automatically, and explicit project module selections remain additive. Manifest inference never permits arbitrary package names or shell fragments.
+
 Generated build contexts are staged in a temporary directory and exclude `.env*`, `.git`, dependency directories, virtual environments, IDE metadata and common local caches. Secrets are injected only at runtime through existing secret/environment mechanisms and are not embedded in generated Dockerfiles.
 
 Managed images use deterministic fingerprints derived from runtime, version, selected modules, source revision and sanitized application content. A build is skipped when the persisted fingerprint and image are unchanged unless a forced rebuild is requested.

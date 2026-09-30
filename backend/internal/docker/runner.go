@@ -112,10 +112,7 @@ func commandError(binary, stderr string, err error) error {
 	if errors.Is(err, exec.ErrNotFound) {
 		return fmt.Errorf("%w: %s CLI not found", ErrUnavailable, binary)
 	}
-	message := strings.TrimSpace(stderr)
-	if len(message) > 600 {
-		message = message[:600]
-	}
+	message := compactCommandOutput(stderr, 6000)
 	lower := strings.ToLower(message)
 	switch {
 	case strings.Contains(lower, "cannot connect to the docker daemon"),
@@ -130,6 +127,23 @@ func commandError(binary, stderr string, err error) error {
 		message = err.Error()
 	}
 	return fmt.Errorf("docker command failed: %s", message)
+}
+
+func compactCommandOutput(value string, limit int) string {
+	message := strings.TrimSpace(value)
+	if message == "" || limit <= 0 {
+		return message
+	}
+	runes := []rune(message)
+	if len(runes) <= limit {
+		return message
+	}
+
+	head := limit / 3
+	tail := limit - head
+	return strings.TrimSpace(string(runes[:head])) +
+		"\n... docker output truncated; final error follows ...\n" +
+		strings.TrimSpace(string(runes[len(runes)-tail:]))
 }
 
 func dockerResourceNotFound(message string) bool {
