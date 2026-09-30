@@ -243,3 +243,74 @@ func TestDatabaseSecretIsNeverWrittenToManagedDockerfile(t *testing.T) {
 		t.Fatalf("runtime database secret leaked into generated Dockerfile:\n%s", spec.Dockerfile)
 	}
 }
+
+
+func TestGenerateManagedPHPAutoDetectsComposerExtensions(t *testing.T) {
+	dir := t.TempDir()
+	composer := `{
+		"require": {
+			"php": "^8.2",
+			"ext-pdo": "*",
+			"ext-mbstring": "*",
+			"ext-dom": "*",
+			"ext-curl": "*",
+			"ext-ldap": "*",
+			"ext-zip": "*",
+			"ext-gd": "*"
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "composer.json"), []byte(composer), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("<?php echo 'ok';"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := GenerateManaged("php-composer-auto", dir, "php", "8.3", nil, "abc123", 18080)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, expected := range []string{
+		"libonig-dev",
+		"libcurl4-openssl-dev",
+		"libldap2-dev",
+		"libzip-dev",
+		"libpng-dev",
+		"mbstring",
+		"curl",
+		"ldap",
+		"zip",
+		"gd",
+		"dom simplexml xml xmlreader xmlwriter",
+		"COMPOSER_ALLOW_SUPERUSER=1",
+		"--no-progress --no-ansi",
+	} {
+		if !strings.Contains(spec.Dockerfile, expected) {
+			t.Fatalf("auto-detected Composer extension did not add %q:\n%s", expected, spec.Dockerfile)
+		}
+	}
+}
+
+func TestGenerateManagedPHPComposerModulesMergeWithConfiguredModules(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "composer.json"), []byte(`{"require":{"ext-mbstring":"*","ext-zip":"*"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("<?php echo 'ok';"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := GenerateManaged("php-composer-merge", dir, "php", "8.3", []Module{{Name: "mbstring"}, {Name: "pdo_mysql"}}, "abc123", 18080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(spec.Dockerfile, "docker-php-ext-install -j$(nproc)") != 1 {
+		t.Fatalf("expected one PHP extension installation command:\n%s", spec.Dockerfile)
+	}
+	for _, expected := range []string{"pdo_mysql", "mbstring", "zip"} {
+		if !strings.Contains(spec.Dockerfile, expected) {
+			t.Fatalf("merged module set is missing %q:\n%s", expected, spec.Dockerfile)
+		}
+	}
+}
