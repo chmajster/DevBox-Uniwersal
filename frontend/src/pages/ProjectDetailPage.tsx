@@ -2,14 +2,25 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiURL, request } from '../api/client'
 import { listLogs, logQuery } from '../api/operations'
-import type { Deployment, GitState, Job, LogEntry, Project } from '../api/types'
+import type { Deployment, DockerContainer, GitState, Job, LogEntry, Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { DirectoryPathField } from '../components/DirectoryPathField'
+import { StatusBadge } from '../components/StatusBadge'
 import { ProjectFilesSection } from '../components/ProjectFilesSection'
 import { ProjectRuntimeSection } from '../runtime/ProjectRuntimeSection'
 import { ProjectDatabaseSection } from '../runtime/ProjectDatabaseSection'
 import { ProjectPortsSection } from '../runtime/ProjectPortsSection'
 import { publishedApplicationURL } from '../runtime/portSettings'
+import { usePolling } from '../control-room/usePolling'
+import { resolveApplicationRuntimeStatus } from './applicationRuntimeStatus'
+
+type DockerContainerCollection = DockerContainer[] | { items?: DockerContainer[]; containers?: DockerContainer[] }
+
+async function loadDockerContainers(signal: AbortSignal) {
+  const payload = await request<DockerContainerCollection>('/docker/containers', { signal })
+  if (Array.isArray(payload)) return payload
+  return payload.items ?? payload.containers ?? []
+}
 
 type Tab = 'overview' | 'git' | 'files' | 'deployments' | 'logs' | 'runtime' | 'database' | 'ports' | 'settings'
 
@@ -85,6 +96,7 @@ export function ProjectDetailPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
   const [config, setConfig] = useState({ local_path: '', runtime: '', working_directory: '', build_command: '', start_command: '', healthcheck: '', auto_start: false })
+  const dockerListing = usePolling(loadDockerContainers, 2500, Boolean(id))
 
   function syncConfig(item: Project) {
     setConfig({
@@ -230,6 +242,7 @@ export function ProjectDetailPage() {
       await request<Job>(`/projects/${id}/deploy`, { method: 'POST' })
       await loadProject()
       await loadDeployments()
+      dockerListing.refresh()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Deploy failed')
     } finally {
@@ -273,8 +286,23 @@ export function ProjectDetailPage() {
     ? publishedApplicationURL(typeof window === 'undefined' ? 'http://localhost/' : window.location.href, project.port, false)
     : ''
 
+  const currentApplicationStatus = resolveApplicationRuntimeStatus(
+    project,
+    dockerListing.data ?? [],
+    dockerListing.data !== null && !dockerListing.error,
+  )
+
   return <>
-    <div className="page-heading"><div><Link to="/apps" className="muted-link">← Aplikacje</Link><h1>{project.name}</h1><p className="muted">{project.description || project.local_path}</p></div>{user?.role !== 'viewer' && <button type="button" disabled={busy !== '' || Boolean(activeDeployment)} onClick={() => void deploy()}>{busy === 'deploy' ? 'Uruchamianie…' : activeDeployment ? `Deploy: ${deploymentStageLabels[activeDeployment.stage] ?? activeDeployment.stage}` : 'Deploy'}</button>}</div>
+    <div className="page-heading">
+      <div><Link to="/apps" className="muted-link">← Aplikacje</Link><h1>{project.name}</h1><p className="muted">{project.description || project.local_path}</p></div>
+      <div className="project-heading-actions">
+        <div className="project-current-status" aria-live="polite" title={dockerListing.error ? 'Status Docker chwilowo niedostępny — pokazano ostatni status projektu.' : 'Aktualny status aplikacji na podstawie uruchomionych kontenerów.'}>
+          <span>Status aplikacji</span>
+          <StatusBadge status={currentApplicationStatus} />
+        </div>
+        {user?.role !== 'viewer' && <button type="button" disabled={busy !== '' || Boolean(activeDeployment)} onClick={() => void deploy()}>{busy === 'deploy' ? 'Uruchamianie…' : activeDeployment ? `Deploy: ${deploymentStageLabels[activeDeployment.stage] ?? activeDeployment.stage}` : 'Deploy'}</button>}
+      </div>
+    </div>
     {error && <div className="error-banner">{error}</div>}
     <nav className="tabs project-detail-tabs" aria-label="Sekcje aplikacji" role="tablist">
       {projectDetailTabs.map((item) => <button
@@ -287,7 +315,7 @@ export function ProjectDetailPage() {
       >{item.label}</button>)}
     </nav>
     {tab === 'overview' && <div className="stack">
-      <div className="summary-grid panel"><div><span>Status</span><strong>{project.status}</strong></div><div><span>Source</span><strong>{project.source_type}</strong></div><div><span>Runtime</span><strong>{project.runtime || 'auto-detect'}{project.runtime_version ? ` ${project.runtime_version}` : ''}</strong></div><div><span>Kontener</span><strong>{project.container_policy === 'custom' ? 'własny Docker' : 'automatyczny'}</strong></div><div><span>Branch</span><strong>{project.branch || '—'}</strong></div><div><span>Commit</span><strong><code>{project.current_commit?.slice(0, 12) || '—'}</code></strong></div><div><span>Port</span><strong>{project.port ?? '—'}</strong></div><div><span>Domain</span><strong>{project.domain ?? '—'}</strong></div><div className="span-2"><span>Adres aplikacji</span><strong>{applicationURL ? <a href={applicationURL} target="_blank" rel="noopener noreferrer" aria-label={`Otwórz aplikację ${project.name} w nowej karcie`}>{applicationURL}</a> : '—'}</strong></div><div className="span-2"><span>Local path</span><strong><code>{project.local_path}</code></strong></div></div>
+      <div className="summary-grid panel"><div><span>Status</span><strong><StatusBadge status={currentApplicationStatus} /></strong></div><div><span>Source</span><strong>{project.source_type}</strong></div><div><span>Runtime</span><strong>{project.runtime || 'auto-detect'}{project.runtime_version ? ` ${project.runtime_version}` : ''}</strong></div><div><span>Kontener</span><strong>{project.container_policy === 'custom' ? 'własny Docker' : 'automatyczny'}</strong></div><div><span>Branch</span><strong>{project.branch || '—'}</strong></div><div><span>Commit</span><strong><code>{project.current_commit?.slice(0, 12) || '—'}</code></strong></div><div><span>Port</span><strong>{project.port ?? '—'}</strong></div><div><span>Domain</span><strong>{project.domain ?? '—'}</strong></div><div className="span-2"><span>Adres aplikacji</span><strong>{applicationURL ? <a href={applicationURL} target="_blank" rel="noopener noreferrer" aria-label={`Otwórz aplikację ${project.name} w nowej karcie`}>{applicationURL}</a> : '—'}</strong></div><div className="span-2"><span>Local path</span><strong><code>{project.local_path}</code></strong></div></div>
     </div>}
     {tab === 'git' && <div className="stack">
       {gitLoading && <div className="panel"><p className="muted">Sprawdzanie repozytorium Git…</p></div>}
