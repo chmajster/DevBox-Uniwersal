@@ -293,19 +293,14 @@ func (r *Repository) saveResolvedComposeHostPort(ctx context.Context, projectID 
 	if err != nil {
 		return err
 	}
-	result, err := r.db.ExecContext(ctx, `UPDATE project_port_publishing SET desired_json=?,updated_at=? WHERE project_id=?`,
-		string(data), time.Now().UTC().Format(time.RFC3339Nano), projectID)
-	if err != nil {
-		return err
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rows == 0 {
-		return fmt.Errorf("%w: port configuration not found", ErrNotFound)
-	}
-	return nil
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO project_port_publishing(project_id,desired_json,user_configured,updated_at)
+		VALUES(?,?,0,?)
+		ON CONFLICT(project_id) DO UPDATE SET
+			desired_json=excluded.desired_json,
+			updated_at=excluded.updated_at
+	`, projectID, string(data), time.Now().UTC().Format(time.RFC3339Nano))
+	return err
 }
 
 func (r *Repository) saveAppliedPorts(ctx context.Context, projectID string, state AppliedPortSettings, requested PortSettings) error {
