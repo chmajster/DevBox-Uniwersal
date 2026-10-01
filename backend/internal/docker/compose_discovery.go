@@ -33,6 +33,13 @@ type scoredComposePortCandidate struct {
 	score     int
 }
 
+type composeDiscoveryServiceInfo struct {
+	name           string
+	service        composeDiscoveryService
+	infrastructure bool
+	targets        map[int]int
+}
+
 var composeInfrastructureNames = map[string]bool{
 	"mysql": true, "mariadb": true, "postgres": true, "postgresql": true,
 	"redis": true, "mongo": true, "mongodb": true, "elasticsearch": true,
@@ -79,17 +86,11 @@ func discoverComposeApplicationPorts(data []byte, healthcheck string, dockerfile
 		Fingerprint:    hex.EncodeToString(sum[:]),
 	}
 
-	type serviceInfo struct {
-		name           string
-		service        composeDiscoveryService
-		infrastructure bool
-		targets        map[int]int
-	}
-	services := make([]serviceInfo, 0, len(config.Services))
+	services := make([]composeDiscoveryServiceInfo, 0, len(config.Services))
 	for name, service := range config.Services {
 		targets := composeDiscoveryTargets(service)
 		infra := composeServiceIsInfrastructure(name, service.Image, targets)
-		services = append(services, serviceInfo{name: name, service: service, infrastructure: infra, targets: targets})
+		services = append(services, composeDiscoveryServiceInfo{name: name, service: service, infrastructure: infra, targets: targets})
 	}
 	sort.Slice(services, func(i, j int) bool { return services[i].name < services[j].name })
 
@@ -309,12 +310,7 @@ func composeCandidateProtocol(port int, hint string) string {
 	return "http"
 }
 
-func composeDockerfileFallbackService(services []struct {
-	name           string
-	service        composeDiscoveryService
-	infrastructure bool
-	targets        map[int]int
-}) string {
+func composeDockerfileFallbackService(services []composeDiscoveryServiceInfo) string {
 	eligible := make([]string, 0)
 	preferred := make([]string, 0)
 	for _, info := range services {
@@ -348,7 +344,11 @@ func dockerfileExposePortForDiscovery(path string) int {
 			continue
 		}
 		for _, field := range strings.Fields(line[len("EXPOSE "):]) {
-			value := strings.TrimSuffix(strings.TrimSuffix(strings.ToLower(field), "/tcp"), "/udp")
+			lower := strings.ToLower(field)
+			if strings.HasSuffix(lower, "/udp") {
+				continue
+			}
+			value := strings.TrimSuffix(lower, "/tcp")
 			port, err := strconv.Atoi(value)
 			if err == nil && port > 0 && port <= 65535 {
 				return port
