@@ -52,6 +52,10 @@ type ComposePortDiscoverer interface {
 	DiscoverComposeApplicationPorts(ctx context.Context, directory, projectName, healthcheck string) (ComposePortDiscovery, error)
 }
 
+type ComposePortOverrideSuspender interface {
+	SuspendComposePorts(directory, projectName string) (restore func() error, suspended bool, err error)
+}
+
 // ComposePortPublisher configures only the selected web service. The returned
 // rollback restores its previous override, never the user's Compose source.
 type ComposePortPublisher interface {
