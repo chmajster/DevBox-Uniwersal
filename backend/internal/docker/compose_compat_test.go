@@ -163,7 +163,7 @@ func TestComposeTargetPortPrefersWebOverPublishedDatabase(t *testing.T) {
 	}
 }
 
-func TestComposeTargetPortRejectsAmbiguousPublishedPorts(t *testing.T) {
+func TestComposeTargetPortPrefersTypicalApplicationPort(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services:\n  worker1:\n    image: busybox\n  worker2:\n    image: busybox\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -177,9 +177,12 @@ func TestComposeTargetPortRejectsAmbiguousPublishedPorts(t *testing.T) {
 	}}
 	provider := newCLIProviderWithRunner(runner)
 
-	_, err := provider.ComposeTargetPort(context.Background(), dir, "sample")
-	if err == nil || !strings.Contains(err.Error(), "multiple published host ports") {
-		t.Fatalf("expected ambiguous published port error, got %v", err)
+	port, err := provider.ComposeTargetPort(context.Background(), dir, "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if port != 19000 {
+		t.Fatalf("ComposeTargetPort() = %d, want typical application port 19000", port)
 	}
 }
 
