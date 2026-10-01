@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ProjectPortsSection } from './ProjectPortsSection'
 import { request } from '../api/client'
-import type { Job, ProjectRuntimeInfo, RuntimeContainerConfig, RuntimeModuleOption } from '../api/types'
+import type { GeneratedComposeResult, Job, ProjectRuntimeInfo, RuntimeContainerConfig, RuntimeModuleOption } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { effectiveRuntimeName, preparePHPModuleConfig, updatePHPModuleSelection } from './phpModuleConfig'
 import { PHPModulePicker } from './PHPModulePicker'
@@ -81,12 +81,22 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
     }))
   }
 
+  function currentRuntimePayload(nextPolicy = config.container_policy): RuntimeContainerConfig {
+    const runtimeName = config.runtime || effectiveRuntime
+    const next = {
+      ...config,
+      runtime: runtimeName,
+      container_policy: nextPolicy,
+    }
+    return runtimeName === 'php' && next.modules.length > 0 ? preparePHPModuleConfig(next) : next
+  }
+
   async function saveAndRebuild() {
     setBusy(true)
     setError('')
     setMessage('')
     try {
-      const payload = effectiveRuntime === 'php' && config.modules.length > 0 ? preparePHPModuleConfig(config) : config
+      const payload = currentRuntimePayload()
       const saved = await request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`, {
         method: 'PUT',
         body: JSON.stringify(payload),
@@ -99,6 +109,29 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
       setMessage(`Konfiguracja zapisana. Przebudowa kontenera została dodana do kolejki: ${job.id.slice(0, 12)}.`)
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : 'Nie udało się zapisać konfiguracji runtime')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function generateCompose() {
+    setBusy(true)
+    setError('')
+    setMessage('')
+    try {
+      const payload = currentRuntimePayload('generated_compose')
+      const saved = await request<RuntimeContainerConfig>(`/projects/${encodeURIComponent(projectId)}/runtime/config`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      })
+      setConfig(saved)
+      const result = await request<GeneratedComposeResult>(`/projects/${encodeURIComponent(projectId)}/runtime/generate-compose`, {
+        method: 'POST',
+        body: '{}',
+      })
+      setMessage(`Wygenerowano ${result.compose_path} oraz ${result.dockerfile_path} dla ${result.runtime} ${result.runtime_version || ''}. Kolejny Deploy użyje tego Compose.`)
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : 'Nie udało się wygenerować Docker Compose')
     } finally {
       setBusy(false)
     }
@@ -144,12 +177,22 @@ export function ProjectRuntimeSection({ projectId, showPorts = true }: Props) {
         <select
           disabled={readOnly}
           value={config.container_policy}
-          onChange={(event) => setConfig({ ...config, container_policy: event.target.value as 'auto' | 'custom' })}
+          onChange={(event) => setConfig({ ...config, container_policy: event.target.value as 'auto' | 'generated_compose' | 'custom' })}
         >
           <option value="auto">Automatyczna — użyj Compose/Dockerfile projektu, a jeśli ich nie ma wygeneruj obraz DevBox</option>
+          <option value="generated_compose">DevBox Compose — generuj compose.yaml z ustawień DevBox</option>
           <option value="custom">Własny Docker — wymagany Compose lub Dockerfile projektu</option>
         </select>
       </label>
+      {config.container_policy === 'generated_compose' && <div className="span-2 runtime-compose-generator">
+        <div>
+          <strong>Docker Compose zarządzany przez DevBox</strong>
+          <p className="muted small">DevBox tworzy <code>compose.yaml</code> oraz <code>.devbox/Dockerfile</code> na podstawie runtime, wersji, modułów i portu aplikacji. Przy Deploy pliki są odświeżane automatycznie. Istniejący Compose użytkownika nie zostanie nadpisany.</p>
+        </div>
+        {!readOnly && <button type="button" className="secondary-button" disabled={busy || !effectiveRuntime} onClick={() => void generateCompose()}>
+          {busy ? 'Generowanie…' : 'Wygeneruj / odśwież Docker Compose'}
+        </button>}
+      </div>}
     </div>
 
     {runtime && <dl className="runtime-summary" aria-label="Podsumowanie wykrytego runtime">
