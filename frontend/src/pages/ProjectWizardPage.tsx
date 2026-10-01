@@ -182,11 +182,11 @@ export function ProjectWizardPage() {
 
       {form.source_type === 'local' && <DirectoryPathField
         id="local-path"
-        label="Pełna ścieżka katalogu"
+        label="Katalog na hoście DevBox"
         value={form.local_path}
         onChange={(path) => set('local_path', path)}
         required
-        helpText="Wpisuj ścieżkę ręcznie lub wybierz katalog z drzewa. Podpowiedzi pochodzą z rzeczywistego filesystemu dostępnego dla backendu."
+        helpText="Ścieżka serwera / WSL, nie komputera przeglądarki. Musi należeć do dozwolonych katalogów."
       />}
     </div>}
 
