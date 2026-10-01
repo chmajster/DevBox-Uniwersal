@@ -113,7 +113,7 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 		if app.Driver != "" {
 			detection.Driver = app.Driver
 		} else {
-			return nil, h.waiting(ctx, appID, deploymentID, detection)
+			return h.waiting(ctx, appID, deploymentID, detection)
 		}
 	}
 	driver, ok := h.service.drivers.Get(detection.Driver)
@@ -124,7 +124,7 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 	plan, err := driver.Plan(ctx, PlanRequest{Application: app, Source: source, WorkDir: workDir, Detection: detection, Configuration: config, SourceRevision: revision})
 	if err != nil {
 		if errors.Is(err, ErrConfigurationRequired) {
-			return nil, h.waiting(ctx, appID, deploymentID, detection)
+			return h.waiting(ctx, appID, deploymentID, detection)
 		}
 		return nil, h.fail(ctx, deploymentID, StagePlan, err)
 	}
@@ -146,7 +146,7 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 		return nil, h.fail(ctx, deploymentID, StagePlan, err)
 	}
 	if detection.RequiresConfiguration {
-		return nil, h.waiting(ctx, appID, deploymentID, detection)
+		return h.waiting(ctx, appID, deploymentID, detection)
 	}
 	persistedWorkloads, _ := h.service.repo.Workloads(ctx, appID)
 	persistedEndpoints, _ := h.service.repo.Endpoints(ctx, appID)
