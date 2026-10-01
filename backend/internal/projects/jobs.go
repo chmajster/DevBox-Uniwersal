@@ -404,19 +404,20 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			return nil, err
 		}
 		proxyMode := reverseProxyMode(network.Settings)
-		if proxyMode == "disabled" {
-			if publisher, ok := h.integrations.Compose.(providers.ComposePortPublisher); ok {
-				if err := publisher.ClearComposePorts(composeDir, composeName); err != nil {
-					return nil, err
-				}
+		if suspender, ok := h.integrations.Compose.(providers.ComposePortOverrideSuspender); ok {
+			restore, suspended, suspendErr := suspender.SuspendComposePorts(composeDir, composeName)
+			if suspendErr != nil {
+				return nil, suspendErr
 			}
-		} else if !network.Configured {
-			if publisher, ok := h.integrations.Compose.(providers.ComposePortPublisher); ok {
-				// Fresh automatic projects must not inherit a stale override
-				// from an older project using the same source path/slug.
-				if err := publisher.ClearComposePorts(composeDir, composeName); err != nil {
-					return nil, err
-				}
+			if suspended {
+				restoreComposePorts = restore
+				restorePreviousCompose = network.Applied != nil || p.Status == "running"
+			}
+		} else if publisher, ok := h.integrations.Compose.(providers.ComposePortPublisher); ok {
+			// Validation/build must use the source topology. A stale DevBox port
+			// override may reference a service removed from docker-compose.yml.
+			if err := publisher.ClearComposePorts(composeDir, composeName); err != nil {
+				return nil, err
 			}
 		}
 		if err := h.integrations.Compose.ComposeValidate(ctx, composeDir, composeName); err != nil {
@@ -443,6 +444,12 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 
 		waitForPortConfiguration := func(discovery providers.ComposePortDiscovery, stale bool) (map[string]any, error) {
+			if restoreComposePorts != nil {
+				if restoreErr := restoreComposePorts(); restoreErr != nil {
+					return nil, fmt.Errorf("restore previous Compose port configuration before waiting: %w", restoreErr)
+				}
+				restoreComposePorts = nil
+			}
 			if databaseCleanup != nil {
 				if cleanupErr := databaseCleanup(); cleanupErr != nil {
 					_ = h.logger.Log(ctx, job.ID, "warn", "deployment.database.cleanup_warning", map[string]any{"warning": cleanupErr.Error()})
@@ -510,6 +517,28 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 				if !ok {
 					return nil, fmt.Errorf("%w: configurable Compose port publishing", ErrProviderUnavailable)
 				}
+				if discoverer, ok := h.integrations.Compose.(providers.ComposePortDiscoverer); ok && network.Settings.ComposeFingerprint != "" {
+					discovery, discoveryErr := discoverer.DiscoverComposeApplicationPorts(ctx, composeDir, composeName, composeDiscoveryHealthcheck(p, network.Settings))
+					if discoveryErr != nil {
+						return nil, fmt.Errorf("docker compose port discovery: %w", discoveryErr)
+					}
+					if discovery.Fingerprint != network.Settings.ComposeFingerprint {
+						selectedStillExists := false
+						for _, candidate := range discovery.Candidates {
+							if candidate.Service == network.Settings.ComposeService && candidate.ContainerPort == network.Settings.ContainerPort {
+								selectedStillExists = true
+								break
+							}
+						}
+						network, err = h.repo.saveComposePortDiscovery(ctx, p.ID, discovery)
+						if err != nil {
+							return nil, err
+						}
+						if !selectedStillExists {
+							return waitForPortConfiguration(discovery, true)
+						}
+					}
+				}
 				target, targetErr := publisher.InspectComposePortTarget(ctx, composeDir, composeName, network.Settings.ComposeService)
 				if targetErr != nil {
 					if discoverer, ok := h.integrations.Compose.(providers.ComposePortDiscoverer); ok {
@@ -543,10 +572,21 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 				if err != nil {
 					return nil, err
 				}
-				restorePreviousCompose = network.Applied != nil || p.Status == "running"
-				restoreComposePorts, err = publisher.ConfigureComposePorts(ctx, composeDir, composeName, target.Service, portPlan.bindings())
-				if err != nil {
-					return nil, err
+				restorePreviousCompose = restorePreviousCompose || network.Applied != nil || p.Status == "running"
+				newRestore, configureErr := publisher.ConfigureComposePorts(ctx, composeDir, composeName, target.Service, portPlan.bindings())
+				if configureErr != nil {
+					return nil, configureErr
+				}
+				if restoreComposePorts != nil {
+					previousRestore := restoreComposePorts
+					restoreComposePorts = func() error {
+						if err := newRestore(); err != nil {
+							return err
+						}
+						return previousRestore()
+					}
+				} else {
+					restoreComposePorts = newRestore
 				}
 				h.logPortPlan(ctx, job.ID, "reserved", portPlan)
 			} else if discoverer, ok := h.integrations.Compose.(providers.ComposePortDiscoverer); ok {
@@ -584,10 +624,21 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 					if err != nil {
 						return nil, err
 					}
-					restorePreviousCompose = network.Applied != nil || p.Status == "running"
-					restoreComposePorts, err = publisher.ConfigureComposePorts(ctx, composeDir, composeName, selected.Service, portPlan.bindings())
-					if err != nil {
-						return nil, err
+					restorePreviousCompose = restorePreviousCompose || network.Applied != nil || p.Status == "running"
+					newRestore, configureErr := publisher.ConfigureComposePorts(ctx, composeDir, composeName, selected.Service, portPlan.bindings())
+					if configureErr != nil {
+						return nil, configureErr
+					}
+					if restoreComposePorts != nil {
+						previousRestore := restoreComposePorts
+						restoreComposePorts = func() error {
+							if err := newRestore(); err != nil {
+								return err
+							}
+							return previousRestore()
+						}
+					} else {
+						restoreComposePorts = newRestore
 					}
 					h.logPortPlan(ctx, job.ID, "reserved", portPlan)
 				} else {
@@ -648,6 +699,9 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		}
 		if legacyBinding != nil {
 			targetPort = legacyBinding.HostPort
+			if err := h.repo.saveResolvedComposeHostPort(ctx, p.ID, targetPort); err != nil {
+				return nil, err
+			}
 		}
 		if portPlan != nil {
 			publisher := h.integrations.Compose.(providers.ComposePortPublisher)
