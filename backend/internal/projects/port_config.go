@@ -17,19 +17,19 @@ var ErrPortConfigurationBusy = errors.New("port configuration cannot change duri
 var composeServiceName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 
 type PortSettings struct {
-	ContainerPort         int                              `json:"container_port"`
-	HostPort              int                              `json:"host_port"`
-	HTTPSEnabled          bool                             `json:"https_enabled"`
-	HTTPSContainerPort    int                              `json:"https_container_port"`
-	HTTPSHostPort         int                              `json:"https_host_port"`
-	ComposeService        string                           `json:"compose_service"`
-	ReverseProxyMode      string                           `json:"reverse_proxy_mode"`
-	Protocol              string                           `json:"protocol"`
-	Healthcheck           string                           `json:"healthcheck"`
-	DetectionSource       string                           `json:"detection_source,omitempty"`
-	DetectionMode         string                           `json:"detection_mode,omitempty"`
-	ComposeFingerprint    string                           `json:"compose_fingerprint,omitempty"`
-	Candidates            []providers.ComposePortCandidate `json:"candidates,omitempty"`
+	ContainerPort          int                              `json:"container_port"`
+	HostPort               int                              `json:"host_port"`
+	HTTPSEnabled           bool                             `json:"https_enabled"`
+	HTTPSContainerPort     int                              `json:"https_container_port"`
+	HTTPSHostPort          int                              `json:"https_host_port"`
+	ComposeService         string                           `json:"compose_service"`
+	ReverseProxyMode       string                           `json:"reverse_proxy_mode"`
+	Protocol               string                           `json:"protocol"`
+	Healthcheck            string                           `json:"healthcheck"`
+	DetectionSource        string                           `json:"detection_source,omitempty"`
+	DetectionMode          string                           `json:"detection_mode,omitempty"`
+	ComposeFingerprint     string                           `json:"compose_fingerprint,omitempty"`
+	Candidates             []providers.ComposePortCandidate `json:"candidates,omitempty"`
 	InfrastructureServices []providers.ComposePortCandidate `json:"infrastructure_services,omitempty"`
 }
 
