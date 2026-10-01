@@ -101,6 +101,23 @@ def install_api(context, role='admin', authenticated=True):
                         memory=dict(available=True, usage_percent=37.5, used_bytes=6*1024**3, total_bytes=16*1024**3, free_bytes=10*1024**3),
                         disk=dict(available=True, usage_percent=42, used_bytes=210*1024**3, total_bytes=500*1024**3, free_bytes=290*1024**3, path='/'),
                         process=dict(host_process_count=148, pid=100, goroutines=18, heap_allocated_bytes=1024, runtime_reserved_bytes=2048, uptime_seconds=5000))
+        elif endpoint == '/filesystem/directories':
+            root = '/opt/devbox/projects'
+            selected = root + '/aplikacja'
+            path = parse_qs(parsed.query).get('path', [''])[0]
+            if method == 'POST':
+                body = route.request.post_data_json
+                assert route.request.headers.get('x-csrf-token') == 'smoke-csrf'
+                data = dict(name=body['name'], path=body['parent'].rstrip('/') + '/' + body['name'])
+            elif path == '':
+                data = dict(path='', directories=[dict(name=root, path=root)])
+            elif path == root:
+                data = dict(path=root, directories=[dict(name='aplikacja', path=selected)])
+            elif path == selected:
+                data = dict(path=selected, parent=root, directories=[])
+            else:
+                route.fulfill(status=400, json={'error': {'code': 'invalid_request', 'message': 'Test: katalog nie istnieje'}})
+                return
         elif endpoint == '/applications/detect':
             assert method == 'POST'
             assert route.request.headers.get('x-csrf-token') == 'smoke-csrf'
@@ -244,7 +261,16 @@ def main():
             # Source wizard creates configuration, not a running deployment.
             page.get_by_role('link', name='Dodaj aplikację', exact=True).click()
             page.get_by_label('Nazwa', exact=True).fill('Nowa aplikacja')
-            page.get_by_label('Rodzaj źródła').select_option('docker_image')
+            source_select = page.get_by_label('Rodzaj źródła')
+            source_select.select_option('local')
+            local_path = page.get_by_label('Katalog na hoście DevBox')
+            local_path.fill('/opt/devbox/projects/aplikacja')
+            page.get_by_role('button', name='Przeglądaj', exact=True).click()
+            expect(page.get_by_role('dialog', name='Wybierz katalog')).to_be_visible()
+            expect(page.get_by_text('/opt/devbox/projects/aplikacja', exact=True).last).to_be_visible()
+            page.get_by_role('button', name='Wybierz katalog', exact=True).click()
+            expect(local_path).to_have_value('/opt/devbox/projects/aplikacja')
+            source_select.select_option('docker_image')
             page.get_by_label('Obraz Docker / OCI', exact=True).fill('nginx:alpine')
             page.get_by_role('button', name='Dalej', exact=True).click()
             page.get_by_label('Port wewnętrzny', exact=True).fill('80')
