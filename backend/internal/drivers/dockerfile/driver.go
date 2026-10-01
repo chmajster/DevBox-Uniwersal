@@ -3,6 +3,7 @@ package dockerfile
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/applications"
