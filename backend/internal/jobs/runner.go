@@ -59,7 +59,7 @@ func (r *Runner) Enqueue(ctx context.Context, request Request) (domain.Job, erro
 	if !registered {
 		return domain.Job{}, fmt.Errorf("provider unavailable: job handler %q", request.Type)
 	}
-	job := domain.Job{ID: jobID(), Type: request.Type, Status: "queued", ProjectID: request.ProjectID, RequestedBy: request.RequestedBy, Payload: request.Payload, CreatedAt: time.Now().UTC()}
+	job := domain.Job{ID: jobID(), Type: request.Type, Status: "queued", ProjectID: request.ProjectID, ApplicationID: request.ApplicationID, RequestedBy: request.RequestedBy, Payload: request.Payload, CreatedAt: time.Now().UTC()}
 	if err := r.store.CreateJob(ctx, job); err != nil {
 		return domain.Job{}, err
 	}
@@ -89,7 +89,7 @@ func (r *Runner) Retry(ctx context.Context, jobID string) (domain.Job, error) {
 	if old.Status != "failed" && old.Status != "cancelled" {
 		return domain.Job{}, errors.New("only failed or cancelled jobs can be retried")
 	}
-	return r.Enqueue(ctx, Request{Type: old.Type, ProjectID: old.ProjectID, RequestedBy: old.RequestedBy, Payload: old.Payload})
+	return r.Enqueue(ctx, Request{Type: old.Type, ProjectID: old.ProjectID, ApplicationID: old.ApplicationID, RequestedBy: old.RequestedBy, Payload: old.Payload})
 }
 
 func (r *Runner) Log(ctx context.Context, jobID, level, message string, fields map[string]any) error {
