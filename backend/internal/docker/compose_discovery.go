@@ -64,7 +64,10 @@ var composeApplicationServiceNames = map[string]bool{
 }
 
 func (p *CLIProvider) DiscoverComposeApplicationPorts(ctx context.Context, directory, projectName, healthcheck string) (providers.ComposePortDiscovery, error) {
-	data, err := p.composeConfigJSON(ctx, directory, projectName)
+	// Discovery must describe the project source, not a previous DevBox port/database
+	// override. Otherwise a removed service can survive in normalized topology and
+	// make a stale selection look valid.
+	data, err := p.originalComposeConfigJSON(ctx, directory, projectName)
 	if err != nil {
 		return providers.ComposePortDiscovery{}, err
 	}
