@@ -1198,7 +1198,8 @@ func hasPHPMySQLDriver(modules []RuntimeModule) bool {
 
 func hasPHPPostgreSQLDriver(modules []RuntimeModule) bool {
 	for _, module := range modules {
-		if strings.EqualFold(strings.TrimSpace(module.Name), "pgsql") {
+		switch strings.ToLower(strings.TrimSpace(module.Name)) {
+		case "pgsql", "pdo_pgsql":
 			return true
 		}
 	}
