@@ -32,6 +32,8 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("GET /api/v1/applications", secure(domain.RoleViewer, m.list))
 	mux.Handle("POST /api/v1/applications", secure(domain.RoleOperator, m.create))
 	mux.Handle("POST /api/v1/applications/detect", secure(domain.RoleOperator, m.detect))
+	mux.Handle("GET /api/v1/filesystem/directories", secure(domain.RoleOperator, m.browseDirectories))
+	mux.Handle("POST /api/v1/filesystem/directories", secure(domain.RoleOperator, m.createDirectory))
 	mux.Handle("GET /api/v1/applications/{id}", secure(domain.RoleViewer, m.get))
 	mux.Handle("PATCH /api/v1/applications/{id}", secure(domain.RoleOperator, m.update))
 	mux.Handle("DELETE /api/v1/applications/{id}", secure(domain.RoleAdmin, m.remove))
@@ -46,6 +48,41 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("GET /api/v1/applications/{id}/deployments", secure(domain.RoleViewer, m.deployments))
 	mux.Handle("GET /api/v1/applications/{id}/events", secure(domain.RoleViewer, m.events))
 	mux.Handle("GET /api/v1/applications/{id}/logs", secure(domain.RoleViewer, m.logs))
+}
+
+func (m *Module) browseDirectories(w http.ResponseWriter, r *http.Request) {
+	listing, err := m.service.BrowseDirectories(strings.TrimSpace(r.URL.Query().Get("path")))
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	actor := applicationActor(r)
+	if m.audit != nil {
+		_ = m.audit.Record(r.Context(), actor, "application.directory_browse", "directory", nil, map[string]any{"path": listing.Path}, remoteAddress(r))
+	}
+	writeApplicationData(w, http.StatusOK, listing)
+}
+
+func (m *Module) createDirectory(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Parent string `json:"parent"`
+		Name   string `json:"name"`
+	}
+	if err := decodeApplicationJSON(w, r, &input, false); err != nil {
+		writeApplicationError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+	entry, err := m.service.CreateDirectory(input.Parent, input.Name)
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	actor := applicationActor(r)
+	if m.audit != nil {
+		target := entry.Path
+		_ = m.audit.Record(r.Context(), actor, "application.directory_create", "directory", &target, map[string]any{"parent": input.Parent, "name": input.Name}, remoteAddress(r))
+	}
+	writeApplicationData(w, http.StatusCreated, entry)
 }
 
 func (m *Module) list(w http.ResponseWriter, r *http.Request) {
@@ -227,6 +264,8 @@ func (m *Module) fail(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		writeApplicationError(w, http.StatusNotFound, "not_found", "application not found", nil)
+	case errors.Is(err, ErrDirectoryAccess):
+		writeApplicationError(w, http.StatusForbidden, "directory_access_denied", err.Error(), nil)
 	case errors.Is(err, ErrInvalidInput):
 		writeApplicationError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
 	case errors.Is(err, ErrConflict):
