@@ -8,6 +8,7 @@ var (
 	ErrConflict              = errors.New("application conflict")
 	ErrProviderUnavailable   = errors.New("provider unavailable")
 	ErrConfigurationRequired = errors.New("application configuration required")
+	ErrDirectoryAccess        = errors.New("directory access denied")
 )
 
 type OperationError struct {
