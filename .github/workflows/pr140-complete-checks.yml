@@ -1,0 +1,199 @@
+name: PR 140 integration repair
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pr140-complete-checks.yml'
+permissions:
+  contents: read
+jobs:
+  repair:
+    if: github.event.pull_request.number == 140 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/140-application-control-plane'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Require the inspected source baseline
+        run: git diff --exit-code 8ab8139da4a3b9eb0c441df032ce430e9ce12d87 HEAD -- backend frontend STATUS.md CHANGELOG.md docs/adr/012-application-control-plane.md
+      - name: Apply reviewed integration fixes
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('.')
+          def edit(name, old, new):
+              f=p/name; s=f.read_text()
+              assert old in s, 'Source changed: '+name
+              f.write_text(s.replace(old,new))
+          edit('frontend/src/pages/LogsPage.tsx','listLogs, listProjects, logQuery','listLogs, listApplications, logQuery')
+          edit('frontend/src/pages/LogsPage.tsx','LogEntry, Project','LogEntry, ApplicationSummary')
+          f=p/'frontend/src/pages/LogsPage.tsx'; s=f.read_text()
+          for old,new in [("'project', 'deployment'", "'application', 'deployment'"),('project, setProject','application, setApplication'),('projects, setProjects','applications, setApplications'),('useState<Project[]>','useState<ApplicationSummary[]>'),('listProjects()','listApplications()'),('setProjects(','setApplications('),('project: project || undefined','application: application || undefined'),('[source, project,','[source, application,'),('<label>Projekt<select value={project} onChange={(event) => setProject(event.target.value)}><option value="">Wszystkie</option>{projects.map(','<label>Aplikacja<select value={application} onChange={(event) => setApplication(event.target.value)}><option value="">Wszystkie</option>{applications.map(')]:
+              assert old in s, old
+              s=s.replace(old,new)
+          f.write_text(s)
+          edit('frontend/src/api/operations.ts','  ApplicationHealth,','  ApplicationHealth,\n  ApplicationSummary,')
+          edit('frontend/src/api/operations.ts','export async function listProjects(',"export async function listApplications() {\n  return asCollection(await request<CollectionPayload<ApplicationSummary>>('/applications'))\n}\n\nexport async function listProjects(")
+          edit('frontend/src/api/operations.ts','  project?: string\n','  project?: string\n  application?: string\n')
+          edit('frontend/src/api/operations.ts',"  if (filters.project) params.set('project', filters.project)","  if (filters.project) params.set('project', filters.project)\n  if (filters.application) params.set('application', filters.application)")
+          edit('backend/internal/operations/logs.go','\tProjectID   string','\tApplicationID string\n\tProjectID   string')
+          edit('backend/internal/operations/logs.go','\tProjectID *string','\tApplicationID *string `json:"application_id,omitempty"`\n\tProjectID *string')
+          edit('backend/internal/operations/logs.go','\tif filter.ProjectID != ""','\tif filter.ApplicationID != "" && (entry.ApplicationID == nil || *entry.ApplicationID != filter.ApplicationID) {\n\t\treturn false\n\t}\n\tif filter.ProjectID != ""')
+          edit('backend/internal/operations/module.go','\t\tProjectID:   query.Get("project"),','\t\tProjectID:   query.Get("project"),\n\t\tApplicationID: query.Get("application"),')
+          edit('backend/internal/operations/sql_source.go','\tLogModeProject    SQLMode = "project"','\tLogModeApplication SQLMode = "application"\n\tLogModeProject    SQLMode = "project"')
+          edit('backend/internal/operations/sql_source.go','\tcase LogModeProject:','\tcase LogModeApplication:\n\t\tclauses = append(clauses, "j.application_id IS NOT NULL")\n\tcase LogModeProject:')
+          edit('backend/internal/operations/sql_source.go',"(j.type LIKE 'deploy%' OR j.type LIKE 'deployment%')","(j.type LIKE 'deploy%' OR j.type LIKE 'deployment%' OR j.type IN ('application.deploy','project.deploy'))")
+          edit('backend/internal/operations/sql_source.go','\tif filter.ProjectID != "" {','\tif filter.ApplicationID != "" {\n\t\tclauses = append(clauses, "j.application_id = ?")\n\t\targs = append(args, filter.ApplicationID)\n\t}\n\tif filter.ProjectID != "" {')
+          edit('backend/internal/operations/sql_source.go','SELECT jl.id,j.id,j.project_id,','SELECT jl.id,j.id,j.project_id,j.application_id,')
+          edit('backend/internal/operations/sql_source.go','var projectID sql.NullString','var projectID, applicationID sql.NullString')
+          edit('backend/internal/operations/sql_source.go','&projectID, &level','&projectID, &applicationID, &level')
+          edit('backend/internal/operations/sql_source.go','\t\tif projectID.Valid {','\t\tif applicationID.Valid {\n\t\t\tentry.ApplicationID = &applicationID.String\n\t\t}\n\t\tif projectID.Valid {')
+          edit('backend/internal/operations/ring.go','\ts.entries = append(s.entries, entry)','\tif id, ok := fields["application_id"].(string); ok && id != "" {\n\t\tentry.ApplicationID = &id\n\t}\n\ts.entries = append(s.entries, entry)')
+          edit('backend/cmd/devbox/main.go','\t\toperations.NewSQLLogSource("project", db, operations.LogModeProject),','\t\toperations.NewSQLLogSource("application", db, operations.LogModeApplication),\n\t\toperations.NewSQLLogSource("project", db, operations.LogModeProject),')
+          edit('backend/internal/docker/runtime_managed.go','\t\t_, _, _ = p.runner.Run(ctx, "container", "stop", "--time", "10", backupName)', '''\t\tif _, _, stopErr := p.runner.Run(ctx, "container", "stop", "--time", "10", backupName); stopErr != nil {
+          \t\t\t// A rename does not release published ports. Do not create a replacement
+          \t\t\t// until the previous container has stopped successfully.
+          \t\t\trecoveryCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+          \t\t\tdefer cancel()
+          \t\t\t_, _, renameErr := p.runner.Run(recoveryCtx, "container", "rename", backupName, spec.ContainerName)
+          \t\t\tif renameErr != nil {
+          \t\t\t\treturn errors.Join(fmt.Errorf("stop previous managed container: %w", stopErr), fmt.Errorf("restore previous container name: %w", renameErr))
+          \t\t\t}
+          \t\t\treturn fmt.Errorf("stop previous managed container: %w", stopErr)
+          \t\t}''')
+          edit('frontend/e2e/workspace_smoke.py',"'/logs/sources': ['all', 'devbox', 'docker', 'job', 'project']","'/logs/sources': ['all', 'devbox', 'docker', 'job', 'application']")
+          edit('frontend/e2e/workspace_smoke.py',"data = [entry for entry in logs if source == 'all' or entry['source'] == source]","owner = parse_qs(parsed.query).get('application', [''])[0]\n            data = [entry for entry in logs if (source == 'all' or entry['source'] == source) and (not owner or entry.get('application_id') == owner)]")
+          edit('frontend/e2e/workspace_smoke.py',"            expect(page.get_by_role('combobox', name='Źródło', exact=True)).to_have_value('docker')","            expect(page.get_by_role('combobox', name='Źródło', exact=True)).to_have_value('docker')\n            page.get_by_role('combobox', name='Aplikacja', exact=True).select_option('portal')\n            expect(page.get_by_role('combobox', name='Aplikacja', exact=True)).to_have_value('portal')\n            page.wait_for_function(\"document.querySelector('.log-console').textContent.includes('Brak wpisów')\")\n            assert any(path == '/logs' and parse_qs(query).get('application') == ['portal'] for _, path, query in state['calls'])\n            assert not any(path == '/projects' for _, path, _ in state['calls'])")
+          f=p/'frontend/src/api/operations.test.ts'
+          f.write_text(f.read_text()+'''
+          it('loads application owners and preserves the application filter for logs and export', async () => {
+            const { listApplications, listLogs, logQuery } = await import('./operations')
+            const fetchMock = vi.fn(async () => apiResponse([]))
+            vi.stubGlobal('fetch', fetchMock)
+            try {
+              await expect(listApplications()).resolves.toEqual([])
+              const filters = { source: 'application', application: 'app/a b', level: 'error' }
+              const query = new URLSearchParams(logQuery(filters))
+              expect(query.get('application')).toBe('app/a b')
+              expect(query.has('project')).toBe(false)
+              await expect(listLogs(filters)).resolves.toEqual([])
+              expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/applications', expect.anything())
+              expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/v1/logs?${query}`, expect.anything())
+            } finally {
+              vi.unstubAllGlobals()
+            }
+          })
+          ''')
+          (p/'backend/internal/operations/application_logs_test.go').write_text('''package operations
+          import (
+            "context"
+            "database/sql"
+            "net/http/httptest"
+            "path/filepath"
+            "testing"
+            _ "modernc.org/sqlite"
+          )
+          func TestApplicationLogOwnershipAndDeploymentSource(t *testing.T) {
+            db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "logs.db"))
+            if err != nil { t.Fatal(err) }
+            defer db.Close()
+            _, err = db.Exec(`
+          CREATE TABLE jobs(id TEXT PRIMARY KEY, project_id TEXT, application_id TEXT, type TEXT);
+          CREATE TABLE job_logs(id INTEGER PRIMARY KEY, job_id TEXT, level TEXT, message TEXT, fields_json TEXT, created_at TEXT);
+          INSERT INTO jobs VALUES ('deploy-a',NULL,'app-a','application.deploy'),('stop-b',NULL,'app-b','application.stop'),('legacy','app-a',NULL,'project.deploy');
+          INSERT INTO job_logs VALUES (1,'deploy-a','info','application deployed','{}','2026-10-01T08:00:00Z'),(2,'stop-b','info','application stopped','{}','2026-10-01T08:00:01Z'),(3,'legacy','info','legacy deployed','{}','2026-10-01T08:00:02Z');`)
+            if err != nil { t.Fatal(err) }
+            filter := filterFromRequest(httptest.NewRequest("GET", "/api/v1/logs?application=app-a", nil))
+            for _, mode := range []SQLMode{LogModeApplication, LogModeDeployment, LogModeJob} {
+              t.Run(string(mode), func(t *testing.T) {
+                entries, err := NewSQLLogSource(string(mode), db, mode).List(context.Background(), filter)
+                if err != nil { t.Fatal(err) }
+                if len(entries) != 1 || entries[0].ApplicationID == nil || *entries[0].ApplicationID != "app-a" || entries[0].ProjectID != nil || entries[0].Message != "application deployed" { t.Fatalf("application ownership crossed legacy/project boundary: %+v", entries) }
+              })
+            }
+            entries, err := NewSQLLogSource("application", db, LogModeApplication).List(context.Background(), LogFilter{})
+            if err != nil || len(entries) != 2 { t.Fatalf("application source = %+v, %v", entries, err) }
+            entries, err = NewSQLLogSource("deployment", db, LogModeDeployment).List(context.Background(), LogFilter{})
+            if err != nil || len(entries) != 2 { t.Fatalf("deployment source = %+v, %v", entries, err) }
+          }
+          func TestApplicationFilterAppliesToCapturedLogs(t *testing.T) {
+            source := NewRingLogSource("devbox", 10)
+            source.Append("info", "a", map[string]any{"application_id":"app-a"})
+            source.Append("info", "b", map[string]any{"application_id":"app-b"})
+            source.Append("info", "global", nil)
+            entries, err := source.List(context.Background(), LogFilter{ApplicationID:"app-a"})
+            if err != nil || len(entries) != 1 || entries[0].Message != "a" { t.Fatalf("filtered captured logs = %+v, %v", entries, err) }
+          }
+          ''')
+          (p/'backend/internal/docker/runtime_replacement_test.go').write_text('''package docker
+          import (
+            "context"
+            "errors"
+            "strings"
+            "testing"
+            "github.com/chmajster/DevBox-Uniwersal/backend/internal/containerspec"
+          )
+          func TestManagedReplacementDoesNotStartOnFailedStop(t *testing.T) {
+            stopErr := errors.New("previous container still owns published port")
+            for _, renameFails := range []bool{false, true} {
+              t.Run(map[bool]string{false:"restore name",true:"surface recovery failure"}[renameFails], func(t *testing.T) {
+                var renameErr error
+                if renameFails { renameErr = errors.New("cannot restore name") }
+                runner := &stubRunner{responses: []runnerResponse{{stdout:"Docker"}, {}, {}, {err:stopErr}, {err:renameErr}}}
+                provider := newCLIProviderWithRunner(runner)
+                err := provider.ReplaceManagedPorts(context.Background(), containerspec.DeploymentSpec{ContainerName:"devbox-app-test", Image:"nginx:alpine", HostPort:8091, ContainerPort:80}, nil)
+                if !errors.Is(err, stopErr) { t.Fatalf("original stop error lost: %v", err) }
+                if renameErr != nil && !errors.Is(err, renameErr) { t.Fatalf("recovery error lost: %v", err) }
+                if len(runner.calls) != 5 { t.Fatalf("unexpected calls: %v", runner.calls) }
+                if got := strings.Join(runner.calls[4], " "); got != "container rename devbox-app-test-previous devbox-app-test" { t.Fatal(got) }
+                for _, args := range runner.calls {
+                  cmd := strings.Join(args," ")
+                  if strings.HasPrefix(cmd,"container create") || strings.HasPrefix(cmd,"container start") { t.Fatalf("replacement attempted with occupied port: %s",cmd) }
+                }
+              })
+            }
+          }
+          ''')
+          for name in ['STATUS.md','CHANGELOG.md']:
+              f=p/name; s=f.read_text()
+              label='## Application control plane (PR #140)' if name=='STATUS.md' else '## 2026-10-01 — Application control plane (PR #140)'
+              assert label in s
+              f.write_text(s.replace(label,label+'\n\n- Central logs now select Application owners, filter list/export/stream by `application`, and include application deployment/job entries without querying the unmounted Project API. Legacy project IDs remain a separate log ownership field.\n- Managed container replacement aborts before create/start when the previous container cannot stop; recovery restores its name and reports failures rather than causing a port collision. Regression tests cover both paths.'))
+          edit('docs/adr/012-application-control-plane.md','## Consequences','Log ownership is explicit: `application_id` is independent of the retained `project_id`. The central log list, stream and export accept `application=<id>` and the SQL application source joins jobs by their persisted application ownership. The active UI never queries the unmounted Project API for a log owner.\n\n## Consequences')
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Backend verification
+        working-directory: backend
+        run: |
+          gofmt -w internal/operations internal/docker/runtime_managed.go internal/docker/runtime_replacement_test.go cmd/devbox/main.go
+          go vet ./...
+          go test ./... -timeout=2m
+          go build ./cmd/...
+      - name: Frontend verification
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+          python -m py_compile e2e/workspace_smoke.py
+      - name: Commit only the validated integration fixes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend frontend STATUS.md CHANGELOG.md docs/adr/012-application-control-plane.md
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(applications): finish log ownership and safe container replacement regressions'
+          git push origin HEAD:refs/heads/agent/140-application-control-plane
