@@ -55,6 +55,7 @@ type Job struct {
 	Type        string         `json:"type"`
 	Status      string         `json:"status"`
 	ProjectID   *string        `json:"project_id,omitempty"`
+	ApplicationID *string      `json:"application_id,omitempty"`
 	RequestedBy *string        `json:"requested_by,omitempty"`
 	Payload     map[string]any `json:"payload,omitempty"`
 	Result      map[string]any `json:"result,omitempty"`
