@@ -27,7 +27,8 @@ func(h *detectJobHandler)Run(ctx context.Context,job domain.Job)(map[string]any,
 	if err:=os.MkdirAll(tempRoot,0o700);err!=nil{return nil,err}
 	workDir:=filepath.Join(tempRoot,job.ID);defer os.RemoveAll(workDir)
 	source:=Source{RepositoryURL:input.Source.RepositoryURL,Reference:input.Source.Reference,CredentialID:input.Source.CredentialID}
-	if err:=h.service.git.Clone(ctx,providers.GitSource{RepositoryURL:source.RepositoryURL,Reference:source.Reference,Destination:workDir,CredentialRef:source.CredentialID});err!=nil{return nil,err}
+	credentialRef,err:=h.service.gitCredentialRef(ctx,source.CredentialID);if err!=nil{return nil,err}
+	if err:=h.service.git.Clone(ctx,providers.GitSource{RepositoryURL:source.RepositoryURL,Reference:source.Reference,Destination:workDir,CredentialRef:credentialRef});err!=nil{return nil,err}
 	result,detectErr:=h.service.selector.Detect(ctx,DetectRequest{SourceType:SourceGit,Source:source,WorkDir:workDir,Configuration:input.Configuration},input.Driver)
 	if detectErr!=nil&&!errors.Is(detectErr,ErrConfigurationRequired){return nil,detectErr}
 	raw,_:=json.Marshal(result);var out map[string]any;_ = json.Unmarshal(raw,&out)
