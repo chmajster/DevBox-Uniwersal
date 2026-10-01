@@ -30,6 +30,8 @@ type ExecutionRequest struct {
 	Source Source
 	WorkDir string
 	Deployment Deployment
+	Workloads []Workload
+	Endpoints []Endpoint
 }
 
 type InspectRequest struct {
@@ -78,9 +80,7 @@ type DriverRegistry struct {
 	drivers map[string]DeploymentDriver
 }
 
-func NewDriverRegistry() *DriverRegistry {
-	return &DriverRegistry{drivers: map[string]DeploymentDriver{}}
-}
+func NewDriverRegistry() *DriverRegistry { return &DriverRegistry{drivers: map[string]DeploymentDriver{}} }
 
 func (r *DriverRegistry) Register(driver DeploymentDriver) error {
 	if driver == nil || driver.Name() == "" { return fmt.Errorf("%w: driver name is required", ErrInvalidInput) }
@@ -92,13 +92,15 @@ func (r *DriverRegistry) Register(driver DeploymentDriver) error {
 }
 
 func (r *DriverRegistry) Get(name string) (DeploymentDriver, bool) {
-	r.mu.RLock(); defer r.mu.RUnlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	driver, ok := r.drivers[name]
 	return driver, ok
 }
 
 func (r *DriverRegistry) Names() []string {
-	r.mu.RLock(); defer r.mu.RUnlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]string, 0, len(r.drivers))
 	for name := range r.drivers { out = append(out, name) }
 	sort.Strings(out)
