@@ -65,6 +65,7 @@ def install_api(context, role='admin', authenticated=True):
                      dict(id='proxy-container', name='devbox-proxy', image='nginx:latest', state='running', status='Up'),
                      dict(id='helper-container', name='devbox-helper', image='helper:test', state='running', status='Up'),
                  ],
+                 '/projects': [],
                  '/databases': [dict(id='db1'), dict(id='db2')], '/ports': [dict(port=8080), dict(port=8081)],
                  '/health': {'status': 'ok'}, '/docker/status': {'available': True, 'server_version': 'Docker Engine'},
                  '/mysql/status': {'running': True, 'version': 'MySQL'},
