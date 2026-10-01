@@ -47,9 +47,15 @@ func (a *ApplicationPortAllocator) reserveExact(ctx context.Context, application
 	if port<1 || port>65535 { return 0, fmt.Errorf("%w: port must be within 1..65535",ErrInvalidInput) }
 	tx,err:=a.db.BeginTx(ctx,nil); if err!=nil{return 0,err}; defer tx.Rollback()
 	var state string
-	err=tx.QueryRowContext(ctx,`SELECT state FROM application_port_leases WHERE port=?`,port).Scan(&state)
+	var currentApplication, currentEndpoint, currentPurpose sql.NullString
+	err=tx.QueryRowContext(ctx,`SELECT state,application_id,endpoint_id,purpose FROM application_port_leases WHERE port=?`,port).Scan(&state,&currentApplication,&currentEndpoint,&currentPurpose)
 	switch {
-	case err==nil && state!="released": return 0,ErrConflict
+	case err==nil && state!="released":
+		if currentApplication.String==applicationID && currentEndpoint.String==endpointID && currentPurpose.String==purpose {
+			_ = tx.Rollback()
+			return port,nil
+		}
+		return 0,ErrConflict
 	case err!=nil && !errors.Is(err,sql.ErrNoRows): return 0,err
 	}
 	available,err:=probeApplicationPort(port); if err!=nil{return 0,err}; if !available{return 0,ErrConflict}
