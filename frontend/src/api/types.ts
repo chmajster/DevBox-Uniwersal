@@ -528,7 +528,7 @@ export interface Project {
   local_path: string
   runtime: string
   runtime_version: string
-  container_policy: 'auto' | 'custom'
+  container_policy: 'auto' | 'generated_compose' | 'custom'
   working_directory: string
   build_command: string
   start_command: string

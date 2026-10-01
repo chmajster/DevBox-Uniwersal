@@ -314,9 +314,9 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			return nil, err
 		}
 		_ = h.logger.Log(ctx, job.ID, "info", "deployment.compose.generated", map[string]any{
-			"compose_path": generated.ComposePath,
+			"compose_path":    generated.ComposePath,
 			"dockerfile_path": generated.DockerfilePath,
-			"runtime": generated.Runtime,
+			"runtime":         generated.Runtime,
 		})
 	}
 	hasCompose := projectHasCompose(workDir)
@@ -459,8 +459,8 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			})
 			return map[string]any{
 				"deployment_id": deploymentID,
-				"status": DeploymentWaitingForConfiguration,
-				"candidates": discovery.Candidates,
+				"status":        DeploymentWaitingForConfiguration,
+				"candidates":    discovery.Candidates,
 			}, nil
 		}
 
