@@ -54,7 +54,8 @@ func TestBrowseDirectoriesRejectsTraversalAndOutsideRoot(t *testing.T) {
 	root := t.TempDir()
 	service := directoryTestService(root)
 
-	if _, err := service.BrowseDirectories(filepath.Join(root, "child", "..")); !errors.Is(err, ErrInvalidInput) {
+	traversal := root + string(os.PathSeparator) + "child" + string(os.PathSeparator) + ".."
+	if _, err := service.BrowseDirectories(traversal); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput for traversal, got %v", err)
 	}
 	if _, err := service.BrowseDirectories(t.TempDir()); !errors.Is(err, ErrDirectoryAccess) {
