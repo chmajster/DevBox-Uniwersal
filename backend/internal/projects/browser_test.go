@@ -200,7 +200,6 @@ func TestSuggestDirectoriesDoesNotExposeSymlinkEscape(t *testing.T) {
 	}
 }
 
-
 func TestCreateDirectoryCreatesChildInsideAllowedRoot(t *testing.T) {
 	root := t.TempDir()
 
