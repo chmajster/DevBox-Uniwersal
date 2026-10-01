@@ -136,52 +136,92 @@ func (r *Repository) ReplaceTopology(ctx context.Context, applicationID string, 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil { return err }
 	defer tx.Rollback()
-	existing := map[string]Workload{}
+
+	existingWorkloads := map[string]Workload{}
 	rows, err := tx.QueryContext(ctx, `SELECT id,name,COALESCE(driver_resource_id,''),COALESCE(image,''),desired_state,observed_state,health_state,primary_workload,metadata_json,created_at,updated_at FROM workloads WHERE application_id=?`, applicationID)
 	if err != nil { return err }
 	for rows.Next() {
 		var item Workload
 		var primary int
 		var metadata, created, updated string
-		if err := rows.Scan(&item.ID, &item.Name, &item.DriverResourceID, &item.Image, &item.DesiredState, &item.ObservedState, &item.HealthState, &primary, &metadata, &created, &updated); err != nil {
+		if err := rows.Scan(&item.ID,&item.Name,&item.DriverResourceID,&item.Image,&item.DesiredState,&item.ObservedState,&item.HealthState,&primary,&metadata,&created,&updated); err != nil {
 			rows.Close(); return err
 		}
 		item.ApplicationID, item.Primary = applicationID, primary != 0
 		item.Metadata = map[string]any{}; _ = json.Unmarshal([]byte(metadata), &item.Metadata)
 		item.CreatedAt, _ = parseDBTime(created); item.UpdatedAt, _ = parseDBTime(updated)
-		existing[item.Name] = item
+		existingWorkloads[item.Name] = item
 	}
-	rows.Close()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM endpoints WHERE application_id=?`, applicationID); err != nil { return err }
-	if _, err := tx.ExecContext(ctx, `DELETE FROM workloads WHERE application_id=?`, applicationID); err != nil { return err }
+	if err := rows.Close(); err != nil { return err }
+
+	existingEndpoints := map[string]Endpoint{}
+	rows, err = tx.QueryContext(ctx, `SELECT id,workload_id,name,protocol,container_port,host_port,domain,public,primary_endpoint,tls_mode,COALESCE(health_path,''),status,created_at,updated_at FROM endpoints WHERE application_id=?`, applicationID)
+	if err != nil { return err }
+	for rows.Next() {
+		var item Endpoint
+		var hostPort sql.NullInt64
+		var domain sql.NullString
+		var public, primary int
+		var created, updated string
+		if err := rows.Scan(&item.ID,&item.WorkloadID,&item.Name,&item.Protocol,&item.ContainerPort,&hostPort,&domain,&public,&primary,&item.TLSMode,&item.HealthPath,&item.Status,&created,&updated); err != nil {
+			rows.Close(); return err
+		}
+		item.ApplicationID = applicationID
+		if hostPort.Valid { value:=int(hostPort.Int64); item.HostPort=&value }
+		if domain.Valid { value:=domain.String; item.Domain=&value }
+		item.Public, item.Primary = public != 0, primary != 0
+		item.CreatedAt, _ = parseDBTime(created); item.UpdatedAt, _ = parseDBTime(updated)
+		existingEndpoints[item.Name] = item
+	}
+	if err := rows.Close(); err != nil { return err }
+
 	now := time.Now().UTC()
 	nameIDs := map[string]string{}
+	idRemap := map[string]string{}
+	plannedWorkloads := map[string]bool{}
 	for i := range workloads {
 		item := &workloads[i]
-		if old, ok := existing[item.Name]; ok {
-			if item.ID == "" { item.ID = old.ID }
-			if item.DriverResourceID == "" { item.DriverResourceID = old.DriverResourceID }
+		originalID := item.ID
+		if old, ok := existingWorkloads[item.Name]; ok {
+			item.ID = old.ID
+			item.DriverResourceID = old.DriverResourceID
 			if item.Image == "" { item.Image = old.Image }
 			if item.ObservedState == "" || item.ObservedState == ObservedUnknown { item.ObservedState = old.ObservedState }
 			if item.HealthState == "" || item.HealthState == HealthUnknown { item.HealthState = old.HealthState }
+			item.CreatedAt = old.CreatedAt
 		}
 		if item.ID == "" { item.ID = NewID() }
+		if originalID != "" { idRemap[originalID] = item.ID }
 		item.ApplicationID = applicationID
 		if item.DesiredState == "" { item.DesiredState = DesiredRunning }
 		if item.ObservedState == "" { item.ObservedState = ObservedUnknown }
 		if item.HealthState == "" { item.HealthState = HealthUnknown }
 		if item.Role == "" { item.Role = "internal" }
 		if item.Metadata == nil { item.Metadata = map[string]any{} }
-		metadata, _ := json.Marshal(item.Metadata)
 		if item.CreatedAt.IsZero() { item.CreatedAt = now }
 		item.UpdatedAt = now
-		_, err := tx.ExecContext(ctx, `INSERT INTO workloads(id,application_id,name,role,driver_resource_id,image,desired_state,observed_state,health_state,primary_workload,metadata_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			item.ID, applicationID, item.Name, item.Role, nullText(item.DriverResourceID), nullText(item.Image), item.DesiredState, item.ObservedState, item.HealthState, boolInt(item.Primary), string(metadata), dbTime(item.CreatedAt), dbTime(item.UpdatedAt))
+		metadata, _ := json.Marshal(item.Metadata)
+		_, err := tx.ExecContext(ctx, `INSERT INTO workloads(id,application_id,name,role,driver_resource_id,image,desired_state,observed_state,health_state,primary_workload,metadata_json,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+			ON CONFLICT(id) DO UPDATE SET name=excluded.name,role=excluded.role,driver_resource_id=excluded.driver_resource_id,image=excluded.image,desired_state=excluded.desired_state,observed_state=excluded.observed_state,health_state=excluded.health_state,primary_workload=excluded.primary_workload,metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`,
+			item.ID,applicationID,item.Name,item.Role,nullText(item.DriverResourceID),nullText(item.Image),item.DesiredState,item.ObservedState,item.HealthState,boolInt(item.Primary),string(metadata),dbTime(item.CreatedAt),dbTime(item.UpdatedAt))
 		if err != nil { return fmt.Errorf("store workload %s: %w", item.Name, err) }
 		nameIDs[item.Name] = item.ID
+		plannedWorkloads[item.Name] = true
 	}
+
+	plannedEndpoints := map[string]bool{}
 	for i := range endpoints {
 		item := &endpoints[i]
+		originalWorkloadID := item.WorkloadID
+		if mapped := idRemap[originalWorkloadID]; mapped != "" { item.WorkloadID = mapped }
+		if old, ok := existingEndpoints[item.Name]; ok {
+			item.ID = old.ID
+			if item.HostPort == nil { item.HostPort = old.HostPort }
+			if item.Domain == nil { item.Domain = old.Domain }
+			if item.Status == "" || item.Status == ObservedUnknown { item.Status = old.Status }
+			item.CreatedAt = old.CreatedAt
+		}
 		if item.ID == "" { item.ID = NewID() }
 		item.ApplicationID = applicationID
 		if item.WorkloadID == "" {
@@ -192,10 +232,24 @@ func (r *Repository) ReplaceTopology(ctx context.Context, applicationID string, 
 		if item.Protocol == "" { item.Protocol = "http" }
 		if item.TLSMode == "" { item.TLSMode = "none" }
 		if item.Status == "" { item.Status = ObservedUnknown }
-		item.CreatedAt, item.UpdatedAt = now, now
-		_, err := tx.ExecContext(ctx, `INSERT INTO endpoints(id,application_id,workload_id,name,protocol,container_port,host_port,domain,public,primary_endpoint,tls_mode,health_path,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			item.ID, applicationID, item.WorkloadID, item.Name, item.Protocol, item.ContainerPort, item.HostPort, item.Domain, boolInt(item.Public), boolInt(item.Primary), item.TLSMode, nullText(item.HealthPath), item.Status, dbTime(now), dbTime(now))
+		if item.CreatedAt.IsZero() { item.CreatedAt = now }
+		item.UpdatedAt = now
+		_, err := tx.ExecContext(ctx, `INSERT INTO endpoints(id,application_id,workload_id,name,protocol,container_port,host_port,domain,public,primary_endpoint,tls_mode,health_path,status,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			ON CONFLICT(id) DO UPDATE SET workload_id=excluded.workload_id,name=excluded.name,protocol=excluded.protocol,container_port=excluded.container_port,host_port=excluded.host_port,domain=excluded.domain,public=excluded.public,primary_endpoint=excluded.primary_endpoint,tls_mode=excluded.tls_mode,health_path=excluded.health_path,status=excluded.status,updated_at=excluded.updated_at`,
+			item.ID,applicationID,item.WorkloadID,item.Name,item.Protocol,item.ContainerPort,item.HostPort,item.Domain,boolInt(item.Public),boolInt(item.Primary),item.TLSMode,nullText(item.HealthPath),item.Status,dbTime(item.CreatedAt),dbTime(item.UpdatedAt))
 		if err != nil { return fmt.Errorf("store endpoint %s: %w", item.Name, err) }
+		plannedEndpoints[item.Name] = true
+	}
+
+	for name, old := range existingEndpoints {
+		if plannedEndpoints[name] { continue }
+		if _, err := tx.ExecContext(ctx, `DELETE FROM application_port_leases WHERE endpoint_id=?`, old.ID); err != nil { return err }
+		if _, err := tx.ExecContext(ctx, `DELETE FROM endpoints WHERE id=?`, old.ID); err != nil { return err }
+	}
+	for name, old := range existingWorkloads {
+		if plannedWorkloads[name] { continue }
+		if _, err := tx.ExecContext(ctx, `DELETE FROM workloads WHERE id=?`, old.ID); err != nil { return err }
 	}
 	return tx.Commit()
 }
