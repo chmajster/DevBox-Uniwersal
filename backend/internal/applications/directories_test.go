@@ -87,6 +87,20 @@ func TestBrowseDirectoriesDoesNotExposeSymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestBrowseDirectoriesRejectsMissingDirectory(t *testing.T) {
+	root := t.TempDir()
+	service := directoryTestService(root)
+	if _, err := service.BrowseDirectories(filepath.Join(root, "missing")); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for missing directory, got %v", err)
+	}
+}
+
+func TestClassifyDirectoryErrorMapsPermission(t *testing.T) {
+	if err := classifyDirectoryError("read directory", os.ErrPermission); !errors.Is(err, ErrDirectoryAccess) {
+		t.Fatalf("expected ErrDirectoryAccess for permission error, got %v", err)
+	}
+}
+
 func TestCreateDirectoryCreatesChildInsideAllowedRoot(t *testing.T) {
 	root := t.TempDir()
 	service := directoryTestService(root)
