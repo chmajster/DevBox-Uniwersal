@@ -50,6 +50,20 @@ func TestBrowseDirectoriesListsOnlyConfiguredRootsWhenPathIsEmpty(t *testing.T) 
 	}
 }
 
+func TestBrowseDirectoriesRejectsMissingDirectory(t *testing.T) {
+	root := t.TempDir()
+	missing := filepath.Join(root, "missing")
+	if _, err := browseDirectories(missing, []string{root}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for missing directory, got %v", err)
+	}
+}
+
+func TestClassifyDirectoryBrowseErrorMapsPermission(t *testing.T) {
+	if err := classifyDirectoryBrowseError("read directory", os.ErrPermission); !errors.Is(err, ErrDirectoryAccess) {
+		t.Fatalf("expected ErrDirectoryAccess for permission error, got %v", err)
+	}
+}
+
 func TestBrowseDirectoriesRejectsRelativePaths(t *testing.T) {
 	root := t.TempDir()
 	if _, err := browseDirectories("../relative", []string{root}); err == nil {
