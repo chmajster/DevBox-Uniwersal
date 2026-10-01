@@ -37,4 +37,8 @@
 .acp-logs { background: var(--panel-alt); border: 1px solid var(--border); padding: 18px; border-radius: 8px; max-height: 65vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .82rem; line-height: 1.6; }
 .acp-secret-list { display: grid; gap: 10px; margin: 20px 0; }
 .acp-secret-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding: 10px 0; }
-@media (max-width: 720px) { .acp-fields, .acp-facts { grid-template-columns: 1fr; } .acp-card { padding: 16px; } .acp-header { align-items: flex-start; } .acp-toolbar > label { width: 100%; } }
+.application-directory-field { display: grid; gap: 8px; min-width: 0; }
+.application-directory-field > label { margin: 0; }
+.application-directory-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
+.application-directory-row > button { white-space: nowrap; }
+@media (max-width: 720px) { .acp-fields, .acp-facts { grid-template-columns: 1fr; } .acp-card { padding: 16px; } .acp-header { align-items: flex-start; } .acp-toolbar > label { width: 100%; } .application-directory-row { grid-template-columns: 1fr; } }
