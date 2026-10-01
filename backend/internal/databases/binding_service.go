@@ -326,7 +326,9 @@ func (s *Service) ResolveRuntimeDatabase(ctx context.Context, projectID string) 
 				return providers.ProjectDatabaseRuntime{}, err
 			}
 			host, port := engine.Endpoint()
-			if applicationEngine, ok := engine.(interface{ ApplicationEndpoint() providers.DatabaseEndpoint }); ok {
+			if applicationEngine, ok := engine.(interface {
+				ApplicationEndpoint() providers.DatabaseEndpoint
+			}); ok {
 				endpoint := applicationEngine.ApplicationEndpoint()
 				host, port = endpoint.Host, endpoint.Port
 			}
