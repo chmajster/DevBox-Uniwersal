@@ -251,6 +251,45 @@ func TestPortConfigurationHTTPRejectsInvalidPayloadAndBusyDeployment(t *testing.
 	}
 }
 
+
+func TestManualComposePortSelectionIsNotOverwrittenByAutomaticDiscovery(t *testing.T) {
+	repo, project, deploymentID := integrationProject(t, Project{Runtime: "static"})
+	ctx := context.Background()
+	if err := repo.FinishDeployment(ctx, deploymentID, DeploymentSuccess, DeploymentSuccess, "", "", time.Now(), 0); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(repo, nil, nil, nil, t.TempDir())
+	settings := DefaultPortSettings()
+	settings.ReverseProxyMode = "manual"
+	settings.ComposeService = "app"
+	settings.ContainerPort = 8080
+	saved, err := service.UpdatePortConfiguration(ctx, project.ID, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Settings.DetectionMode != "manual" {
+		t.Fatalf("manual selection mode = %q", saved.Settings.DetectionMode)
+	}
+
+	discovery := providers.ComposePortDiscovery{
+		Selected: &providers.ComposePortCandidate{Service: "frontend", ContainerPort: 3000, Protocol: "http", Source: "docker-compose.yml"},
+		Candidates: []providers.ComposePortCandidate{
+			{Service: "frontend", ContainerPort: 3000, Protocol: "http", Source: "docker-compose.yml"},
+		},
+		Fingerprint: "new-compose-fingerprint",
+	}
+	after, err := repo.saveComposePortDiscovery(ctx, project.ID, discovery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Settings.ComposeService != "app" || after.Settings.ContainerPort != 8080 {
+		t.Fatalf("automatic discovery overwrote manual app:8080 selection: %+v", after.Settings)
+	}
+	if after.Settings.ComposeFingerprint != "new-compose-fingerprint" || len(after.Settings.Candidates) != 1 {
+		t.Fatalf("discovery metadata was not refreshed: %+v", after.Settings)
+	}
+}
+
 func TestProjectPrimaryPortDoesNotBecomeHTTPS(t *testing.T) {
 	repo, project, _ := integrationProject(t, Project{Runtime: "static"})
 	for i, purpose := range []string{httpPortPurpose, httpsPortPurpose} {
