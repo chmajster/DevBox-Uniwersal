@@ -2,6 +2,7 @@ export type Role = 'admin' | 'operator' | 'viewer'
 
 export type OperationalStatus = 'RUNNING' | 'STOPPED' | 'FAILED' | 'BUILDING' | 'DEPLOYING' | 'UNHEALTHY'
 export type ProjectSourceType = 'git' | 'local' | 'empty'
+export type ContainerPolicy = 'auto' | 'generated_compose' | 'custom'
 export interface CentralCredential {
   id: string
   name: string
@@ -162,7 +163,7 @@ export interface RuntimeContainerConfig {
   project_id: string
   runtime: string
   runtime_version: string
-  container_policy: 'auto' | 'generated_compose' | 'custom'
+  container_policy: ContainerPolicy
   modules: RuntimeModule[]
   container_name?: string
   image_tag?: string
@@ -528,7 +529,7 @@ export interface Project {
   local_path: string
   runtime: string
   runtime_version: string
-  container_policy: 'auto' | 'custom'
+  container_policy: ContainerPolicy
   working_directory: string
   build_command: string
   start_command: string
