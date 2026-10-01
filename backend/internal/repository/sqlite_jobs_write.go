@@ -16,7 +16,7 @@ func (r *SQLiteJobs) CreateJob(ctx context.Context, job domain.Job) error {
 	if err != nil {
 		return fmt.Errorf("marshal job payload: %w", err)
 	}
-	_, err = r.db.ExecContext(ctx, `INSERT INTO jobs(id,type,status,project_id,requested_by,payload_json,created_at) VALUES(?,?,?,?,?,?,?)`, job.ID, job.Type, job.Status, job.ProjectID, job.RequestedBy, string(payload), job.CreatedAt.UTC().Format(time.RFC3339Nano))
+	_, err = r.db.ExecContext(ctx, `INSERT INTO jobs(id,type,status,project_id,application_id,requested_by,payload_json,created_at) VALUES(?,?,?,?,?,?,?,?)`, job.ID, job.Type, job.Status, job.ProjectID, job.ApplicationID, job.RequestedBy, string(payload), job.CreatedAt.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("create job: %w", err)
 	}
