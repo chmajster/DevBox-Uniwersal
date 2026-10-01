@@ -67,9 +67,11 @@ type ContainerSpec struct {
 }
 
 type ContainerInfo struct {
-	ID    string
-	Name  string
-	State string
+	ID     string
+	Name   string
+	Image  string
+	State  string
+	Health string
 }
 
 type DockerProvider interface {

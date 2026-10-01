@@ -172,6 +172,9 @@ func (p *CLIProvider) InspectContainer(ctx context.Context, id string) (Containe
 			Running    bool   `json:"Running"`
 			StartedAt  string `json:"StartedAt"`
 			FinishedAt string `json:"FinishedAt"`
+			Health struct {
+				Status string `json:"Status"`
+			} `json:"Health"`
 		} `json:"State"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil || len(raw) != 1 {
@@ -187,7 +190,7 @@ func (p *CLIProvider) InspectContainer(ctx context.Context, id string) (Containe
 			ComposeProject: item.Config.Labels["com.docker.compose.project"],
 			ProjectID:      item.Config.Labels["io.devbox.project"],
 		},
-		Running: item.State.Running, StartedAt: item.State.StartedAt, FinishedAt: item.State.FinishedAt, Labels: item.Config.Labels,
+		Running: item.State.Running, Health: item.State.Health.Status, StartedAt: item.State.StartedAt, FinishedAt: item.State.FinishedAt, Labels: item.Config.Labels,
 	}, nil
 }
 
@@ -327,7 +330,7 @@ func (p *CLIProvider) Inspect(ctx context.Context, id string) (providers.Contain
 	if err != nil {
 		return providers.ContainerInfo{}, err
 	}
-	return providers.ContainerInfo{ID: item.ID, Name: item.Name, State: item.State}, nil
+	return providers.ContainerInfo{ID: item.ID, Name: item.Name, Image: item.Image, State: item.State, Health: item.Health}, nil
 }
 
 func (p *CLIProvider) Logs(ctx context.Context, id string, tail int, follow bool) (io.ReadCloser, error) {
