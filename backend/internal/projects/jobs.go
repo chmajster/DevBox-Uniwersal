@@ -298,6 +298,17 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		config.ContainerPolicy = ContainerPolicyAuto
 	}
 	if config.ContainerPolicy == ContainerPolicyGeneratedCompose {
+		if strings.TrimSpace(config.Runtime) == "" && strings.TrimSpace(p.Runtime) == "" {
+			runtimeName, detectErr := h.detectRuntime(ctx, p, workDir)
+			if detectErr != nil {
+				return nil, detectErr
+			}
+			config.Runtime = runtimeName
+			p.Runtime = runtimeName
+			if err := h.repo.UpdateRuntime(ctx, p.ID, runtimeName); err != nil {
+				return nil, err
+			}
+		}
 		generated, err := generateDevBoxCompose(p, config, workDir, commitAfter)
 		if err != nil {
 			return nil, err
