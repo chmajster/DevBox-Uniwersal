@@ -297,10 +297,24 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	if config.ContainerPolicy == "" {
 		config.ContainerPolicy = ContainerPolicyAuto
 	}
+	if config.ContainerPolicy == ContainerPolicyGeneratedCompose {
+		generated, err := generateDevBoxCompose(p, config, workDir, commitAfter)
+		if err != nil {
+			return nil, err
+		}
+		_ = h.logger.Log(ctx, job.ID, "info", "deployment.compose.generated", map[string]any{
+			"compose_path": generated.ComposePath,
+			"dockerfile_path": generated.DockerfilePath,
+			"runtime": generated.Runtime,
+		})
+	}
 	hasCompose := projectHasCompose(workDir)
 	hasDockerfile := projectHasDockerfile(workDir)
 	if config.ContainerPolicy == ContainerPolicyCustom && !hasCompose && !hasDockerfile {
 		return nil, errors.New("custom container policy requires compose.yaml/docker-compose.yml or Dockerfile")
+	}
+	if config.ContainerPolicy == ContainerPolicyGeneratedCompose && !hasCompose {
+		return nil, errors.New("generated Compose policy did not produce a compose.yaml file")
 	}
 
 	if err := setStage(DeploymentDatabase); err != nil {
