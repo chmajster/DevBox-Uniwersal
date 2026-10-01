@@ -541,12 +541,13 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 						}
 					}
 				}
+				staleDiscovery := network.Settings.ComposeFingerprint != "" && network.Settings.ComposeFingerprint != discovery.Fingerprint
 				network, err = h.repo.saveComposePortDiscovery(ctx, p.ID, discovery)
 				if err != nil {
 					return nil, err
 				}
 				if discovery.Selected == nil {
-					return waitForPortConfiguration(discovery, network.Settings.ComposeFingerprint != "" && network.Settings.ComposeFingerprint != discovery.Fingerprint)
+					return waitForPortConfiguration(discovery, staleDiscovery)
 				}
 				selected := *discovery.Selected
 				if selected.HostPort == 0 || network.Configured {
@@ -636,8 +637,11 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			h.logPortPlan(ctx, job.ID, "published", portPlan)
 		}
 		composeCommitted = true
+		if err := setStage(DeploymentReverseProxy); err != nil {
+			return nil, err
+		}
 		var routeWarning string
-		if h.integrations.Routes != nil {
+		if proxyMode != "disabled" && h.integrations.Routes != nil {
 			if targetPort == 0 {
 				routeWarning = "reverse proxy not configured: healthy application has no host target port"
 			} else if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), targetPort); err != nil {
@@ -788,6 +792,9 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	} else {
 		_ = h.logger.Log(ctx, job.ID, "info", "runtime.container.build.skipped", map[string]any{"image": spec.Image, "fingerprint": spec.Fingerprint})
 	}
+	if err := setStage(DeploymentRuntimeConfiguration); err != nil {
+		return nil, err
+	}
 
 	if err := setStage(DeploymentStarting); err != nil {
 		return nil, err
@@ -809,8 +816,11 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	}); err != nil {
 		return nil, err
 	}
+	if err := setStage(DeploymentReverseProxy); err != nil {
+		return nil, err
+	}
 	var routeWarning string
-	if h.integrations.Routes != nil {
+	if reverseProxyMode(network.Settings) != "disabled" && h.integrations.Routes != nil {
 		if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), port); err != nil {
 			routeWarning = "reverse proxy: " + err.Error()
 			_ = h.logger.Log(ctx, job.ID, "warn", "deployment.reverse_proxy.warning", map[string]any{
@@ -932,6 +942,38 @@ func healthcheckPort(value string) (int, bool) {
 	return port, err == nil && port > 0 && port <= 65535
 }
 
+func composeDiscoveryHealthcheck(project Project, settings PortSettings) string {
+	configured := strings.TrimSpace(settings.Healthcheck)
+	if configured != "" && configured != "/" {
+		return configured
+	}
+	return strings.TrimSpace(project.Healthcheck)
+}
+
+func composePortDiscoveryMessage(discovery providers.ComposePortDiscovery, stale bool) string {
+	var text strings.Builder
+	if stale {
+		text.WriteString("Zapisana konfiguracja portu jest nieaktualna.\n\n")
+	}
+	if len(discovery.Candidates) > 0 {
+		text.WriteString("Nie udało się jednoznacznie określić portu aplikacji.")
+		text.WriteString("\n\nWykryte porty aplikacyjne:")
+		for _, candidate := range discovery.Candidates {
+			fmt.Fprintf(&text, "\n- %s:%d (%s)", candidate.Service, candidate.ContainerPort, candidate.Protocol)
+		}
+	} else {
+		text.WriteString("Nie znaleziono portu HTTP aplikacji.")
+	}
+	if len(discovery.Infrastructure) > 0 {
+		text.WriteString("\n\nWykryte serwisy infrastrukturalne:")
+		for _, candidate := range discovery.Infrastructure {
+			fmt.Fprintf(&text, "\n- %s:%d", candidate.Service, candidate.ContainerPort)
+		}
+		text.WriteString("\n\nSerwisy infrastrukturalne nie są używane przez reverse proxy.")
+	}
+	return text.String()
+}
+
 func routeHostname(p Project) string {
 	if p.Domain != nil && strings.TrimSpace(*p.Domain) != "" {
 		return strings.TrimSpace(*p.Domain)
@@ -966,14 +1008,16 @@ func payloadBool(payload map[string]any, key string) bool {
 
 func validDeploymentTransition(from, to string) bool {
 	next := map[string]string{
-		DeploymentQueued:         DeploymentPreparing,
-		DeploymentPreparing:      DeploymentUpdatingSource,
-		DeploymentUpdatingSource: DeploymentDatabase,
-		DeploymentDatabase:       DeploymentDependencies,
-		DeploymentDependencies:   DeploymentBuilding,
-		DeploymentBuilding:       DeploymentStarting,
-		DeploymentStarting:       DeploymentHealthcheck,
-		DeploymentHealthcheck:    DeploymentSuccess,
+		DeploymentQueued:               DeploymentPreparing,
+		DeploymentPreparing:            DeploymentUpdatingSource,
+		DeploymentUpdatingSource:       DeploymentDatabase,
+		DeploymentDatabase:             DeploymentDependencies,
+		DeploymentDependencies:         DeploymentBuilding,
+		DeploymentBuilding:             DeploymentRuntimeConfiguration,
+		DeploymentRuntimeConfiguration: DeploymentStarting,
+		DeploymentStarting:             DeploymentHealthcheck,
+		DeploymentHealthcheck:          DeploymentReverseProxy,
+		DeploymentReverseProxy:         DeploymentSuccess,
 	}
 	return next[from] == to
 }
