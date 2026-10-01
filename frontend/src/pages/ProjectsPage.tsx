@@ -241,7 +241,7 @@ export function ProjectsPage() {
         <div className="project-card-top"><span className="project-symbol"><Icon name="code" size={23} /></span><StatusBadge status={project.status} /></div>
         <h2><Link to={`/apps/${encodeURIComponent(project.id)}`}>{project.name}</Link></h2>
         <p className="project-description">{project.description || project.domain || 'Projekt zarządzany przez DevBox'}</p>
-        <div className="project-tags"><span>{project.runtime || 'Runtime nieustawiony'}</span><span>{project.container_policy === 'custom' ? 'Własny Docker' : 'Kontener zarządzany'}</span></div>
+        <div className="project-tags"><span>{project.runtime || 'Runtime nieustawiony'}</span><span>{project.container_policy === 'generated_compose' ? 'DevBox Compose' : project.container_policy === 'custom' ? 'Własny Docker' : 'Kontener zarządzany'}</span></div>
         <dl className="project-meta"><div><dt><Icon name="branch" size={14} />Gałąź</dt><dd>{project.branch || '—'}</dd></div><div><dt><Icon name="network" size={14} />Port</dt><dd>{project.port ?? '—'}</dd></div><div><dt><Icon name="globe" size={14} />Domena</dt><dd><ProjectDomainLink project={project} /></dd></div><div><dt><Icon name="code" size={14} />Commit</dt><dd><code>{project.current_commit?.slice(0, 10) || '—'}</code></dd></div></dl>
         <ProjectLiveStatus project={project} job={jobsByProject.get(project.id)} unavailable={Boolean(jobListing.error)} />
         {actions(project)}
