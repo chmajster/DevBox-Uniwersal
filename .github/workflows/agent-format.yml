@@ -17,14 +17,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
-      - name: Format changed Go code
+      - name: Format Go backend
         run: |
-          gofmt -w backend/internal/applications backend/internal/drivers backend/internal/sourcegit backend/internal/docker/compose_application.go backend/internal/docker/provider.go backend/internal/docker/types.go backend/internal/providers/contracts.go backend/internal/jobs backend/internal/repository/sqlite_jobs.go backend/internal/repository/sqlite_jobs_write.go backend/internal/domain/models.go backend/cmd/devbox/main.go
+          gofmt -w backend
           if git diff --quiet; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add backend
-          git commit -m "style: gofmt application control plane"
+          git commit -m "style: gofmt backend"
           git push origin HEAD:agent/140-application-control-plane
