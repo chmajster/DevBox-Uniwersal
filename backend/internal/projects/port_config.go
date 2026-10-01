@@ -68,6 +68,11 @@ func normalizePortSettings(settings PortSettings) PortSettings {
 		settings.Healthcheck = "/"
 	}
 	settings.DetectionMode = strings.ToLower(strings.TrimSpace(settings.DetectionMode))
+	return settings
+}
+
+func normalizePersistedPortSettings(settings PortSettings) PortSettings {
+	settings = normalizePortSettings(settings)
 	if settings.HostPort == 0 {
 		settings.HostPort = 8080
 	}
@@ -133,14 +138,14 @@ func (r *Repository) PortConfiguration(ctx context.Context, projectID string) (P
 	if err := json.Unmarshal([]byte(desired), &result.Settings); err != nil {
 		return PortConfiguration{}, fmt.Errorf("read desired port configuration: %w", err)
 	}
-	result.Settings = normalizePortSettings(result.Settings)
+	result.Settings = normalizePersistedPortSettings(result.Settings)
 	result.Configured = configured != 0
 	if applied.Valid && applied.String != "" {
 		var state AppliedPortSettings
 		if err := json.Unmarshal([]byte(applied.String), &state); err != nil {
 			return PortConfiguration{}, fmt.Errorf("read applied port configuration: %w", err)
 		}
-		state.Settings = normalizePortSettings(state.Settings)
+		state.Settings = normalizePersistedPortSettings(state.Settings)
 		result.Applied = &state
 	}
 	return result, nil
