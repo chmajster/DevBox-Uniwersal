@@ -419,8 +419,8 @@ func (p *CLIProvider) ComposeHealthy(ctx context.Context, directory, projectName
 		if state != "running" {
 			return fmt.Errorf("docker compose service %s is %s", process.Service, process.State)
 		}
-		if health == "unhealthy" {
-			return fmt.Errorf("docker compose service %s is unhealthy", process.Service)
+		if health != "" && health != "healthy" {
+			return fmt.Errorf("docker compose service %s health is %s", process.Service, health)
 		}
 	}
 	return nil
@@ -431,7 +431,7 @@ func (p *CLIProvider) ComposePS(ctx context.Context, directory, projectName stri
 	if err != nil {
 		return nil, err
 	}
-	args = append(args, "ps", "--format", "json")
+	args = append(args, "ps", "--all", "--format", "json")
 	out, _, err := p.runCompose(ctx, args...)
 	if err != nil {
 		if composePSFormatUnsupported(err) {
@@ -615,7 +615,7 @@ func (p *CLIProvider) composePSByInspect(ctx context.Context, directory, project
 	if err != nil {
 		return nil, err
 	}
-	args = append(args, "ps", "-q")
+	args = append(args, "ps", "--all", "-q")
 	out, _, err := p.runCompose(ctx, args...)
 	if err != nil {
 		return nil, err

@@ -7,16 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
 )
 
 const (
@@ -46,6 +49,8 @@ type CredentialResolver interface {
 }
 
 type Service struct {
+	secretStore  secrets.SecretStore
+	mutationMu   sync.Mutex
 	repo         *Repository
 	drivers      *DriverRegistry
 	selector     *Selector
@@ -58,11 +63,15 @@ type Service struct {
 }
 
 func NewService(repo *Repository, drivers *DriverRegistry, runner jobs.JobRunner, git GitSourceProvider, logs ContainerLogProvider, credentials CredentialResolver, projectsRoot string, allowedRoots ...string) *Service {
+	if drivers == nil {
+		drivers = NewDriverRegistry()
+	}
 	roots := append([]string{projectsRoot}, allowedRoots...)
 	return &Service{repo: repo, drivers: drivers, selector: NewSelector(drivers), jobs: runner, git: git, logs: logs, credentials: credentials, projectsRoot: projectsRoot, allowedRoots: normalizeRoots(roots)}
 }
 
 type Summary struct {
+	ActiveOperation *ActiveOperation `json:"active_operation,omitempty"`
 	Application
 	Source          Source      `json:"source"`
 	Runtime         *Runtime    `json:"runtime,omitempty"`
@@ -73,6 +82,7 @@ type Summary struct {
 }
 
 type Detail struct {
+	ActiveOperation *ActiveOperation `json:"active_operation,omitempty"`
 	Application
 	Source      Source       `json:"source"`
 	Runtime     *Runtime     `json:"runtime,omitempty"`
@@ -150,7 +160,11 @@ func (s *Service) summary(ctx context.Context, app Application) (Summary, error)
 		copy := deployments[0]
 		last = &copy
 	}
-	return Summary{Application: app, Source: source, Runtime: runtime, WorkloadCount: len(workloads), PrimaryEndpoint: primary, LastDeployment: last, Status: AggregateStatus(app.DesiredState, workloads)}, nil
+	operation, err := s.repo.ActiveOperation(ctx, app.ID)
+	if err != nil {
+		return Summary{}, err
+	}
+	return Summary{ActiveOperation: operation, Application: app, Source: source, Runtime: runtime, WorkloadCount: len(workloads), PrimaryEndpoint: primary, LastDeployment: last, Status: AggregateStatus(app.DesiredState, workloads)}, nil
 }
 
 func (s *Service) Get(ctx context.Context, id string) (Detail, error) {
@@ -178,7 +192,11 @@ func (s *Service) Get(ctx context.Context, id string) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
-	return Detail{Application: app, Source: source, Runtime: runtime, Workloads: workloads, Endpoints: endpoints, Deployments: deployments, Status: AggregateStatus(app.DesiredState, workloads)}, nil
+	operation, err := s.repo.ActiveOperation(ctx, app.ID)
+	if err != nil {
+		return Detail{}, err
+	}
+	return Detail{ActiveOperation: operation, Application: app, Source: source, Runtime: runtime, Workloads: workloads, Endpoints: endpoints, Deployments: deployments, Status: AggregateStatus(app.DesiredState, workloads)}, nil
 }
 
 func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) (Detail, error) {
@@ -194,6 +212,16 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 	}
 	if err := validateConfiguration(input.Configuration); err != nil {
 		return Detail{}, err
+	}
+	if input.Driver != "" {
+		if _, ok := s.drivers.Get(input.Driver); !ok {
+			return Detail{}, fmt.Errorf("%w: unknown deployment driver", ErrInvalidInput)
+		}
+	}
+	if parsed, err := url.Parse(input.Source.RepositoryURL); err == nil && parsed.User != nil {
+		if _, hasPassword := parsed.User.Password(); hasPassword {
+			return Detail{}, fmt.Errorf("%w: use a credential reference, not a password in the Git URL", ErrInvalidInput)
+		}
 	}
 	slug := slugify(name)
 	if slug == "" {
@@ -237,6 +265,11 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 }
 
 func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Detail, error) {
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+	if err := s.repo.CheckIdle(ctx, id); err != nil {
+		return Detail{}, err
+	}
 	app, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return Detail{}, err
@@ -247,7 +280,7 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Det
 			return Detail{}, fmt.Errorf("%w: name", ErrInvalidInput)
 		}
 		app.Name = name
-		app.Slug = slugify(name)
+		// Slug is a stable resource/work-directory identity, not a display label.
 	}
 	if input.Description != nil {
 		app.Description = strings.TrimSpace(*input.Description)
@@ -259,6 +292,15 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Det
 				return Detail{}, fmt.Errorf("%w: driver %q", ErrInvalidInput, driver)
 			}
 		}
+		if driver != app.Driver {
+			workloads, err := s.repo.Workloads(ctx, id)
+			if err != nil {
+				return Detail{}, err
+			}
+			if len(workloads) > 0 {
+				return Detail{}, fmt.Errorf("%w: deployment driver cannot change after provisioning", ErrConflict)
+			}
+		}
 		app.Driver = driver
 	}
 	if input.DesiredState != nil {
@@ -266,6 +308,16 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Det
 			return Detail{}, fmt.Errorf("%w: desired_state", ErrInvalidInput)
 		}
 		app.DesiredState = *input.DesiredState
+	}
+	if input.Configuration != nil {
+		if err := validateConfiguration(*input.Configuration); err != nil {
+			return Detail{}, err
+		}
+		raw, err := json.Marshal(*input.Configuration)
+		if err != nil {
+			return Detail{}, fmt.Errorf("%w: configuration", ErrInvalidInput)
+		}
+		app.SourceConfig = raw
 	}
 	if input.AutoStart != nil {
 		app.AutoStart = *input.AutoStart
@@ -278,11 +330,24 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Det
 }
 
 func (s *Service) Detect(ctx context.Context, input CreateInput, actor *string) (DetectResponse, error) {
+	if parsed, err := url.Parse(input.Source.RepositoryURL); err == nil && parsed.User != nil {
+		if _, exists := parsed.User.Password(); exists {
+			return DetectResponse{}, fmt.Errorf("%w: use saved Git credentials", ErrInvalidInput)
+		}
+	}
+
+	input.SourceType = strings.ToLower(strings.TrimSpace(input.SourceType))
+	if input.SourceType != SourceGit && input.SourceType != SourceLocal && input.SourceType != SourceEmpty && input.SourceType != SourceDockerImage {
+		return DetectResponse{}, fmt.Errorf("%w: source_type", ErrInvalidInput)
+	}
 	if err := validateConfiguration(input.Configuration); err != nil {
 		return DetectResponse{}, err
 	}
 	source := Source{RepositoryURL: strings.TrimSpace(input.Source.RepositoryURL), Reference: strings.TrimSpace(input.Source.Reference), LocalPath: strings.TrimSpace(input.Source.LocalPath), DockerImage: strings.TrimSpace(input.Source.DockerImage), CredentialID: input.Source.CredentialID}
-	if input.SourceType == SourceGit && source.LocalPath == "" {
+	if input.SourceType == SourceGit {
+		if source.RepositoryURL == "" {
+			return DetectResponse{}, fmt.Errorf("%w: repository_url is required", ErrInvalidInput)
+		}
 		if s.jobs == nil {
 			return DetectResponse{}, ErrProviderUnavailable
 		}
@@ -303,8 +368,6 @@ func (s *Service) Detect(ctx context.Context, input CreateInput, actor *string) 
 		if err != nil {
 			return DetectResponse{}, err
 		}
-	} else {
-		workDir = source.LocalPath
 	}
 	result, err := s.selector.Detect(ctx, DetectRequest{SourceType: input.SourceType, Source: source, WorkDir: workDir, Configuration: input.Configuration}, input.Driver)
 	if err != nil && !errors.Is(err, ErrConfigurationRequired) {
@@ -314,6 +377,14 @@ func (s *Service) Detect(ctx context.Context, input CreateInput, actor *string) 
 }
 
 func (s *Service) EnqueueDeploy(ctx context.Context, id string, actor *string) (Deployment, domain.Job, error) {
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+	if s.jobs == nil {
+		return Deployment{}, domain.Job{}, ErrProviderUnavailable
+	}
+	if err := s.repo.CheckIdle(ctx, id); err != nil {
+		return Deployment{}, domain.Job{}, err
+	}
 	app, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return Deployment{}, domain.Job{}, err
@@ -335,6 +406,14 @@ func (s *Service) EnqueueDeploy(ctx context.Context, id string, actor *string) (
 }
 
 func (s *Service) EnqueueLifecycle(ctx context.Context, id, action string, actor *string, payload map[string]any) (domain.Job, error) {
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+	if s.jobs == nil {
+		return domain.Job{}, ErrProviderUnavailable
+	}
+	if err := s.repo.CheckIdle(ctx, id); err != nil {
+		return domain.Job{}, err
+	}
 	if _, err := s.repo.Get(ctx, id); err != nil {
 		return domain.Job{}, err
 	}
@@ -390,6 +469,9 @@ func (s *Service) Events(ctx context.Context, id string) ([]map[string]any, erro
 }
 
 func (s *Service) Logs(ctx context.Context, id string, tail int, workloadFilter string) ([]ApplicationLog, error) {
+	if _, err := s.repo.Get(ctx, id); err != nil {
+		return nil, err
+	}
 	if s.logs == nil {
 		return nil, ErrProviderUnavailable
 	}
@@ -402,6 +484,10 @@ func (s *Service) Logs(ctx context.Context, id string, tail int, workloadFilter 
 	}
 	if tail > 2000 {
 		tail = 2000
+	}
+	secretValues, err := s.runtimeSecrets(ctx, id)
+	if err != nil {
+		return nil, err
 	}
 	out := []ApplicationLog{}
 	for _, workload := range workloads {
@@ -420,7 +506,7 @@ func (s *Service) Logs(ctx context.Context, id string, tail int, workloadFilter 
 		}
 		scanner := bufio.NewScanner(reader)
 		for scanner.Scan() {
-			out = append(out, ApplicationLog{Workload: workload.Name, Line: redactLogLine(scanner.Text())})
+			out = append(out, ApplicationLog{Workload: workload.Name, Line: redactLogLine(redactSecretValues(scanner.Text(), secretValues))})
 		}
 		_ = reader.Close()
 		if err := scanner.Err(); err != nil {
@@ -576,16 +662,6 @@ func slugify(value string) string {
 
 var secretKeyPattern = regexp.MustCompile(`(?i)(password|passwd|secret|token|private.?key|api.?key|credential)`)
 
-func validateConfiguration(config map[string]any) error {
-	for key, value := range config {
-		if secretKeyPattern.MatchString(key) {
-			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
-				return fmt.Errorf("%w: plaintext secret-like configuration %q is forbidden; use SecretStore references", ErrInvalidInput, key)
-			}
-		}
-	}
-	return nil
-}
 func inputPayload(input CreateInput) (map[string]any, error) {
 	raw, err := json.Marshal(input)
 	if err != nil {
@@ -608,6 +684,9 @@ func decodeConfiguration(raw json.RawMessage) map[string]any {
 	out := map[string]any{}
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &out)
+	}
+	if out == nil {
+		out = map[string]any{}
 	}
 	return out
 }

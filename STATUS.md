@@ -2,6 +2,14 @@
 
 DevBox Universal is an integrated local development control plane.
 
+## Application control plane (PR #140)
+
+- The active `/apps` workspace uses `/api/v1/applications`, with Git/local/image/empty onboarding and managed/Dockerfile/image/Compose drivers.
+- Live workload-derived state, explicit configuration waiting, persistent endpoint identities/leases, configuration and encrypted secret editing, owned deployment/lifecycle jobs, cancellation/retry and audit.
+- Application list/details and reconciliation refresh every five seconds; unavailable providers invalidate observations rather than retain green state.
+- Additive migrations retain legacy Project data. The Project lifecycle module is no longer mounted. Project-specific features described in the legacy inventory below are not automatically available for Application IDs.
+- See `docs/application-control-plane.md` for exact supported behavior, safety semantics, verification and boundaries (no automatic database-binding or DNS/TLS-route adoption).
+
 ## Core
 
 - Admin-only control-plane user management supports account creation, Admin/Operator/Viewer role changes, enable/disable, password change/generation, per-user session revocation and account deletion with last-admin/self-protection safeguards.
@@ -19,19 +27,13 @@ DevBox Universal is an integrated local development control plane.
 - Serialized, abortable polling: inventory/statuses every 30 seconds, dashboard metrics every 10 seconds, dashboard logs every 5 seconds; hidden-tab suspension and explicit unavailable/error states.
 - Session charts retain up to two hours / 721 real samples; no synthetic history, network counters or temperature readings. See `docs/control-room-ui.md` for exact semantics.
 - Persistent compact sidebar, mobile drawer and role-aware Ctrl/Cmd+K navigation/application search.
-- Searchable applications in persistent card/table views, status filtering, deployment queue feedback and archive confirmation.
-- Workspace application badges and status filtering use live Docker ownership/state; a running managed/Compose deployment overrides stale persisted project errors, with stopped/failed/unhealthy container states reflected directly.
-- Project Overview exposes the active HTTP application address as a direct new-tab link using the DevBox browser host and the project's resolved host port.
-- Application Settings allow operators to change the selected runtime/technology and the source directory of local-source applications; path changes use backend directory validation and Git/empty managed paths stay read-only.
-- Project Ports uses a compact host-to-container mapping table with inline TCP type, automatic internal HTTP port detection, optional HTTPS passthrough and the existing save/deploy workflow.
 - Dashboard links select active jobs, job details and full log-source filters; existing SSE views remain available.
 - Redesigned login, persistent dark/light theme and shared module forms, tables, statuses and logs.
 - Native accessible dialogs, keyboard navigation, visible focus, reduced-motion support and graceful handling of disabled browser storage.
 - Frontend unit tests and a Chromium smoke workflow with synthetic API fixtures and screenshot artifacts. This is not full provider/infrastructure E2E coverage.
 - Update failures expose the exact installer/updater stage, exit code, sanitized recent updater log lines and the most relevant failure line directly in the Updates UI; secrets matching common credential patterns are redacted before API delivery.
-- Runtime/deployment API and persistence now use the managed-container model; migration 007 adds per-project runtime versions, container policy, module selections and managed image state.
 
-## Projects / Git / deployments
+## Legacy Projects / Git / deployments (historical, not the active application API)
 
 - Git, local-directory and empty-project onboarding; local Git worktrees on WSL/Windows mounts use per-command `safe.directory` trust so DevBox can read repositories owned by the interactive Windows user without changing global Git configuration.
 - Project CRUD/archive, Git fetch/pull/checkout/history and credential masking.

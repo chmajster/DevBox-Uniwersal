@@ -38,6 +38,15 @@ func (s *Service) reconcile(ctx context.Context, id string) (ApplicationState, e
 	}
 	observed, err := driver.Inspect(ctx, InspectRequest{Application: app, Source: source, WorkDir: s.workDir(app, source), Workloads: workloads, Endpoints: endpoints})
 	if err != nil {
+		// An unavailable provider is not evidence that last-known green state
+		// remains valid. Keep resource identities but invalidate observations.
+		for _, w := range workloads {
+			_ = s.repo.UpdateWorkloadObserved(ctx, w.ID, w.DriverResourceID, ObservedUnknown, HealthUnknown, w.Image)
+		}
+		_ = s.repo.UpdateApplicationState(ctx, id, ObservedUnknown, HealthUnknown)
+		for _, e := range endpoints {
+			_ = s.repo.UpdateEndpointRuntime(ctx, e.ID, e.HostPort, ObservedUnknown)
+		}
 		return ApplicationState{}, err
 	}
 	byName := map[string]ObservedWorkload{}
@@ -133,13 +142,13 @@ func aggregateObserved(workloads []Workload) string {
 	if len(workloads) == 0 {
 		return ObservedUnknown
 	}
-	allRunning, allStopped := true, true
+	allRunning, allStopped, anyStarting := true, true, false
 	for _, w := range workloads {
 		if w.ObservedState == ObservedFailed {
 			return ObservedFailed
 		}
 		if w.ObservedState == ObservedStarting {
-			return ObservedStarting
+			anyStarting = true
 		}
 		if w.ObservedState != ObservedRunning {
 			allRunning = false
@@ -147,6 +156,9 @@ func aggregateObserved(workloads []Workload) string {
 		if w.ObservedState != ObservedStopped && w.ObservedState != ObservedExited && w.ObservedState != ObservedMissing {
 			allStopped = false
 		}
+	}
+	if anyStarting {
+		return ObservedStarting
 	}
 	if allRunning {
 		return ObservedRunning
@@ -216,8 +228,8 @@ func (s *Service) ReconcileAll(ctx context.Context, autoHeal bool) error {
 }
 
 func (s *Service) RunReconciler(ctx context.Context, interval time.Duration) {
-	if interval < 10*time.Second {
-		interval = 30 * time.Second
+	if interval < 2*time.Second {
+		interval = 5 * time.Second
 	}
 	_ = s.ReconcileAll(ctx, true)
 	ticker := time.NewTicker(interval)

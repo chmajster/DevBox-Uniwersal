@@ -46,6 +46,14 @@ func (d *Driver) Detect(ctx context.Context, request applications.DetectRequest)
 		return applications.DetectionResult{}, applications.ErrConfigurationRequired
 	}
 	bestRuntime, bestVersion, bestConfidence := "", "", -1
+	if name := driverutil.ConfigString(request.Configuration, "runtime"); name != "" {
+		name = containerspec.NormalizeRuntime(name)
+		version := driverutil.ConfigString(request.Configuration, "runtime_version")
+		if err := containerspec.Validate(name, version, driverutil.Modules(request.Configuration)); err != nil {
+			return applications.DetectionResult{}, fmt.Errorf("%w: %v", applications.ErrInvalidInput, err)
+		}
+		return applications.DetectionResult{Driver: d.Name(), Runtime: name, Version: version, Confidence: "high", Reasons: []string{"runtime configured explicitly"}}, nil
+	}
 	for _, name := range d.runtimes.List() {
 		runtime, ok := d.runtimes.Get(name)
 		if !ok {
@@ -82,7 +90,10 @@ func (d *Driver) Plan(ctx context.Context, request applications.PlanRequest) (ap
 		request.Detection = detection
 	}
 	version := strings.TrimSpace(request.Detection.Version)
-	spec, err := containerspec.GenerateManaged(request.Application.ID, request.WorkDir, runtimeName, version, nil, request.SourceRevision, 1)
+	if configured := driverutil.ConfigString(request.Configuration, "runtime_version"); configured != "" {
+		version = configured
+	}
+	spec, err := containerspec.GenerateManaged(request.Application.ID, request.WorkDir, runtimeName, version, driverutil.Modules(request.Configuration), request.SourceRevision, 1)
 	if err != nil {
 		return applications.DeploymentPlan{}, err
 	}
@@ -90,6 +101,10 @@ func (d *Driver) Plan(ctx context.Context, request applications.PlanRequest) (ap
 	if manifest, err := applications.LoadManifest(request.WorkDir); err != nil {
 		return applications.DeploymentPlan{}, err
 	} else if manifest != nil {
+		if len(manifest.Workloads) > 1 || len(manifest.Endpoints) > 1 {
+			return applications.DeploymentPlan{}, fmt.Errorf("%w: use Compose for multiple services/endpoints", applications.ErrInvalidInput)
+		}
+
 		for _, item := range manifest.Workloads {
 			if item.Role != "" {
 				role = item.Role
@@ -109,13 +124,21 @@ func (d *Driver) Plan(ctx context.Context, request applications.PlanRequest) (ap
 			break
 		}
 	}
+	if len(driverutil.ConfigStringSlice(request.Configuration, "command")) > 0 {
+		return applications.DeploymentPlan{}, fmt.Errorf("%w: set the command in source or use the image driver", applications.ErrInvalidInput)
+	}
+	endpoint = driverutil.ConfigureEndpoint(endpoint, request.Configuration)
+	endpoint.Workload = "web"
+	if endpoint.Protocol != "http" {
+		return applications.DeploymentPlan{}, fmt.Errorf("%w: managed runtimes support HTTP only", applications.ErrInvalidInput)
+	}
 	return applications.DeploymentPlan{
 		Version: 1, ApplicationID: request.Application.ID, Driver: d.Name(), SourceRevision: request.SourceRevision,
 		Runtime:   &applications.Runtime{ApplicationID: request.Application.ID, Name: runtimeName, Version: spec.Version, Metadata: map[string]any{"adapter": "managed"}},
-		Workloads: []applications.PlannedWorkload{{Name: "web", Role: role, Primary: primary, Runtime: runtimeName, Image: spec.Image}},
+		Workloads: []applications.PlannedWorkload{{Name: "web", Role: role, Primary: primary, Runtime: runtimeName, Image: spec.Image, Environment: driverutil.ConfigStringMap(request.Configuration, "environment")}},
 		Endpoints: []applications.PlannedEndpoint{endpoint},
 		Networks:  nonEmpty(d.sharedNetwork), Healthchecks: []applications.HealthCheckPlan{{Workload: "web", Type: "http", Path: endpoint.HealthPath, Port: endpoint.ContainerPort}},
-		Metadata: map[string]any{"fingerprint": spec.Fingerprint},
+		Metadata: map[string]any{"fingerprint": spec.Fingerprint, "modules": driverutil.ConfigStringSlice(request.Configuration, "modules")},
 	}, nil
 }
 
@@ -135,19 +158,29 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 	if err != nil {
 		return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageNetwork, Driver: d.Name(), Workload: workloadPlan.Name, Operation: "reserve_port", Reason: err.Error(), Action: "change the requested host port or release the collision"}
 	}
-	spec, err := containerspec.GenerateManaged(request.Application.ID, request.WorkDir, plan.Runtime.Name, plan.Runtime.Version, nil, plan.SourceRevision, lease.Port)
+	spec, err := containerspec.GenerateManaged(request.Application.ID, request.WorkDir, plan.Runtime.Name, plan.Runtime.Version, driverutil.Modules(plan.Metadata), plan.SourceRevision, lease.Port)
 	if err != nil {
-		_ = d.ports.Release(context.Background(), request.Application.ID, endpoint.ID, lease.Port)
+		driverutil.RollbackPort(d.ports, request, endpoint, lease.Port)
 		return applications.DeploymentResult{}, err
 	}
+	spec, err = driverutil.ApplyListener(spec, endpointPlan, true)
+	if err != nil {
+		driverutil.RollbackPort(d.ports, request, endpoint, lease.Port)
+		return applications.DeploymentResult{}, err
+	}
+	for key, value := range workloadPlan.Environment {
+		spec.Environment[key] = value
+	}
+	spec.SensitiveEnvironment = request.SensitiveEnvironment
+	spec.HealthPath = endpointPlan.HealthPath
 	spec.Labels = driverutil.MergeLabels(spec.Labels, driverutil.Labels(request.Application, request.Deployment, workloadPlan.Name))
 	if d.sharedNetwork != "" {
 		if d.networks == nil {
-			_ = d.ports.Release(context.Background(), request.Application.ID, endpoint.ID, lease.Port)
+			driverutil.RollbackPort(d.ports, request, endpoint, lease.Port)
 			return applications.DeploymentResult{}, fmt.Errorf("%w: network provider", applications.ErrProviderUnavailable)
 		}
 		if err := d.networks.EnsureNetwork(ctx, d.sharedNetwork); err != nil {
-			_ = d.ports.Release(context.Background(), request.Application.ID, endpoint.ID, lease.Port)
+			driverutil.RollbackPort(d.ports, request, endpoint, lease.Port)
 			return applications.DeploymentResult{}, err
 		}
 		if !contains(spec.Networks, d.sharedNetwork) {
@@ -156,17 +189,17 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 	}
 	exists, err := d.engine.ManagedImageExists(ctx, spec.Image)
 	if err != nil {
-		_ = d.ports.Release(context.Background(), request.Application.ID, endpoint.ID, lease.Port)
+		driverutil.RollbackPort(d.ports, request, endpoint, lease.Port)
 		return applications.DeploymentResult{}, err
 	}
 	if !exists {
 		if err := d.engine.BuildManaged(ctx, spec); err != nil {
-			_ = d.ports.Release(context.Background(), request.Application.ID, endpoint.ID, lease.Port)
+			driverutil.RollbackPort(d.ports, request, endpoint, lease.Port)
 			return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageBuildOrPull, Driver: d.Name(), Workload: workloadPlan.Name, Operation: "build_image", Reason: err.Error(), Action: "inspect build logs and runtime dependencies"}
 		}
 	}
 	if err := d.engine.ReplaceManagedPorts(ctx, spec, nil); err != nil {
-		_ = d.ports.Release(context.Background(), request.Application.ID, endpoint.ID, lease.Port)
+		driverutil.RollbackPort(d.ports, request, endpoint, lease.Port)
 		return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageHealthcheck, Driver: d.Name(), Workload: workloadPlan.Name, Operation: "replace_container", Reason: err.Error(), Action: "previous container was restored when possible"}
 	}
 	if endpoint.HostPort != nil && *endpoint.HostPort != lease.Port {

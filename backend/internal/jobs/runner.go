@@ -133,6 +133,11 @@ func (r *Runner) runOne(parent context.Context) {
 	}()
 	_ = r.store.AppendLog(ctx, job.ID, "info", "job.running", nil)
 	result, runErr := handler.Run(ctx, job)
+	current, readErr := r.store.ByID(context.Background(), job.ID)
+	if readErr == nil && current.Status == "cancelled" {
+		_ = r.store.FinishCancellation(context.Background(), job.ID)
+		return
+	}
 	if runErr != nil {
 		current, _ := r.store.ByID(context.Background(), job.ID)
 		if current.Status == "cancelled" {

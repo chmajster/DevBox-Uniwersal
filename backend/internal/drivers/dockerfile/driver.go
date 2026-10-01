@@ -63,6 +63,10 @@ func (d *Driver) Plan(_ context.Context, request applications.PlanRequest) (appl
 	if manifest, err := applications.LoadManifest(request.WorkDir); err != nil {
 		return applications.DeploymentPlan{}, err
 	} else if manifest != nil {
+		if len(manifest.Workloads) > 1 || len(manifest.Endpoints) > 1 {
+			return applications.DeploymentPlan{}, fmt.Errorf("%w: use Compose for multiple services/endpoints", applications.ErrInvalidInput)
+		}
+
 		for _, workload := range manifest.Workloads {
 			if workload.Role != "" {
 				role = workload.Role
@@ -76,8 +80,16 @@ func (d *Driver) Plan(_ context.Context, request applications.PlanRequest) (appl
 			break
 		}
 	}
+	if len(driverutil.ConfigStringSlice(request.Configuration, "command")) > 0 {
+		return applications.DeploymentPlan{}, fmt.Errorf("%w: set the command in source or use the image driver", applications.ErrInvalidInput)
+	}
+	endpoint = driverutil.ConfigureEndpoint(endpoint, request.Configuration)
+	endpoint.Workload = "web"
+	if endpoint.Protocol != "http" {
+		return applications.DeploymentPlan{}, fmt.Errorf("%w: Dockerfile healthcheck supports HTTP; use image/Compose for TCP/TLS", applications.ErrInvalidInput)
+	}
 	return applications.DeploymentPlan{Version: 1, ApplicationID: request.Application.ID, Driver: d.Name(), SourceRevision: request.SourceRevision,
-		Workloads: []applications.PlannedWorkload{{Name: "web", Role: role, Image: spec.Image, Primary: true}},
+		Workloads: []applications.PlannedWorkload{{Name: "web", Role: role, Image: spec.Image, Primary: true, Environment: driverutil.ConfigStringMap(request.Configuration, "environment")}},
 		Endpoints: []applications.PlannedEndpoint{endpoint}, Networks: nonEmpty(d.sharedNetwork),
 		Healthchecks: []applications.HealthCheckPlan{{Workload: "web", Type: "http", Path: endpoint.HealthPath, Port: endpoint.ContainerPort}},
 		Metadata:     map[string]any{"fingerprint": spec.Fingerprint}}, nil
@@ -104,6 +116,19 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 		release(d, request, endpoint, lease.Port)
 		return applications.DeploymentResult{}, err
 	}
+	spec, err = driverutil.ApplyListener(spec, endpointPlan, false)
+	if err != nil {
+		release(d, request, endpoint, lease.Port)
+		return applications.DeploymentResult{}, err
+	}
+	if spec.Environment == nil {
+		spec.Environment = map[string]string{}
+	}
+	for key, value := range workloadPlan.Environment {
+		spec.Environment[key] = value
+	}
+	spec.SensitiveEnvironment = request.SensitiveEnvironment
+	spec.HealthPath = endpointPlan.HealthPath
 	spec.Labels = driverutil.MergeLabels(spec.Labels, driverutil.Labels(request.Application, request.Deployment, workloadPlan.Name))
 	if d.sharedNetwork != "" {
 		if d.networks == nil {
@@ -195,7 +220,7 @@ func preferred(port int) *int {
 	return &port
 }
 func release(d *Driver, r applications.ExecutionRequest, e applications.Endpoint, port int) {
-	_ = d.ports.Release(context.Background(), r.Application.ID, e.ID, port)
+	driverutil.RollbackPort(d.ports, r, e, port)
 }
 func nonEmpty(v string) []string {
 	if strings.TrimSpace(v) == "" {

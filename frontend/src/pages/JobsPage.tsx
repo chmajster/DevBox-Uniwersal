@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 import { apiURL, request } from '../api/client'
 import { listJobLogs } from '../api/operations'
 import type { Job, LogEntry } from '../api/types'
@@ -11,6 +12,9 @@ import { usePolling } from '../control-room/usePolling'
 
 async function loadJobs(signal: AbortSignal) { return collection(await request<Job[] | null>('/jobs', { signal })) }
 export function JobsPage() {
+  const { user } = useAuth()
+  const [mutating, setMutating] = useState(false)
+
   const [params, setParams] = useSearchParams()
   const selected = params.get('job') ?? ''
   const onlyActive = params.get('status') === 'active'
@@ -36,6 +40,16 @@ export function JobsPage() {
     return () => { cancelled = true; stream.close() }
   }, [selected, selectedStatus])
   function inspect(id: string) { const next = new URLSearchParams(params); if (id === selected) next.delete('job'); else next.set('job', id); setParams(next) }
+  async function jobAction(job: Job, action: 'cancel' | 'retry') {
+    if (!job.application_id) return
+    setMutating(true); setError('')
+    try {
+      const result = await request<Job>(`/applications/${encodeURIComponent(job.application_id)}/jobs/${encodeURIComponent(job.id)}/${action}`, { method: 'POST' })
+      if (action === 'retry') setParams(new URLSearchParams({ job: result.id }))
+      listing.refresh()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setMutating(false) }
+  }
   const visible = recent(onlyActive ? pendingJobs(jobs) : jobs)
   return <>
     <div className="page-heading"><div><h1>Zadania</h1><p className="muted">Kolejka operacji, postęp oraz trwałe logi wykonania.</p></div><label><span className="sr-only">Filtr zadań</span><select value={onlyActive ? 'active' : 'all'} onChange={(event) => { const next = new URLSearchParams(params); if (event.target.value === 'active') next.set('status', 'active'); else next.delete('status'); setParams(next) }}><option value="all">Wszystkie zadania</option><option value="active">Oczekujące i w toku</option></select></label></div>
@@ -62,7 +76,13 @@ export function JobsPage() {
                   </div>
                   <button type="button" className="secondary-button" onClick={() => inspect(job.id)}>Zamknij</button>
                 </div>
+                {job.application_id && <div className="acp-actions">
+                  <Link to={`/apps/${encodeURIComponent(job.application_id)}`}>Aplikacja</Link>
+                  {user?.role !== 'viewer' && ['queued', 'running'].includes(job.status) && <button disabled={mutating} className="secondary-button" onClick={() => void jobAction(job, 'cancel')}>Anuluj zadanie</button>}
+                  {user?.role !== 'viewer' && ['failed', 'cancelled'].includes(job.status) && (job.type !== 'application.remove' || user?.role === 'admin') && <button disabled={mutating || !job.finished_at} onClick={() => void jobAction(job, 'retry')}>Ponów od początku</button>}
+                </div>}
                 <JobProgress job={job} logs={logs} />
+                {job.type.startsWith('application.') && job.result && <details><summary>Wynik operacji</summary><pre className="acp-logs">{JSON.stringify(job.result, null, 2)}</pre></details>}
               </section>
             </td>
           </tr>}

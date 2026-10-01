@@ -96,6 +96,9 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 			_ = h.logger.Log(ctx, job.ID, "info", "application.deployment.stage", map[string]any{"stage": stage, "application_id": appID, "deployment_id": deploymentID})
 		}
 	}
+	if err := h.service.repo.BindDeploymentJob(ctx, deploymentID, job.ID); err != nil {
+		return nil, err
+	}
 	setStage(StageSource)
 	workDir, revision, err := h.service.prepareSource(ctx, app, source)
 	if err != nil {
@@ -105,6 +108,29 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 	_ = h.service.repo.UpdateSource(ctx, source)
 	setStage(StageDetect)
 	config := decodeConfiguration(app.SourceConfig)
+	manifest, manifestErr := LoadManifest(workDir)
+	if workDir == "" {
+		manifest = nil
+		manifestErr = nil
+	}
+	if manifestErr != nil {
+		return nil, h.fail(ctx, deploymentID, StageDetect, manifestErr)
+	}
+	if manifest != nil && len(manifest.Environment) > 0 {
+		env := map[string]any{}
+		for k, v := range manifest.Environment {
+			env[k] = v
+		}
+		if explicit, ok := config["environment"].(map[string]any); ok {
+			for k, v := range explicit {
+				env[k] = v
+			}
+		}
+		config["environment"] = env
+		if err := validateConfiguration(config); err != nil {
+			return nil, h.fail(ctx, deploymentID, StageDetect, err)
+		}
+	}
 	detection, detectErr := h.service.selector.Detect(ctx, DetectRequest{SourceType: app.SourceType, Source: source, WorkDir: workDir, Configuration: config}, app.Driver)
 	if detectErr != nil && !errors.Is(detectErr, ErrConfigurationRequired) {
 		return nil, h.fail(ctx, deploymentID, StageDetect, detectErr)
@@ -128,10 +154,23 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 		}
 		return nil, h.fail(ctx, deploymentID, StagePlan, err)
 	}
+	secretValues, err := h.service.runtimeSecrets(ctx, appID)
+	if err != nil {
+		return nil, h.fail(ctx, deploymentID, StageConfigure, err)
+	}
+	if manifest != nil {
+		for _, name := range manifest.Secrets {
+			if _, ok := secretValues[name]; !ok {
+				detection.Warnings = append(detection.Warnings, "configure secret "+name)
+				return h.waiting(ctx, appID, deploymentID, detection)
+			}
+		}
+	}
 	if err := h.service.repo.SaveDeploymentPlan(ctx, deploymentID, plan); err != nil {
 		return nil, h.fail(ctx, deploymentID, StagePlan, err)
 	}
 	app.Driver = plan.Driver
+	app.DesiredState = DesiredRunning
 	app.UpdatedAt = time.Now().UTC()
 	if err := h.service.repo.Update(ctx, app); err != nil {
 		return nil, h.fail(ctx, deploymentID, StagePlan, err)
@@ -142,24 +181,54 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 		}
 	}
 	workloads, endpoints := materializeTopology(app.ID, plan)
-	if err := h.service.repo.ReplaceTopology(ctx, app.ID, workloads, endpoints); err != nil {
+	if err := h.service.repo.StageTopology(ctx, app.ID, workloads, endpoints); err != nil {
 		return nil, h.fail(ctx, deploymentID, StagePlan, err)
 	}
-	if detection.RequiresConfiguration {
-		return h.waiting(ctx, appID, deploymentID, detection)
+	persistedWorkloads, err := h.service.repo.Workloads(ctx, appID)
+	if err != nil {
+		return nil, h.fail(ctx, deploymentID, StagePlan, err)
 	}
-	persistedWorkloads, _ := h.service.repo.Workloads(ctx, appID)
-	persistedEndpoints, _ := h.service.repo.Endpoints(ctx, appID)
+	persistedEndpoints, err := h.service.repo.Endpoints(ctx, appID)
+	if err != nil {
+		return nil, h.fail(ctx, deploymentID, StagePlan, err)
+	}
+	// Drivers receive only this plan's services. Older records remain in the
+	// inventory for recovery, but must not become synthetic Compose services.
+	plannedWorkloads := map[string]bool{}
+	for _, w := range plan.Workloads {
+		plannedWorkloads[w.Name] = true
+	}
+	plannedEndpoints := map[string]bool{}
+	for _, e := range plan.Endpoints {
+		plannedEndpoints[e.Name] = true
+	}
+	selectedWorkloads := persistedWorkloads[:0]
+	for _, w := range persistedWorkloads {
+		if plannedWorkloads[w.Name] {
+			selectedWorkloads = append(selectedWorkloads, w)
+		}
+	}
+	persistedWorkloads = selectedWorkloads
+	selectedEndpoints := persistedEndpoints[:0]
+	for _, e := range persistedEndpoints {
+		if plannedEndpoints[e.Name] {
+			selectedEndpoints = append(selectedEndpoints, e)
+		}
+	}
+	persistedEndpoints = selectedEndpoints
 	setStage(StagePrepare)
 	setStage(StageBuildOrPull)
-	result, err := driver.Deploy(ctx, ExecutionRequest{Application: app, Source: source, WorkDir: workDir, Deployment: deployment, Workloads: persistedWorkloads, Endpoints: persistedEndpoints}, plan)
+	result, err := driver.Deploy(ctx, ExecutionRequest{SensitiveEnvironment: secretValues, Application: app, Source: source, WorkDir: workDir, Deployment: deployment, Workloads: persistedWorkloads, Endpoints: persistedEndpoints}, plan)
 	if err != nil {
 		stage := StageFailed
 		var op *OperationError
 		if errors.As(err, &op) && op.Stage != "" {
 			stage = op.Stage
 		}
-		return nil, h.fail(ctx, deploymentID, stage, err)
+		return nil, h.fail(ctx, deploymentID, stage, errors.New(redactSecretValues(err.Error(), secretValues)))
+	}
+	if err := h.service.repo.ReplaceTopology(ctx, app.ID, persistedWorkloads, persistedEndpoints); err != nil {
+		return nil, h.fail(ctx, deploymentID, StageFinalize, err)
 	}
 	setStage(StageFinalize)
 	for name, state := range result.Resources {
@@ -188,15 +257,22 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 	return map[string]any{"deployment_id": deploymentID, "status": "success", "application_status": state.Status}, nil
 }
 func (h *deployJobHandler) waiting(ctx context.Context, appID, deploymentID string, detection DetectionResult) (map[string]any, error) {
-	_ = h.service.repo.SetDeploymentStage(ctx, deploymentID, "waiting_for_configuration", StageWaitingForConfiguration)
+	if err := h.service.repo.FinishDeployment(ctx, deploymentID, "waiting_for_configuration", StageWaitingForConfiguration, ""); err != nil {
+		return nil, err
+	}
 	_ = h.service.repo.Event(ctx, appID, deploymentID, "", "deployment.waiting_for_configuration", StageWaitingForConfiguration, "primary endpoint or deployment configuration is ambiguous", map[string]any{"candidates": detection.Endpoints, "warnings": detection.Warnings})
 	return map[string]any{"deployment_id": deploymentID, "status": "waiting_for_configuration", "detection": detection}, nil
 }
 func (h *deployJobHandler) fail(ctx context.Context, deploymentID, stage string, err error) error {
-	_ = h.service.repo.FinishDeployment(context.Background(), deploymentID, "failed", stage, err.Error())
+	status := "failed"
+	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+		status = "cancelled"
+		stage = StageCancelled
+	}
+	_ = h.service.repo.FinishDeployment(context.Background(), deploymentID, status, stage, err.Error())
 	deployment, _ := h.service.repo.Deployment(context.Background(), deploymentID)
 	if deployment.ApplicationID != "" {
-		_ = h.service.repo.Event(context.Background(), deployment.ApplicationID, deploymentID, "", "deployment.failed", stage, err.Error(), nil)
+		_ = h.service.repo.Event(context.Background(), deployment.ApplicationID, deploymentID, "", "deployment."+status, stage, err.Error(), nil)
 	}
 	return err
 }
@@ -239,6 +315,9 @@ func (h *lifecycleJobHandler) Run(ctx context.Context, job domain.Job) (map[stri
 		}
 		return map[string]any{"status": state.Status, "observed_state": state.ObservedState, "health_state": state.HealthState}, nil
 	}
+	if h.jobType == JobRemove {
+		return h.remove(ctx, app, source, workloads, endpoints, job)
+	}
 	driver, ok := h.service.drivers.Get(app.Driver)
 	if !ok {
 		return nil, fmt.Errorf("%w: driver %q", ErrProviderUnavailable, app.Driver)
@@ -260,26 +339,11 @@ func (h *lifecycleJobHandler) Run(ctx context.Context, job domain.Job) (map[stri
 		}
 		err = driver.Stop(ctx, request)
 	case JobRestart:
+		app.DesiredState = DesiredRunning
+		if err := h.service.repo.Update(ctx, app); err != nil {
+			return nil, err
+		}
 		err = driver.Restart(ctx, request)
-	case JobRemove:
-		options := DeleteOptions{RemoveContainers: true, DeleteConfiguration: true}
-		raw, _ := json.Marshal(job.Payload["options"])
-		_ = json.Unmarshal(raw, &options)
-		if options.RemoveContainers {
-			err = driver.Remove(ctx, request)
-		}
-		if err == nil && options.RemoveSource && (app.SourceType == SourceGit || app.SourceType == SourceEmpty) {
-			path := h.service.workDir(app, source)
-			if pathWithin(path, h.service.projectsRoot) {
-				err = os.RemoveAll(path)
-			}
-		}
-		if err == nil && options.DeleteConfiguration {
-			err = h.service.repo.Delete(ctx, appID)
-			if err == nil {
-				return map[string]any{"deleted": true}, nil
-			}
-		}
 	default:
 		return nil, fmt.Errorf("%w: lifecycle job type", ErrInvalidInput)
 	}
@@ -304,11 +368,9 @@ func materializeTopology(applicationID string, plan DeploymentPlan) ([]Workload,
 	}
 	endpoints := make([]Endpoint, 0, len(plan.Endpoints))
 	for _, item := range plan.Endpoints {
+		// HostPort records the observed mapping, not the requested replacement.
+		// ReplaceTopology preserves the previous mapping until Deploy succeeds.
 		var host *int
-		if item.HostPort > 0 {
-			v := item.HostPort
-			host = &v
-		}
 		var domain *string
 		if item.Domain != "" {
 			v := item.Domain

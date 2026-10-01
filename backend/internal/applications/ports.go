@@ -36,6 +36,14 @@ func (a *ApplicationPortAllocator) Reserve(ctx context.Context, applicationID, e
 		}
 		return providers.PortLease{Port: port, ProjectID: applicationID, Purpose: purpose}, nil
 	}
+	var existing int
+	err := a.db.QueryRowContext(ctx, `SELECT port FROM application_port_leases WHERE application_id=? AND endpoint_id=? AND purpose=? AND state='reserved' ORDER BY created_at DESC LIMIT 1`, applicationID, endpointID, purpose).Scan(&existing)
+	if err == nil {
+		return providers.PortLease{Port: existing, ProjectID: applicationID, Purpose: purpose}, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return providers.PortLease{}, err
+	}
 	for port := a.start; port <= a.end; port++ {
 		reserved, err := a.reserveExact(ctx, applicationID, endpointID, purpose, port)
 		if err == nil {
@@ -70,6 +78,13 @@ func (a *ApplicationPortAllocator) reserveExact(ctx context.Context, application
 		return 0, ErrConflict
 	case err != nil && !errors.Is(err, sql.ErrNoRows):
 		return 0, err
+	}
+	var legacy int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM ports WHERE port=? AND state!='released'`, port).Scan(&legacy); err != nil {
+		return 0, err
+	}
+	if legacy > 0 {
+		return 0, ErrConflict
 	}
 	available, err := probeApplicationPort(port)
 	if err != nil {

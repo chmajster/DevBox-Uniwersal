@@ -251,9 +251,10 @@ type SourceInput struct {
 }
 
 type UpdateInput struct {
-	Name         *string `json:"name,omitempty"`
-	Description  *string `json:"description,omitempty"`
-	Driver       *string `json:"driver,omitempty"`
-	DesiredState *string `json:"desired_state,omitempty"`
-	AutoStart    *bool   `json:"auto_start,omitempty"`
+	Configuration *map[string]any `json:"configuration,omitempty"`
+	Name          *string         `json:"name,omitempty"`
+	Description   *string         `json:"description,omitempty"`
+	Driver        *string         `json:"driver,omitempty"`
+	DesiredState  *string         `json:"desired_state,omitempty"`
+	AutoStart     *bool           `json:"auto_start,omitempty"`
 }

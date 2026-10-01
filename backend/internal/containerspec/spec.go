@@ -36,6 +36,7 @@ type DeploymentSpec struct {
 	DockerfilePath       string
 	Image                string
 	ContainerName        string
+	HealthPath           string
 	HostPort             int
 	ContainerPort        int
 	Environment          map[string]string

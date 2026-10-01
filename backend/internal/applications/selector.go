@@ -2,6 +2,7 @@ package applications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,7 +41,7 @@ func (s *Selector) Detect(ctx context.Context, request DetectRequest, explicitDr
 	if err == nil && result.Runtime != "" {
 		return result, nil
 	}
-	if err != nil && err != ErrConfigurationRequired {
+	if err != nil && !errors.Is(err, ErrConfigurationRequired) {
 		return DetectionResult{}, err
 	}
 	return DetectionResult{Confidence: "none", RequiresConfiguration: true, Reasons: []string{"no devbox.yaml, Compose file, Dockerfile or supported runtime was detected"}}, ErrConfigurationRequired
@@ -52,8 +53,11 @@ func (s *Selector) detectWith(ctx context.Context, name string, request DetectRe
 		return DetectionResult{}, fmt.Errorf("%w: deployment driver %q", ErrProviderUnavailable, name)
 	}
 	result, err := driver.Detect(ctx, request)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrConfigurationRequired) {
 		return DetectionResult{}, err
+	}
+	if errors.Is(err, ErrConfigurationRequired) {
+		result.RequiresConfiguration = true
 	}
 	result.Driver = name
 	result.Reasons = append([]string{reason}, result.Reasons...)

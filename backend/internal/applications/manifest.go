@@ -76,8 +76,19 @@ func ParseManifest(content string) (*Manifest, error) {
 			return nil, fmt.Errorf("line %d uses unsupported YAML syntax", lineNo)
 		}
 		indent := len(raw) - len(strings.TrimLeft(raw, " "))
-		if strings.Contains(raw[:indent], "	") {
+		if strings.Contains(raw[:len(raw)-len(strings.TrimLeft(raw, " \t"))], "\t") || indent%2 != 0 || indent > 4 {
 			return nil, fmt.Errorf("line %d uses tab indentation", lineNo)
+		}
+		if section == "secrets" && indent == 2 {
+			if !strings.HasPrefix(trimmed, "- ") {
+				return nil, fmt.Errorf("line %d: secrets must be a scalar list", lineNo)
+			}
+			secret := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+			if secret == "" {
+				return nil, fmt.Errorf("line %d: empty secret name", lineNo)
+			}
+			m.Secrets = append(m.Secrets, secret)
+			continue
 		}
 		key, value, ok := strings.Cut(trimmed, ":")
 		if !ok {
@@ -116,17 +127,7 @@ func ParseManifest(content string) (*Manifest, error) {
 			item = key
 			continue
 		}
-		if section == "secrets" {
-			if !strings.HasPrefix(trimmed, "- ") {
-				return nil, fmt.Errorf("line %d: secrets must be a scalar list", lineNo)
-			}
-			secret := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
-			if secret == "" {
-				return nil, fmt.Errorf("line %d: empty secret name", lineNo)
-			}
-			m.Secrets = append(m.Secrets, secret)
-			continue
-		}
+
 		switch section {
 		case "application":
 			if key != "name" {

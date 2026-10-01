@@ -3,6 +3,7 @@ package applications
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,6 +24,8 @@ func NewModule(service *Service, auditService *audit.Service) *Module {
 func (m *Module) Name() string { return "applications" }
 
 func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddleware) {
+	m.registerSecretRoutes(mux, middleware)
+	m.registerJobRoutes(mux, middleware)
 	secure := func(role domain.Role, handler http.HandlerFunc) http.Handler {
 		return middleware.Authenticate(middleware.RequireRole(role, handler))
 	}
@@ -141,6 +144,10 @@ func (m *Module) remove(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if options.RemoveGeneratedImages || options.RemoveVolumes {
+		writeApplicationError(w, http.StatusBadRequest, "invalid_request", "shared images and persistent volumes are preserved; remove them explicitly in Docker administration", nil)
+		return
+	}
 	if !options.RemoveContainers && !options.DeleteConfiguration && !options.RemoveGeneratedImages && !options.RemoveVolumes && !options.RemoveSource {
 		writeApplicationError(w, http.StatusBadRequest, "invalid_request", "at least one delete action must be selected", nil)
 		return
@@ -257,7 +264,13 @@ func decodeApplicationJSON(w http.ResponseWriter, r *http.Request, dst any, allo
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
+		if allowEmpty && errors.Is(err, io.EOF) {
+			return nil
+		}
 		return errors.New("invalid JSON request")
+	}
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return errors.New("request must contain exactly one JSON document")
 	}
 	return nil
 }

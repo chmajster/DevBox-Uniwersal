@@ -26,12 +26,13 @@ type PlanRequest struct {
 }
 
 type ExecutionRequest struct {
-	Application Application
-	Source      Source
-	WorkDir     string
-	Deployment  Deployment
-	Workloads   []Workload
-	Endpoints   []Endpoint
+	SensitiveEnvironment map[string]string
+	Application          Application
+	Source               Source
+	WorkDir              string
+	Deployment           Deployment
+	Workloads            []Workload
+	Endpoints            []Endpoint
 }
 
 type InspectRequest struct {

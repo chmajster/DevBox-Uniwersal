@@ -81,6 +81,14 @@ func (d *Driver) Plan(ctx context.Context, request applications.PlanRequest) (ap
 		}
 	}
 	if port == 0 {
+		if err := d.engine.PullImage(ctx, image); err != nil {
+			return applications.DeploymentPlan{}, err
+		}
+		if raw, err := d.engine.InspectImage(ctx, image); err == nil {
+			port = firstExposedPort(raw)
+		}
+	}
+	if port == 0 {
 		return applications.DeploymentPlan{}, applications.ErrConfigurationRequired
 	}
 	protocol := driverutil.ConfigString(request.Configuration, "protocol")
@@ -125,9 +133,28 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 		return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageBuildOrPull, Driver: d.Name(), Workload: wp.Name, Operation: "pull_image", Reason: err.Error(), Action: "verify image name, registry credentials and network access"}
 	}
 	name := containerName(request.Application.ID, request.Deployment.ID)
-	spec := providers.ContainerSpec{Name: name, Image: wp.Image, Command: wp.Command, Environment: wp.Environment, Labels: driverutil.Labels(request.Application, request.Deployment, wp.Name), Ports: map[int]int{lease.Port: ep.ContainerPort}, Networks: nonEmpty(d.sharedNetwork), RestartPolicy: restartPolicy(plan.Metadata)}
+	spec := providers.ContainerSpec{SensitiveEnvironment: request.SensitiveEnvironment, Name: name, Image: wp.Image, Command: wp.Command, Environment: wp.Environment, Labels: driverutil.Labels(request.Application, request.Deployment, wp.Name), Ports: map[int]int{lease.Port: ep.ContainerPort}, Networks: nonEmpty(d.sharedNetwork), RestartPolicy: restartPolicy(plan.Metadata)}
+	stopped := []string{}
+	restore := func() {
+		for _, id := range stopped {
+			_ = d.engine.Start(context.Background(), id)
+		}
+	}
+	if endpoint.HostPort != nil && *endpoint.HostPort == lease.Port {
+		for _, old := range request.Workloads {
+			if old.DriverResourceID != "" && old.ObservedState == applications.ObservedRunning {
+				if err := d.engine.Stop(ctx, old.DriverResourceID); err != nil {
+					restore()
+					release(d, request, endpoint, lease.Port)
+					return applications.DeploymentResult{}, err
+				}
+				stopped = append(stopped, old.DriverResourceID)
+			}
+		}
+	}
 	info, err := d.engine.Create(ctx, spec)
 	if err != nil {
+		restore()
 		release(d, request, endpoint, lease.Port)
 		return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageCreate, Driver: d.Name(), Workload: wp.Name, Operation: "create_container", Reason: err.Error(), Action: "inspect Docker state and port/network collisions"}
 	}
@@ -135,7 +162,12 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 	if resource == "" {
 		resource = name
 	}
-	rollback := func() { _ = d.engine.Remove(context.Background(), resource); release(d, request, endpoint, lease.Port) }
+	rollback := func() {
+		_ = d.engine.Stop(context.Background(), resource)
+		_ = d.engine.Remove(context.Background(), resource)
+		restore()
+		release(d, request, endpoint, lease.Port)
+	}
 	if err := d.engine.Start(ctx, resource); err != nil {
 		rollback()
 		return applications.DeploymentResult{}, err
@@ -223,6 +255,9 @@ func firstExposedPort(raw map[string]any) int {
 	}
 	best := 0
 	for key := range ports {
+		if strings.HasSuffix(key, "/udp") {
+			continue
+		}
 		part := strings.SplitN(key, "/", 2)[0]
 		port, err := strconv.Atoi(part)
 		if err != nil {
@@ -261,8 +296,12 @@ func waitEndpoint(ctx context.Context, protocol string, port int, path string) e
 		switch protocol {
 		case "http", "https":
 			scheme := protocol
-			client := &http.Client{Timeout: 2 * time.Second}
-			resp, e := client.Get(fmt.Sprintf("%s://127.0.0.1:%d%s", scheme, port, path))
+			client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+			req, e := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s://127.0.0.1:%d%s", scheme, port, path), nil)
+			if e != nil {
+				return e
+			}
+			resp, e := client.Do(req)
 			err = e
 			if e == nil {
 				_ = resp.Body.Close()
@@ -310,7 +349,7 @@ func preferred(port int) *int {
 	return &port
 }
 func release(d *Driver, r applications.ExecutionRequest, e applications.Endpoint, port int) {
-	_ = d.ports.Release(context.Background(), r.Application.ID, e.ID, port)
+	driverutil.RollbackPort(d.ports, r, e, port)
 }
 func nonEmpty(value string) []string {
 	if strings.TrimSpace(value) == "" {

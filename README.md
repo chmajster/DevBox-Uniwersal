@@ -2,6 +2,12 @@
 
 DevBox Universal is a local control plane for installing, running and managing heterogeneous development applications from a web UI. The foundation intentionally separates orchestration contracts from concrete Git, runtime, Docker, database, reverse-proxy and Windows/WSL implementations.
 
+## Application workspace
+
+The active workspace manages Applications, Workloads and Endpoints through four deployment drivers: managed runtime, Dockerfile, OCI image and Docker Compose. See [Application control plane](docs/application-control-plane.md) for source onboarding, configuration, encrypted secrets, lifecycle operations and verification.
+
+This refactor preserves existing Project records but does not automatically adopt them or migrate project-specific database/domain bindings. New application IDs are independent of legacy Project IDs.
+
 ## Foundation stack
 
 - Backend: Go REST API, SQLite, ordered SQL migrations.

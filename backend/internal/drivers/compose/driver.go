@@ -3,7 +3,9 @@ package compose
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/applications"
 	dockerapi "github.com/chmajster/DevBox-Uniwersal/backend/internal/docker"
@@ -48,12 +50,12 @@ func (d *Driver) Detect(ctx context.Context, request applications.DetectRequest)
 	if request.WorkDir == "" {
 		return applications.DetectionResult{}, applications.ErrConfigurationRequired
 	}
-	projectName := composeProjectName(request)
-	services, err := d.engine.ComposeApplicationServices(ctx, request.WorkDir, projectName)
+	name := composeProjectName(request)
+	services, err := d.engine.ComposeApplicationServices(ctx, request.WorkDir, name)
 	if err != nil {
 		return applications.DetectionResult{}, err
 	}
-	discovery, err := d.engine.DiscoverComposeApplicationPorts(ctx, request.WorkDir, projectName, "")
+	discovery, err := d.engine.DiscoverComposeApplicationPorts(ctx, request.WorkDir, name, "")
 	if err != nil {
 		return applications.DetectionResult{}, err
 	}
@@ -61,53 +63,82 @@ func (d *Driver) Detect(ctx context.Context, request applications.DetectRequest)
 	if err != nil {
 		return applications.DetectionResult{}, err
 	}
-	result := applications.DetectionResult{Driver: d.Name(), Confidence: "high", Reasons: []string{"Compose file normalized successfully"}}
-	primaryService := ""
+	result := applications.DetectionResult{Driver: d.Name(), Confidence: "high", Reasons: []string{"Compose services normalized without changing source files"}}
+	known := map[string]bool{}
+	declaredPrimary := ""
 	for _, service := range services {
+		known[service.Name] = true
 		role, primary := service.Role, service.Primary
 		if manifest != nil {
-			for _, override := range manifest.Workloads {
+			for alias, override := range manifest.Workloads {
 				target := override.Service
 				if target == "" {
-					target = service.Name
+					target = alias
 				}
 				if target == service.Name {
 					if override.Role != "" {
 						role = override.Role
 					}
-					if override.Primary {
-						primary = true
-					}
+					primary = override.Primary
 				}
 			}
 		}
 		if primary {
-			if primaryService != "" && primaryService != service.Name {
-				result.Warnings = append(result.Warnings, "multiple workloads declare primary=true")
-			} else {
-				primaryService = service.Name
+			if declaredPrimary != "" {
+				result.RequiresConfiguration = true
 			}
+			declaredPrimary = service.Name
 		}
-		confidence := "medium"
-		reason := "Compose service name/image/command/ports classified"
-		if explicit := service.Labels["io.devbox.role"]; explicit != "" {
-			confidence = "high"
-			reason = "io.devbox.role label"
-		}
-		result.Services = append(result.Services, applications.ServiceDetection{Name: service.Name, SuggestedRole: role, Primary: primary, Confidence: confidence, Reason: reason})
+		result.Services = append(result.Services, applications.ServiceDetection{Name: service.Name, SuggestedRole: role, Primary: primary, Confidence: "high", Reason: "Compose service and DevBox labels/manifest"})
 	}
 	if manifest != nil && len(manifest.Endpoints) > 0 {
-		for name, endpoint := range manifest.Endpoints {
-			result.Endpoints = append(result.Endpoints, applications.EndpointDetection{Service: endpoint.Workload, Protocol: defaultProtocol(endpoint.Protocol), ContainerPort: endpoint.ContainerPort, Primary: endpoint.Primary, Confidence: "high", Reason: "devbox.yaml endpoint " + name})
+		names := []string{}
+		for name := range manifest.Endpoints {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			endpoint := manifest.Endpoints[name]
+			target := endpoint.Workload
+			if override, ok := manifest.Workloads[target]; ok && override.Service != "" {
+				target = override.Service
+			}
+			if !known[target] {
+				return result, fmt.Errorf("%w: endpoint %s references unknown Compose service %s", applications.ErrInvalidInput, name, target)
+			}
+			result.Endpoints = append(result.Endpoints, applications.EndpointDetection{Service: target, Protocol: defaultProtocol(endpoint.Protocol), ContainerPort: endpoint.ContainerPort, Primary: endpoint.Primary, Confidence: "high", Reason: "devbox.yaml endpoint " + name})
 		}
 	} else {
 		for _, candidate := range discovery.Candidates {
 			primary := discovery.Selected != nil && candidate.Service == discovery.Selected.Service && candidate.ContainerPort == discovery.Selected.ContainerPort
-			if primaryService != "" {
-				primary = candidate.Service == primaryService
+			if declaredPrimary != "" {
+				primary = candidate.Service == declaredPrimary
 			}
-			result.Endpoints = append(result.Endpoints, applications.EndpointDetection{Service: candidate.Service, Protocol: candidate.Protocol, ContainerPort: candidate.ContainerPort, Primary: primary, Confidence: "medium", Reason: candidate.Source})
+			result.Endpoints = append(result.Endpoints, applications.EndpointDetection{Service: candidate.Service, Protocol: defaultProtocol(candidate.Protocol), ContainerPort: candidate.ContainerPort, Primary: primary, Confidence: "medium", Reason: candidate.Source})
 		}
+	}
+	selected := driverutil.ConfigString(request.Configuration, "compose_service")
+	configuredPort := driverutil.ConfigInt(request.Configuration, "container_port")
+	if selected != "" {
+		if !known[selected] {
+			return result, fmt.Errorf("%w: unknown compose_service %s", applications.ErrInvalidInput, selected)
+		}
+		found := false
+		for i := range result.Endpoints {
+			endpoint := &result.Endpoints[i]
+			endpoint.Primary = endpoint.Service == selected && (configuredPort == 0 || endpoint.ContainerPort == configuredPort)
+			if endpoint.Primary {
+				found = true
+				if protocol := driverutil.ConfigString(request.Configuration, "protocol"); protocol != "" {
+					endpoint.Protocol = protocol
+				}
+			}
+		}
+		if !found && configuredPort > 0 {
+			protocol := driverutil.ConfigString(request.Configuration, "protocol")
+			result.Endpoints = append(result.Endpoints, applications.EndpointDetection{Service: selected, Protocol: defaultProtocol(protocol), ContainerPort: configuredPort, Primary: true, Confidence: "high", Reason: "explicit service/listener selection"})
+		}
+		result.RequiresConfiguration = false
 	}
 	primaryCount := 0
 	for _, endpoint := range result.Endpoints {
@@ -115,80 +146,56 @@ func (d *Driver) Detect(ctx context.Context, request applications.DetectRequest)
 			primaryCount++
 		}
 	}
-	if len(result.Endpoints) > 1 && primaryCount != 1 {
-		result.RequiresConfiguration = true
-		result.Warnings = append(result.Warnings, "multiple web/API endpoints are equally plausible; choose the primary endpoint")
+	if len(result.Endpoints) == 1 && selected == "" {
+		result.Endpoints[0].Primary = true
+		primaryCount = 1
 	}
-	if primaryCount > 1 {
+	if (len(result.Endpoints) > 1 && primaryCount != 1) || (selected != "" && primaryCount != 1) || result.RequiresConfiguration {
 		result.RequiresConfiguration = true
-		result.Warnings = append(result.Warnings, "more than one primary endpoint is configured")
+		result.Warnings = append(result.Warnings, "choose one primary Compose service and container_port")
+	}
+	if primaryCount == 1 {
+		for i := range result.Services {
+			result.Services[i].Primary = false
+			for _, endpoint := range result.Endpoints {
+				if endpoint.Primary && endpoint.Service == result.Services[i].Name {
+					result.Services[i].Primary = true
+				}
+			}
+		}
 	}
 	return result, nil
 }
 
 func (d *Driver) Plan(ctx context.Context, request applications.PlanRequest) (applications.DeploymentPlan, error) {
-	projectName := request.Application.Slug
-	services, err := d.engine.ComposeApplicationServices(ctx, request.WorkDir, projectName)
+	detection, err := d.Detect(ctx, applications.DetectRequest{SourceType: request.Application.SourceType, Source: request.Source, WorkDir: request.WorkDir, Configuration: request.Configuration})
 	if err != nil {
 		return applications.DeploymentPlan{}, err
 	}
-	discovery, err := d.engine.DiscoverComposeApplicationPorts(ctx, request.WorkDir, projectName, "")
+	if detection.RequiresConfiguration {
+		return applications.DeploymentPlan{}, applications.ErrConfigurationRequired
+	}
+	services, err := d.engine.ComposeApplicationServices(ctx, request.WorkDir, request.Application.Slug)
 	if err != nil {
 		return applications.DeploymentPlan{}, err
 	}
-	manifest, err := applications.LoadManifest(request.WorkDir)
-	if err != nil {
-		return applications.DeploymentPlan{}, err
-	}
-	plan := applications.DeploymentPlan{Version: 1, ApplicationID: request.Application.ID, Driver: d.Name(), SourceRevision: request.SourceRevision, Networks: nonEmpty(d.sharedNetwork), Metadata: map[string]any{"compose_project": projectName, "requires_configuration": request.Detection.RequiresConfiguration}}
-	primaryService := ""
+	plan := applications.DeploymentPlan{Version: 1, ApplicationID: request.Application.ID, Driver: d.Name(), SourceRevision: request.SourceRevision, Networks: nonEmpty(d.sharedNetwork), Metadata: map[string]any{"compose_project": request.Application.Slug}}
+	images := map[string]string{}
 	for _, service := range services {
-		role, primary := service.Role, service.Primary
-		if manifest != nil {
-			for _, override := range manifest.Workloads {
-				target := override.Service
-				if target == "" {
-					target = service.Name
-				}
-				if target == service.Name {
-					if override.Role != "" {
-						role = override.Role
-					}
-					if override.Primary {
-						primary = true
-					}
-				}
-			}
-		}
-		if primary {
-			primaryService = service.Name
-		}
-		plan.Workloads = append(plan.Workloads, applications.PlannedWorkload{Name: service.Name, Role: role, Image: service.Image, Primary: primary})
+		images[service.Name] = service.Image
 	}
-	if manifest != nil && len(manifest.Endpoints) > 0 {
-		for name, item := range manifest.Endpoints {
-			plan.Endpoints = append(plan.Endpoints, applications.PlannedEndpoint{Name: name, Workload: item.Workload, Protocol: defaultProtocol(item.Protocol), ContainerPort: item.ContainerPort, Public: item.Public, Primary: item.Primary, HealthPath: item.HealthPath})
-		}
-	} else {
-		for _, candidate := range discovery.Candidates {
-			primary := discovery.Selected != nil && candidate.Service == discovery.Selected.Service && candidate.ContainerPort == discovery.Selected.ContainerPort
-			if primaryService != "" {
-				primary = candidate.Service == primaryService
-			}
-			name := candidate.Service
-			if countService(discovery.Candidates, candidate.Service) > 1 {
-				name = fmt.Sprintf("%s-%d", candidate.Service, candidate.ContainerPort)
-			}
-			plan.Endpoints = append(plan.Endpoints, applications.PlannedEndpoint{Name: name, Workload: candidate.Service, Protocol: defaultProtocol(candidate.Protocol), ContainerPort: candidate.ContainerPort, HostPort: candidate.HostPort, Public: primary, Primary: primary})
-		}
+	for _, service := range detection.Services {
+		plan.Workloads = append(plan.Workloads, applications.PlannedWorkload{Name: service.Name, Role: service.SuggestedRole, Primary: service.Primary, Image: images[service.Name], Environment: driverutil.ConfigStringMap(request.Configuration, "environment")})
 	}
-	for _, endpoint := range plan.Endpoints {
-		if endpoint.Primary {
-			kind := "tcp"
-			if endpoint.Protocol == "http" || endpoint.Protocol == "https" {
-				kind = "http"
-			}
-			plan.Healthchecks = append(plan.Healthchecks, applications.HealthCheckPlan{Workload: endpoint.Workload, Type: kind, Path: endpoint.HealthPath, Port: endpoint.ContainerPort})
+	for _, endpoint := range detection.Endpoints {
+		item := applications.PlannedEndpoint{Name: fmt.Sprintf("%s-%d", endpoint.Service, endpoint.ContainerPort), Workload: endpoint.Service, Protocol: defaultProtocol(endpoint.Protocol), ContainerPort: endpoint.ContainerPort, Primary: endpoint.Primary, Public: endpoint.Primary, HealthPath: "/"}
+		if item.Primary {
+			item.Name = "primary"
+			item = driverutil.ConfigureEndpoint(item, request.Configuration)
+		}
+		plan.Endpoints = append(plan.Endpoints, item)
+		if item.Primary {
+			plan.Healthchecks = append(plan.Healthchecks, applications.HealthCheckPlan{Workload: item.Workload, Type: "http", Path: item.HealthPath, Port: item.ContainerPort})
 		}
 	}
 	return plan, nil
@@ -205,7 +212,13 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 	if err := d.engine.ComposeValidate(ctx, request.WorkDir, projectName); err != nil {
 		return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StagePrepare, Driver: d.Name(), Operation: "compose_validate", Reason: err.Error(), Action: "fix compose.yaml before deploying"}
 	}
-	if err := d.engine.ComposePull(ctx, request.WorkDir, projectName, ""); err != nil {
+	pull := func() error { return d.engine.ComposePull(ctx, request.WorkDir, projectName, "") }
+	if provider, ok := d.engine.(interface {
+		ComposePullApplication(context.Context, string, string) error
+	}); ok {
+		pull = func() error { return provider.ComposePullApplication(ctx, request.WorkDir, projectName) }
+	}
+	if err := pull(); err != nil {
 		return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageDependencies, Driver: d.Name(), Operation: "compose_pull", Reason: err.Error(), Action: "verify registry access and image references"}
 	}
 	if err := d.engine.ComposeBuild(ctx, request.WorkDir, projectName, ""); err != nil {
@@ -239,7 +252,7 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 		}
 		persistedEndpoint = endpoint
 		preferredPort := primary.HostPort
-		if endpoint.HostPort != nil {
+		if preferredPort == 0 && endpoint.HostPort != nil {
 			preferredPort = *endpoint.HostPort
 		}
 		lease, err := d.ports.Reserve(ctx, request.Application.ID, endpoint.ID, "application-"+primary.Protocol, preferred(preferredPort))
@@ -249,7 +262,7 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 		newLease = &lease
 		rollback, err := d.engine.ConfigureComposePorts(ctx, request.WorkDir, projectName, primary.Workload, []providers.PublishedPort{{HostPort: lease.Port, ContainerPort: primary.ContainerPort}})
 		if err != nil {
-			_ = d.ports.Release(context.Background(), request.Application.ID, endpoint.ID, lease.Port)
+			driverutil.RollbackPort(d.ports, request, endpoint, lease.Port)
 			return applications.DeploymentResult{}, err
 		}
 		rollbackPorts = rollback
@@ -261,21 +274,48 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 		values["io.devbox.workload.id"] = workload.ID
 		labels[workload.Name] = values
 	}
-	if err := d.engine.ComposeUpApplication(ctx, request.WorkDir, projectName, labels); err != nil {
+	environment := map[string]map[string]string{}
+	for _, workload := range plan.Workloads {
+		values := map[string]string{}
+		for key, value := range workload.Environment {
+			values[key] = value
+		}
+		for key, value := range request.SensitiveEnvironment {
+			values[key] = value
+		}
+		if len(values) > 0 {
+			environment[workload.Name] = values
+		}
+	}
+	up := func() error { return d.engine.ComposeUpApplication(ctx, request.WorkDir, projectName, labels) }
+	if len(environment) > 0 {
+		provider, ok := d.engine.(interface {
+			ComposeUpApplicationEnvironment(context.Context, string, string, map[string]map[string]string, map[string]map[string]string) error
+		})
+		if !ok {
+			return applications.DeploymentResult{}, fmt.Errorf("%w: Compose environment support", applications.ErrProviderUnavailable)
+		}
+		up = func() error {
+			return provider.ComposeUpApplicationEnvironment(ctx, request.WorkDir, projectName, labels, environment)
+		}
+	}
+	if err := up(); err != nil {
 		if rollbackPorts != nil {
 			_ = rollbackPorts()
 		}
 		if newLease != nil {
-			_ = d.ports.Release(context.Background(), request.Application.ID, persistedEndpoint.ID, newLease.Port)
+			driverutil.RollbackPort(d.ports, request, persistedEndpoint, newLease.Port)
 		}
-		return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageStart, Driver: d.Name(), Operation: "compose_up", Reason: err.Error(), Action: "previous Compose resources remain available when Compose rollback permits"}
+		return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageStart, Driver: d.Name(), Operation: "compose_up", Reason: err.Error(), Action: "port configuration was restored; inspect Compose resources before retrying"}
 	}
 	if d.sharedNetwork != "" {
 		if err := d.networks.ConnectComposeProjectNetwork(ctx, request.WorkDir, projectName, d.sharedNetwork); err != nil {
 			return applications.DeploymentResult{}, err
 		}
 	}
-	if err := d.engine.ComposeHealthy(ctx, request.WorkDir, projectName); err != nil {
+	healthCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	if err := d.waitHealthy(healthCtx, request.WorkDir, projectName); err != nil {
 		return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageHealthcheck, Driver: d.Name(), Operation: "compose_health", Reason: err.Error(), Action: "inspect the failing workload health/logs"}
 	}
 	processes, err := d.engine.ComposePS(ctx, request.WorkDir, projectName)
@@ -396,4 +436,18 @@ func nonEmpty(value string) []string {
 		return nil
 	}
 	return []string{value}
+}
+
+func (d *Driver) waitHealthy(ctx context.Context, directory, project string) error {
+	for {
+		err := d.engine.ComposeHealthy(ctx, directory, project)
+		if err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: %v", ctx.Err(), err)
+		case <-time.After(time.Second):
+		}
+	}
 }

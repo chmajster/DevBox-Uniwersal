@@ -28,7 +28,7 @@ function ControlRoomShell() {
   const current = navigationForPath(location.pathname, user?.role)
   const role = user?.role === 'admin' ? 'Administrator' : user?.role === 'operator' ? 'Operator' : 'Podgląd'
   const normalizedQuery = query.trim().toLocaleLowerCase('pl')
-  const destinations = [...items, ...(overview.data?.projects ?? []).map((project) => ({ to: `/apps/${encodeURIComponent(project.id)}`, label: project.name, group: 'Aplikacje', icon: 'code' as const }))]
+  const destinations = [...items, ...(overview.data?.applications ?? []).map((project) => ({ to: `/apps/${encodeURIComponent(project.id)}`, label: project.name, group: 'Aplikacje', icon: 'code' as const }))]
   const filtered = destinations.filter((item) => `${item.label} ${item.group}`.toLocaleLowerCase('pl').includes(normalizedQuery)).slice(0, 30)
   const services = overview.data?.services ?? []
   const healthy = services.filter((service) => service.state === 'running').length

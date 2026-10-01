@@ -157,7 +157,6 @@ func serve() error {
 
 	runtimeRegistry := runtimes.NewDefaultRegistry()
 	runtimeProjectResolver := runtimes.NewSQLiteProjectResolver(db)
-	runtimeEnvironmentResolver := runtimes.NewEnvironmentResolver(runtimeProjectResolver, secretStore)
 	runtimeModule := runtimes.NewModule(
 		runtimeRegistry,
 		runtimeProjectResolver,
@@ -306,6 +305,7 @@ func serve() error {
 		cfg.ProjectsRoot,
 		cfg.DirectoryBrowseRoots...,
 	)
+	applicationService.WithSecretStore(secretStore)
 	for _, handler := range []jobs.Handler{
 		applications.NewDetectJobHandler(applicationService, jobRunner),
 		applications.NewDeployJobHandler(applicationService, jobRunner),
@@ -343,7 +343,7 @@ func serve() error {
 	}
 	updaterModule := updater.NewModule(updater.NewService(cfg.AppVersion, cfg.NginxHelperBinary, cfg.SudoBinary), auditService)
 	pluginModule := plugins.NewModule(pluginService, auditService)
-	go applicationService.RunReconciler(workerCtx, 30*time.Second)
+	go applicationService.RunReconciler(workerCtx, 5*time.Second)
 
 	scriptAppRepo := scriptapps.NewRepository(db)
 	scriptAppService := scriptapps.NewService(scriptAppRepo, jobRunner)

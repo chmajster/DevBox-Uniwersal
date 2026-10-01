@@ -81,6 +81,11 @@ func normalizePortSettings(settings PortSettings) PortSettings {
 }
 
 func ValidatePortSettings(settings PortSettings) error {
+	// An explicit zero is invalid. Defaults are applied by the HTTP decoder,
+	// not before validation, otherwise a bad user value is silently accepted.
+	if settings.HostPort < 1 || settings.HTTPSHostPort < 1 || settings.HTTPSContainerPort < 1 {
+		return fmt.Errorf("%w: published ports and HTTPS listener must be between 1 and 65535", ErrInvalidInput)
+	}
 	settings = normalizePortSettings(settings)
 	if settings.ReverseProxyMode != "automatic" && settings.ReverseProxyMode != "manual" && settings.ReverseProxyMode != "disabled" {
 		return fmt.Errorf("%w: reverse_proxy_mode must be automatic, manual or disabled", ErrInvalidInput)
@@ -151,6 +156,9 @@ func (s *Service) PortConfiguration(ctx context.Context, projectID string) (Port
 }
 
 func (s *Service) UpdatePortConfiguration(ctx context.Context, projectID string, settings PortSettings) (PortConfiguration, error) {
+	if err := ValidatePortSettings(settings); err != nil {
+		return PortConfiguration{}, err
+	}
 	settings = normalizePortSettings(settings)
 	current, currentErr := s.repo.PortConfiguration(ctx, projectID)
 	if currentErr != nil {

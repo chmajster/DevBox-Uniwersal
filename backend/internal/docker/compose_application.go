@@ -139,6 +139,10 @@ func parseComposeBool(value string) bool {
 }
 
 func (p *CLIProvider) ComposeUpApplication(ctx context.Context, directory, projectName string, labelsByService map[string]map[string]string) error {
+	return p.ComposeUpApplicationEnvironment(ctx, directory, projectName, labelsByService, nil)
+}
+
+func (p *CLIProvider) ComposeUpApplicationEnvironment(ctx context.Context, directory, projectName string, labelsByService map[string]map[string]string, environment map[string]map[string]string) error {
 	args, err := composeArgs(directory, projectName)
 	if err != nil {
 		return err
@@ -163,7 +167,18 @@ func (p *CLIProvider) ComposeUpApplication(ctx context.Context, directory, proje
 				}
 				safe[key] = value
 			}
-			services[name] = map[string]any{"labels": safe}
+			entry := map[string]any{"labels": safe}
+			if values := environment[name]; len(values) > 0 {
+				env := map[string]string{}
+				for key, value := range values {
+					if err := validateValue(key, "environment name"); err != nil {
+						return err
+					}
+					env[key] = strings.ReplaceAll(value, "$", "$$")
+				}
+				entry["environment"] = env
+			}
+			services[name] = entry
 		}
 		payload, _ := json.Marshal(map[string]any{"services": services})
 		file, err := os.CreateTemp("", "devbox-compose-labels-*.json")
@@ -189,7 +204,7 @@ func (p *CLIProvider) ComposeUpApplication(ctx context.Context, directory, proje
 		args = append(args, "-f", path)
 	}
 	defer cleanup()
-	args = append(args, "up", "--detach")
+	args = append(args, "up", "--detach", "--remove-orphans")
 	_, _, err = p.runCompose(ctx, args...)
 	return err
 }
@@ -199,4 +214,14 @@ func (p *CLIProvider) ComposeStart(ctx context.Context, directory, projectName s
 }
 func (p *CLIProvider) ComposeStop(ctx context.Context, directory, projectName string) error {
 	return p.composeCommand(ctx, directory, projectName, "", "stop")
+}
+
+func (p *CLIProvider) ComposePullApplication(ctx context.Context, directory, projectName string) error {
+	args, err := composeArgs(directory, projectName)
+	if err != nil {
+		return err
+	}
+	args = append(args, "pull", "--ignore-buildable")
+	_, _, err = p.runCompose(ctx, args...)
+	return err
 }

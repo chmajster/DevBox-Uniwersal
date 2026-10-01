@@ -37,14 +37,17 @@ export function formatDuration(seconds: number) {
 
 export function JobProgress({ job, logs, now }: { job: Job; logs: LogEntry[]; now?: Date }) {
   const progress = jobProgress(job)
+  const lastStage = [...logs].reverse().find((entry) => typeof entry.fields?.stage === 'string')?.fields?.stage
+  const stage = typeof lastStage === 'string' ? lastStage : jobStage(job)
+  const indeterminate = ['running', 'queued'].includes(job.status) && numberValue(job.result?.progress) === undefined && numberValue(job.payload?.progress) === undefined
   return (
     <div className="job-progress">
       <div className="job-progress-grid">
-        <div><span>Stage</span><strong>{jobStage(job)}</strong></div>
-        <div><span>Progress</span><strong>{Math.round(progress)}%</strong></div>
+        <div><span>Stage</span><strong>{stage}</strong></div>
+        <div><span>Progress</span><strong>{indeterminate ? 'W toku' : `${Math.round(progress)}%`}</strong></div>
         <div><span>Elapsed</span><strong>{formatDuration(elapsedSeconds(job, now))}</strong></div>
       </div>
-      <progress max={100} value={progress}>{Math.round(progress)}%</progress>
+      <progress max={100} value={indeterminate ? undefined : progress}>{Math.round(progress)}%</progress>
       {job.error && <div className="error-banner" role="alert">{job.error}</div>}
       <div className="log-console" aria-label="Job logs">
         {logs.length === 0
@@ -53,7 +56,7 @@ export function JobProgress({ job, logs, now }: { job: Job; logs: LogEntry[]; no
               <div className="log-line" key={entry.id}>
                 <time>{new Date(entry.created_at).toLocaleTimeString()}</time>
                 <strong>{entry.level.toUpperCase()}</strong>
-                <span>{entry.message}</span>
+                <span>{entry.message}{typeof entry.fields?.stage === 'string' ? ` · ${entry.fields.stage}` : ''}</span>
               </div>
             ))}
       </div>

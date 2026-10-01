@@ -178,6 +178,16 @@ func (r *Repository) Runtime(ctx context.Context, id string) (*Runtime, error) {
 }
 
 func (r *Repository) ReplaceTopology(ctx context.Context, applicationID string, workloads []Workload, endpoints []Endpoint) error {
+	return r.storeTopology(ctx, applicationID, workloads, endpoints, true)
+}
+
+// StageTopology keeps previously managed resources until external deployment
+// succeeds. Failed Compose runs may leave a mixture that must remain visible.
+func (r *Repository) StageTopology(ctx context.Context, applicationID string, workloads []Workload, endpoints []Endpoint) error {
+	return r.storeTopology(ctx, applicationID, workloads, endpoints, false)
+}
+func (r *Repository) storeTopology(ctx context.Context, applicationID string, workloads []Workload, endpoints []Endpoint, prune bool) error {
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -358,6 +368,9 @@ func (r *Repository) ReplaceTopology(ctx context.Context, applicationID string, 
 		plannedEndpoints[item.Name] = true
 	}
 
+	if !prune {
+		return tx.Commit()
+	}
 	for name, old := range existingEndpoints {
 		if plannedEndpoints[name] {
 			continue
@@ -468,7 +481,7 @@ func (r *Repository) BindDeploymentJob(ctx context.Context, deploymentID, jobID 
 }
 
 func (r *Repository) SetDeploymentStage(ctx context.Context, id, status, stage string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE application_deployments SET status=?,stage=?,started_at=COALESCE(started_at,?) WHERE id=?`, status, stage, dbTime(time.Now()), id)
+	_, err := r.db.ExecContext(ctx, `UPDATE application_deployments SET status=?,stage=?,started_at=COALESCE(started_at,?),finished_at=NULL,error_text=NULL WHERE id=?`, status, stage, dbTime(time.Now()), id)
 	return err
 }
 
