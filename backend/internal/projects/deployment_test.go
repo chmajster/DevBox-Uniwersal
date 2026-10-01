@@ -100,6 +100,60 @@ func TestPHPPostgreSQLDriverDetection(t *testing.T) {
 	if !hasPHPPostgreSQLDriver([]RuntimeModule{{Name: "pgsql"}}) {
 		t.Fatal("pgsql must satisfy PostgreSQL driver requirement")
 	}
+	if !hasPHPPostgreSQLDriver([]RuntimeModule{{Name: "pdo_pgsql"}}) {
+		t.Fatal("pdo_pgsql must satisfy PostgreSQL driver requirement")
+	}
+}
+
+func TestSharedDevBoxMySQLOverridesProjectDatabaseHostWithoutCredentials(t *testing.T) {
+	projectEnvironment := runtimes.ResolvedEnvironment{
+		Plain: map[string]string{
+			"APP_ENV":     "project",
+			"DB_HOST":     "mysql",
+			"DB_DATABASE": "application-owned-db",
+		},
+	}
+	runtime := providers.ProjectDatabaseRuntime{
+		Connection: providers.DatabaseConnection{Mode: providers.DatabaseModeNone},
+		Network:    "devbox-apps",
+		SharedServices: []providers.SharedDatabaseService{{
+			Engine: "mysql",
+			Host:   "devbox-mysql",
+			Port:   3306,
+		}},
+	}
+	env := mergedComposeEnvironment(projectEnvironment, runtime)
+	if env["DB_HOST"] != "devbox-mysql" || env["DB_PORT"] != "3306" {
+		t.Fatalf("shared DevBox MySQL must override application database endpoint: %#v", env)
+	}
+	if env["MYSQL_HOST"] != "devbox-mysql" || env["MYSQL_PORT"] != "3306" {
+		t.Fatalf("shared DevBox MySQL aliases are missing: %#v", env)
+	}
+	if env["DB_DATABASE"] != "application-owned-db" {
+		t.Fatalf("credential-free routing must preserve application database name: %#v", env)
+	}
+	for _, key := range []string{"DB_USERNAME", "DB_PASSWORD", "DATABASE_USER", "DATABASE_PASSWORD"} {
+		if _, exists := env[key]; exists {
+			t.Fatalf("credential-free routing must not manufacture %s: %#v", key, env)
+		}
+	}
+}
+
+func TestSharedDevBoxBothDatabasesUseEngineSpecificHostsOnly(t *testing.T) {
+	runtime := providers.ProjectDatabaseRuntime{
+		Connection: providers.DatabaseConnection{Mode: providers.DatabaseModeNone},
+		SharedServices: []providers.SharedDatabaseService{
+			{Engine: "mysql", Host: "devbox-mysql", Port: 3306},
+			{Engine: "postgresql", Host: "devbox-postgresql", Port: 5432},
+		},
+	}
+	env := projectDatabaseEnvironment(runtime)
+	if env["MYSQL_HOST"] != "devbox-mysql" || env["PGHOST"] != "devbox-postgresql" {
+		t.Fatalf("engine-specific database hosts are missing: %#v", env)
+	}
+	if _, exists := env["DB_HOST"]; exists {
+		t.Fatalf("DB_HOST is ambiguous when both shared databases are selected: %#v", env)
+	}
 }
 
 func TestPHPMySQLDriverDetection(t *testing.T) {
