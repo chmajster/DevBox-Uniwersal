@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { DockerContainer, Project } from '../api/types'
-import { resolveApplicationRuntimeStatus } from './applicationRuntimeStatus'
+import type { Deployment, DockerContainer, Project } from '../api/types'
+import { resolveApplicationDisplayStatus, resolveApplicationRuntimeStatus } from './applicationRuntimeStatus'
 
 function container(name: string, extra: Partial<DockerContainer> = {}): DockerContainer {
   return {
@@ -9,6 +9,18 @@ function container(name: string, extra: Partial<DockerContainer> = {}): DockerCo
     image: 'example:latest',
     state: 'running',
     status: 'Up 10 seconds',
+    ...extra,
+  }
+}
+
+function deployment(extra: Partial<Deployment> = {}): Deployment {
+  return {
+    id: 'deployment-1',
+    project_id: 'project-1',
+    status: 'RUNNING',
+    stage: 'UPDATING_SOURCE',
+    duration_ms: 0,
+    created_at: '',
     ...extra,
   }
 }
@@ -97,5 +109,34 @@ describe('resolveApplicationRuntimeStatus', () => {
       [],
       false,
     )).toBe('error')
+  })
+})
+
+describe('resolveApplicationDisplayStatus', () => {
+  it('shows DEPLOYING while an active deployment is updating source even if the old runtime status is FAILED', () => {
+    expect(resolveApplicationDisplayStatus(
+      project({ status: 'failed' }),
+      [container('devbox-app-project-1', { project_id: 'project-1', state: 'exited', status: 'Exited (1) 1 minute ago' })],
+      true,
+      deployment({ stage: 'UPDATING_SOURCE', status: 'RUNNING' }),
+    )).toBe('DEPLOYING')
+  })
+
+  it('shows BUILDING during the image build stage', () => {
+    expect(resolveApplicationDisplayStatus(
+      project({ status: 'failed' }),
+      [],
+      true,
+      deployment({ stage: 'BUILDING', status: 'RUNNING' }),
+    )).toBe('BUILDING')
+  })
+
+  it('returns the actual runtime state after a deployment has finished', () => {
+    expect(resolveApplicationDisplayStatus(
+      project({ status: 'failed' }),
+      [container('devbox-app-project-1', { project_id: 'project-1' })],
+      true,
+      deployment({ stage: 'SUCCESS', status: 'SUCCESS' }),
+    )).toBe('RUNNING')
   })
 })
