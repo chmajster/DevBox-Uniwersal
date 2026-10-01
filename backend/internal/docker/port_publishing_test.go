@@ -133,6 +133,40 @@ func TestComposePortOverrideIsOutsideSourceAndRollbackRestoresPrevious(t *testin
 	}
 }
 
+func TestComposePortOverrideSuspendAndRestore(t *testing.T) {
+	t.Setenv("DEVBOX_COMPOSE_PORTS_DIR", t.TempDir())
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "compose.yaml"), []byte("services:\n  web:\n    image: nginx:alpine\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provider := newCLIProviderWithRunner(&portComposeRunner{})
+	if _, err := provider.ConfigureComposePorts(context.Background(), source, "suspend-test", "web", []providers.PublishedPort{{HostPort: 8080, ContainerPort: 80}}); err != nil {
+		t.Fatal(err)
+	}
+	path, err := composePortOverridePath(source, "suspend-test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore, suspended, err := provider.SuspendComposePorts(source, "suspend-test")
+	if err != nil || !suspended || restore == nil {
+		t.Fatalf("suspend = suspended:%v restore:%v err:%v", suspended, restore != nil, err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("override still present while suspended: %v", err)
+	}
+	if err := restore(); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("restored override changed: %v", err)
+	}
+}
+
 func TestPortOverrideRejectsSymlinksAndUnmanagedFiles(t *testing.T) {
 	t.Setenv("DEVBOX_COMPOSE_PORTS_DIR", t.TempDir())
 	source := t.TempDir()
