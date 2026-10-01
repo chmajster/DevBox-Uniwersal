@@ -189,7 +189,18 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
         .filter((candidate) => pathWithin(target, candidate.path))
         .sort((left, right) => normalizeForCompare(right.path).length - normalizeForCompare(left.path).length)[0]
 
-    if (!root) return
+    if (!root) {
+      const fallback = availableRoots[0]
+      if (fallback) {
+        const fallbackListing = await loadDirectory(fallback.path, { signal: controller.signal })
+        if (fallbackListing) {
+          setCurrentPath(fallbackListing.path)
+          setSelected(fallbackListing.path)
+          markExpanded(fallbackListing.path)
+        }
+      }
+      return
+    }
 
     let cursor = root.path
     markExpanded(cursor)
@@ -205,7 +216,14 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
 
       if (!child) {
         const childListing = await loadDirectory(expectedPath, { signal: controller.signal, showError: false })
-        if (!childListing) return
+        if (!childListing) {
+          const fallbackListing = await loadDirectory(cursor, { signal: controller.signal })
+          if (fallbackListing) {
+            setCurrentPath(fallbackListing.path)
+            setSelected(fallbackListing.path)
+          }
+          return
+        }
         child = { name: segment, path: childListing.path }
         injectChild(cursor, child)
       }
@@ -253,7 +271,7 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+    const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
     }
     document.addEventListener('keydown', onKeyDown)
