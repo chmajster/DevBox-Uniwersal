@@ -1,0 +1,63 @@
+name: Application control plane
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'migrations/**'
+      - 'scripts/**'
+      - '.github/workflows/control-plane-verification.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-plane-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Resolve backend dependencies for isolated verification
+        working-directory: backend
+        run: go mod vendor
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Prepare temporary offline verification snapshot
+        run: |
+          git rev-parse HEAD > /tmp/verification-revision.txt
+          tar --exclude='./.git' -czf /tmp/control-plane-verification.tar.gz .
+      - name: Upload temporary verification snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: control-plane-verification-snapshot
+          path: |
+            /tmp/control-plane-verification.tar.gz
+            /tmp/verification-revision.txt
+          retention-days: 1
+      - name: Backend tests
+        working-directory: backend
+        run: go test ./...
+      - name: Frontend checks
+        working-directory: frontend
+        run: |
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
