@@ -61,7 +61,7 @@ func ParseManifest(content string) (*Manifest, error) {
 	lineNo := 0
 	for scanner.Scan() {
 		lineNo++
-		raw := strings.TrimRight(scanner.Text(), " 	")
+		raw := strings.TrimRight(scanner.Text(), " \\t\\r")
 		trimmed := strings.TrimSpace(raw)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") { continue }
 		if strings.ContainsAny(trimmed, "&*!{}[]") {
@@ -72,7 +72,7 @@ func ParseManifest(content string) (*Manifest, error) {
 		key, value, ok := strings.Cut(trimmed, ":")
 		if !ok { return nil, fmt.Errorf("line %d must contain key: value", lineNo) }
 		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
-		value = strings.Trim(value, "'"")
+		value = strings.Trim(value, "\'\\\"")
 		if strings.EqualFold(key, "command") || strings.EqualFold(key, "entrypoint") || strings.EqualFold(key, "script") || strings.EqualFold(key, "shell") {
 			return nil, fmt.Errorf("line %d contains forbidden executable field %q", lineNo, key)
 		}
