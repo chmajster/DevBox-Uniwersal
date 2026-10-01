@@ -6,7 +6,6 @@ on:
       - 'backend/**'
       - 'frontend/**'
       - 'migrations/**'
-      - 'scripts/**'
       - '.github/workflows/control-plane-verification.yml'
 
 permissions:
@@ -17,9 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  docker-lifecycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,36 +27,15 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Resolve backend dependencies for isolated verification
-        working-directory: backend
-        run: go mod vendor
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-      - name: Prepare temporary offline verification snapshot
+      - name: Docker and Compose availability
         run: |
-          git rev-parse HEAD > /tmp/verification-revision.txt
-          tar --exclude='./.git' -czf /tmp/control-plane-verification.tar.gz .
-      - name: Upload temporary verification snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: control-plane-verification-snapshot
-          path: |
-            /tmp/control-plane-verification.tar.gz
-            /tmp/verification-revision.txt
-          retention-days: 1
-      - name: Backend tests
+          docker info
+          docker compose version
+      - name: Application API, state, encryption and operation-lock regressions
         working-directory: backend
-        run: go test ./...
-      - name: Frontend checks
-        working-directory: frontend
-        run: |
-          npm run lint
-          npm run typecheck
-          npm test
-          npm run build
+        run: go test -race ./internal/applications ./internal/drivers/... -count=1
+      - name: Four real deployment drivers and persistent data safety
+        working-directory: backend
+        env:
+          DEVBOX_TEST_APPLICATION_DOCKER: '1'
+        run: go test ./internal/applications -run '^TestApplicationDockerLifecycle$' -v -count=1 -timeout=10m

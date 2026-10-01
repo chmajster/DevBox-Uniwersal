@@ -3,6 +3,7 @@ Run in frontend after npm ci && npm run build, using Python Playwright.
 No real credentials, Docker mutations, databases or managed hosts are contacted.
 """
 import json
+import os
 import re
 import threading
 import time
@@ -24,18 +25,27 @@ class SPAHandler(SimpleHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
-def project(identifier, name, runtime, status, domain):
+def application(identifier, name, runtime, status, port):
+    workload = dict(id=identifier+'-web', name='web', role='web', primary=True,
+                    image='nginx:alpine', driver_resource_id=identifier+'-container',
+                    observed_state=status, health_state='unknown')
+    endpoint = dict(id=identifier+'-http', name='primary', workload_id=workload['id'],
+                    protocol='http', container_port=80, host_port=port,
+                    primary=True, public=True, status=status)
     return dict(id=identifier, name=name, slug=identifier, description='Aplikacja testowa',
-                status=status, source_type='git', runtime=runtime, branch='main', port=8080,
-                domain=domain, runtime_version='', container_policy='auto', local_path='/test/app', working_directory='.',
-                build_command='', start_command='', healthcheck='', auto_start=False,
-                current_commit='a1b2c3d4e5', created_at='2026-09-28T08:00:00Z', updated_at='2026-09-28T08:00:00Z')
+                status=status, source_type='git', driver='managed', runtime=dict(name=runtime),
+                desired_state=status, observed_state=status, health_state='unknown',
+                source=dict(repository_url='https://github.com/example/'+identifier, reference='main'),
+                source_config=dict(container_port=80), auto_start=False,
+                workloads=[workload], endpoints=[endpoint], deployments=[],
+                workload_count=1, primary_endpoint=endpoint,
+                created_at='2026-09-28T08:00:00Z', updated_at='2026-09-28T08:00:00Z')
 
 def install_api(context, role='admin', authenticated=True):
-    state = dict(authenticated=authenticated, posts=[], calls=[], failures=set(), tick=0, deployment_stage='PREPARING',
-                 projects=[project('portal', 'Portal zespołu', 'PHP', 'running', 'portal.test'),
-                           project('api', 'API projektu', 'Go', 'running', 'api.test'),
-                           project('worker', 'Worker', 'Python', 'stopped', '')])
+    state = dict(authenticated=authenticated, posts=[], calls=[], failures=set(), tick=0, deployment_stage='PREPARE', secrets=[],
+                 applications=[application('portal', 'Portal zespołu', 'php', 'running', 8080),
+                               application('api', 'API projektu', 'go', 'running', 8081),
+                               application('worker', 'Worker', 'python', 'stopped', 8082)])
     user = dict(id='test-user', username='developer', role=role, active=True)
     jobs = [dict(id='job-482', type='Kopia zapasowa bazy danych', status='queued', created_at='2026-09-28T08:41:00Z'),
             dict(id='job-481', type='Budowa obrazu Docker', status='succeeded', created_at='2026-09-28T08:12:00Z'),
@@ -90,22 +100,64 @@ def install_api(context, role='admin', authenticated=True):
                         memory=dict(available=True, usage_percent=37.5, used_bytes=6*1024**3, total_bytes=16*1024**3, free_bytes=10*1024**3),
                         disk=dict(available=True, usage_percent=42, used_bytes=210*1024**3, total_bytes=500*1024**3, free_bytes=290*1024**3, path='/'),
                         process=dict(host_process_count=148, pid=100, goroutines=18, heap_allocated_bytes=1024, runtime_reserved_bytes=2048, uptime_seconds=5000))
-        elif endpoint == '/projects':
-            data = state['projects']
-        elif method == 'GET' and endpoint == '/projects/portal':
-            data = state['projects'][0]
-        elif method == 'GET' and endpoint == '/projects/portal/deployments':
-            data = [dict(id='deployment-test', project_id='portal', job_id='job-test',
-                         status=state['deployment_stage'], stage=state['deployment_stage'],
-                         commit_before='a1b2c3d4e5', commit_after='', duration_ms=0,
-                         started_at='2026-09-28T08:00:00Z', created_at='2026-09-28T08:00:00Z')]
+        elif endpoint == '/applications/detect':
+            assert method == 'POST'
+            assert route.request.headers.get('x-csrf-token') == 'smoke-csrf'
+            data = dict(detection=dict(driver='image', confidence='high', requires_configuration=False,
+                                       services=[dict(name='app', suggested_role='web', primary=True)],
+                                       endpoints=[dict(service='app', protocol='http', container_port=80, primary=True)]))
+        elif endpoint == '/applications':
+            if method == 'POST':
+                assert route.request.headers.get('x-csrf-token') == 'smoke-csrf'
+                body = route.request.post_data_json
+                data = application('new-app', body['name'], 'static', 'stopped', 8090)
+                data.update(source_type=body['source_type'], source=body['source'], source_config=body['configuration'])
+                state['applications'].append(data)
+                state['posts'].append(endpoint)
+            else:
+                data = state['applications']
+        elif endpoint.startswith('/applications/'):
+            parts = endpoint.split('/')
+            app = next(item for item in state['applications'] if item['id'] == parts[2])
+            suffix = '/'.join(parts[3:])
+            if method in ('POST', 'PATCH', 'PUT', 'DELETE'):
+                assert route.request.headers.get('x-csrf-token') == 'smoke-csrf'
+                state['posts'].append(endpoint)
+            if method == 'GET' and suffix == 'state':
+                data = dict(application_id=app['id'], status=app['status'], observed_state=app['observed_state'],
+                            desired_state=app['desired_state'], health_state=app['health_state'], workloads=app['workloads'])
+            elif method == 'GET' and suffix == '':
+                data = app
+            elif method == 'PATCH' and suffix == '':
+                body = route.request.post_data_json
+                app.update(name=body['name'], description=body['description'], source_config=body['configuration'])
+                data = app
+            elif method == 'GET' and suffix == 'logs':
+                data = [dict(workload='web', line='GET /health 200')]
+            elif method == 'GET' and suffix == 'events':
+                data = [dict(type='deployment.completed', stage='SUCCESS')]
+            elif method == 'GET' and suffix == 'secrets':
+                data = state['secrets']
+            elif method == 'PUT' and suffix.startswith('secrets/'):
+                state['secrets'].append(parts[4])
+                data = dict(name=parts[4])
+            elif method == 'POST' and suffix in ('deploy', 'start', 'stop', 'restart'):
+                job = dict(id='job-test', status='queued', type='application.'+suffix,
+                           application_id=app['id'], created_at='2026-09-28T08:00:00Z')
+                app['active_operation'] = job
+                if suffix == 'deploy':
+                    deployment = dict(id='deployment-test', job_id=job['id'], status='running',
+                                      driver=app['driver'], stage=state['deployment_stage'],
+                                      created_at='2026-09-28T08:00:00Z')
+                    app['deployments'] = [deployment]
+                    data = dict(job=job, deployment=deployment)
+                else:
+                    data = job
+            else:
+                raise AssertionError(f'Unexpected application request: {method} {endpoint}')
         elif endpoint == '/logs':
             source = parse_qs(parsed.query).get('source', ['all'])[0]
             data = [entry for entry in logs if source == 'all' or entry['source'] == source]
-        elif method == 'POST' and endpoint.endswith(('/deploy', '/archive')):
-            assert route.request.headers.get('x-csrf-token') == 'smoke-csrf'
-            state['posts'].append(endpoint)
-            data = {'id': 'job-test', 'status': 'queued', 'type': 'deploy', 'created_at': '2026-09-28T08:00:00Z'}
         elif endpoint in responses:
             data = responses[endpoint]
         else:
@@ -127,7 +179,7 @@ def main():
     errors = []
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch()
+            browser = p.chromium.launch(executable_path=os.getenv('PLAYWRIGHT_CHROMIUM_EXECUTABLE') or None)
             context = browser.new_context(viewport={'width': 1440, 'height': 1086}, color_scheme='light')
             state = install_api(context)
             page = context.new_page()
@@ -164,7 +216,6 @@ def main():
             page.get_by_role('button', name='Zwiń menu').click()
             expect(page.locator('.app-shell')).to_have_class(re.compile('is-collapsed'))
             page.get_by_role('button', name='Rozwiń menu').click()
-
             page.get_by_role('combobox', name='Źródło logów', exact=True).select_option('docker')
             expect(page.locator('.console-log-line')).to_have_count(2)
             page.get_by_role('combobox', name='Liczba linii').select_option('20')
@@ -177,35 +228,78 @@ def main():
             expect(page.locator('tbody tr')).to_have_count(1)
             page.goto(BASE + '/jobs?job=job-481')
             expect(page.locator('.job-details')).to_be_visible()
-
             page.keyboard.press('Control+k')
             search = page.get_by_role('textbox', name='Szukaj w nawigacji')
             expect(search).to_be_focused()
             search.fill('Aplikacje')
             search.press('Enter')
-            expect(page.locator('.project-card')).to_have_count(3)
+            expect(page.locator('.acp-table tbody tr')).to_have_count(3)
             page.screenshot(path=str(OUT / 'applications-dark.png'), full_page=True)
-            page.get_by_role('textbox', name='Szukaj aplikacji').fill('PYTHON')
-            expect(page.locator('.project-card')).to_have_count(1)
-            page.get_by_role('button', name='Wyczyść filtry', exact=True).click()
-            page.get_by_role('combobox', name='Filtr statusu').select_option('RUNNING')
-            expect(page.locator('.project-card')).to_have_count(2)
-            page.get_by_role('combobox', name='Filtr statusu').select_option('')
-            page.get_by_role('button', name='Widok tabeli').click()
-            expect(page.get_by_role('table')).to_be_visible()
-            page.reload()
-            expect(page.get_by_role('table')).to_be_visible()
-            page.get_by_role('button', name='Widok kafelków').click()
-            page.get_by_role('button', name='Archiwizuj Portal zespołu', exact=True).click()
-            expect(page.get_by_role('dialog', name='Archiwizować aplikację?')).to_be_visible()
-            page.get_by_role('button', name='Anuluj', exact=True).click()
+            search_app = page.get_by_role('searchbox', name='Szukaj aplikacji')
+            search_app.fill('WORKER')
+            expect(page.locator('.acp-table tbody tr')).to_have_count(1)
+            search_app.fill('')
+            expect(page.locator('.acp-table tbody tr')).to_have_count(3)
+            # Source wizard creates configuration, not a running deployment.
+            page.get_by_role('link', name='Dodaj aplikację', exact=True).click()
+            page.get_by_label('Nazwa', exact=True).fill('Nowa aplikacja')
+            page.get_by_label('Rodzaj źródła').select_option('docker_image')
+            page.get_by_label('Obraz Docker / OCI', exact=True).fill('nginx:alpine')
+            page.get_by_role('button', name='Dalej', exact=True).click()
+            page.get_by_label('Port wewnętrzny', exact=True).fill('80')
+            page.get_by_role('button', name='Dalej', exact=True).click()
+            page.get_by_role('button', name='Przeanalizuj źródło').click()
+            expect(page.get_by_role('heading', name='Wynik analizy')).to_be_visible()
+            page.screenshot(path=str(OUT / 'application-wizard.png'), full_page=True)
+            page.get_by_role('button', name='Utwórz aplikację').click()
+            expect(page.get_by_role('heading', name='Nowa aplikacja', exact=True)).to_be_visible()
+            assert state['posts'] == ['/applications']
+            state['applications'].pop()
+            state['posts'].clear()
+            page.goto(BASE + '/apps/portal')
+            expect(page.get_by_role('heading', name='Portal zespołu', exact=True)).to_be_visible()
+            page.get_by_role('button', name='Usuń', exact=True).click()
+            dialog = page.get_by_role('dialog', name='Usuń aplikację')
+            expect(dialog).to_be_visible()
+            expect(dialog.get_by_role('button', name='Usuń aplikację')).to_be_disabled()
+            dialog.get_by_role('button', name='Anuluj', exact=True).click()
             assert not state['posts']
-            page.get_by_role('button', name='Wdróż Portal zespołu', exact=True).click()
-            expect(page).to_have_url(re.compile(r'/apps/portal[?]tab=deployments$'))
-            expect(page.get_by_text('AKTUALNY DEPLOYMENT', exact=True)).to_be_visible()
-            expect(page.get_by_role('heading', name='Przygotowanie', exact=True)).to_be_visible()
-            assert state['posts'] == ['/projects/portal/deploy']
-
+            page.get_by_role('button', name='Konfiguracja', exact=True).click()
+            page.get_by_label('Port wewnętrzny', exact=True).fill('8080')
+            page.get_by_role('button', name='Zapisz konfigurację').click()
+            expect(page.get_by_text('Konfiguracja zapisana.', exact=False)).to_be_visible()
+            assert state['applications'][0]['source_config']['container_port'] == 8080
+            page.get_by_role('button', name='Sekrety', exact=True).click()
+            page.get_by_label('Nazwa', exact=True).fill('API_TOKEN')
+            page.get_by_label('Nowa wartość', exact=True).fill('synthetic-secret')
+            page.get_by_role('button', name='Zapisz sekret').click()
+            expect(page.locator('.acp-secret-list code')).to_have_text('API_TOKEN')
+            expect(page.get_by_label('Nowa wartość', exact=True)).to_have_value('')
+            page.get_by_role('button', name='Logi', exact=True).click()
+            expect(page.get_by_label('Logi aplikacji')).to_contain_text('GET /health 200')
+            page.get_by_role('button', name='Deploy', exact=True).click()
+            expect(page.get_by_role('button', name='Deploy', exact=True)).to_be_disabled()
+            expect(page.get_by_role('link', name='Postęp i anulowanie')).to_be_visible()
+            page.get_by_role('button', name='Wdrożenia', exact=True).click()
+            expect(page.get_by_role('heading', name='Historia wdrożeń')).to_be_visible()
+            expect(page.get_by_role('cell', name='PREPARE', exact=True)).to_be_visible()
+            assert state['posts'][-1] == '/applications/portal/deploy'
+            # A successful job and real runtime state are independent reads.
+            portal = state['applications'][0]
+            portal.pop('active_operation')
+            portal['deployments'][0].update(status='success', stage='SUCCESS')
+            portal.update(status='stopped', observed_state='stopped', desired_state='stopped')
+            with page.expect_response(lambda response: '/applications/portal/state' in response.url):
+                page.clock.fast_forward(5100)
+            expect(page.locator('.acp-header .acp-status')).to_have_text('Zatrzymana')
+            expect(page.get_by_role('button', name='Deploy', exact=True)).to_be_enabled()
+            page.screenshot(path=str(OUT / 'application-detail.png'), full_page=True)
+            # Failed inspection must not retain a stale green runtime badge.
+            state['failures'].add('/applications/portal/state')
+            page.get_by_role('button', name='Odśwież stan', exact=True).click()
+            expect(page.locator('.acp-header .acp-status')).to_have_text('Brak odczytu')
+            state['failures'].clear()
+            portal.update(status='running', observed_state='running', desired_state='running')
             for width in (900, 390, 320):
                 page.set_viewport_size({'width': width, 'height': 844})
                 no_overflow(page)
@@ -218,8 +312,9 @@ def main():
                 no_overflow(page)
                 page.screenshot(path=str(OUT / f'control-room-mobile-{width}.png'), full_page=True)
                 page.goto(BASE + '/apps')
-                expect(page.locator('.project-card')).to_have_count(3)
-            state['failures'].update(['/projects', '/monitoring/snapshot', '/docker/status'])
+                expect(page.locator('.acp-table tbody tr')).to_have_count(3)
+                no_overflow(page)
+            state['failures'].update(['/applications', '/monitoring/snapshot', '/docker/status'])
             page.set_viewport_size({'width': 1440, 'height': 1086})
             page.goto(BASE)
             expect(page.locator('.console-kpi').first.locator('strong')).to_have_text('—')
@@ -229,20 +324,21 @@ def main():
             expect(page.get_by_text('Aplikacje: Test: API niedostępne', exact=True)).to_be_visible()
             page.screenshot(path=str(OUT / 'control-room-api-errors.png'), full_page=True)
             state['failures'].clear()
-            state['projects'] = None
+            state['applications'] = []
             page.goto(BASE + '/apps')
-            expect(page.get_by_role('heading', name='Miejsce na Twoją pierwszą aplikację')).to_be_visible()
+            expect(page.get_by_role('heading', name='Brak aplikacji')).to_be_visible()
             context.close()
-
             viewer = browser.new_context(viewport={'width': 1280, 'height': 900})
             install_api(viewer, role='viewer')
             viewer.add_init_script("Storage.prototype.getItem = () => { throw new Error('blocked') }; Storage.prototype.setItem = () => { throw new Error('blocked') };")
             v = viewer.new_page()
             v.on('pageerror', lambda error: errors.append(str(error)))
             v.goto(BASE + '/apps')
-            expect(v.locator('.project-card')).to_have_count(3)
+            expect(v.locator('.acp-table tbody tr')).to_have_count(3)
             expect(v.get_by_role('link', name='Dodaj aplikację')).to_have_count(0)
-            expect(v.get_by_role('button', name='Wdróż Portal zespołu')).to_have_count(0)
+            v.get_by_role('link', name='Portal zespołu', exact=True).click()
+            expect(v.get_by_role('button', name='Deploy', exact=True)).to_be_disabled()
+            expect(v.get_by_role('button', name='Usuń', exact=True)).to_have_count(0)
             expect(v.get_by_role('link', name='Kopie zapasowe', exact=True)).to_have_count(0)
             expect(v.get_by_role('link', name='Audyt', exact=True)).to_have_count(0)
             v.get_by_role('button', name='Włącz jasny motyw').click()
@@ -253,7 +349,6 @@ def main():
             v.keyboard.press('Escape')
             expect(v.get_by_role('dialog')).to_have_count(0)
             viewer.close()
-
             login = browser.new_context(viewport={'width': 1440, 'height': 960})
             install_api(login, authenticated=False)
             l = login.new_page()
@@ -270,7 +365,7 @@ def main():
             login.close()
             browser.close()
         assert not errors, errors
-        report = {'status': 'passed', 'fixtures': 'Synthetic API only; production bundle', 'checks': ['dark default/light persistence', 'real-source gauges', 'chart sample accumulation and metric/range switching', 'service failures', 'logs filters/deep link', 'job queue and details deep links', 'search', 'project CRUD UI and CSRF', '900/390/320px no overflow', 'API failures/null collections', 'viewer RBAC visibility', 'blocked storage', 'login']}
+        report = {'status': 'passed', 'fixtures': 'Synthetic API only; production bundle', 'checks': ['dark default/light persistence', 'real-source gauges', 'chart sample accumulation and metric/range switching', 'service failures', 'logs filters/deep link', 'job queue and details deep links', 'search', 'application wizard/configuration/secrets/deployment/CSRF', 'live runtime state independent of deployment', 'failed provider inspection', 'preserve data confirmation', '900/390/320px no overflow', 'API failures/null collections', 'viewer RBAC visibility', 'blocked storage', 'login']}
         (OUT / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         print(json.dumps(report, ensure_ascii=False))
     finally:
