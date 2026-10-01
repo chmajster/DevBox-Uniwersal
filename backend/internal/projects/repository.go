@@ -331,7 +331,6 @@ func (r *Repository) WaitingDeployment(ctx context.Context, projectID string) (D
 	return Deployment{}, false, nil
 }
 
-
 func (r *Repository) FinishDeployment(ctx context.Context, id, status, stage, commitAfter, errorText string, finished time.Time, duration time.Duration) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE deployments SET status=?,current_stage=?,commit_after=?,error_text=?,finished_at=?,duration_ms=?,revision=? WHERE id=?`,
 		status, stage, nullable(commitAfter), nullable(errorText), finished.UTC().Format(time.RFC3339Nano), duration.Milliseconds(), nullable(commitAfter), id)
