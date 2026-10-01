@@ -345,9 +345,10 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		if len(databaseRuntime.Secret) > 0 {
 			defer clear(databaseRuntime.Secret)
 		}
-		if databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
+		if databaseRuntimeConfigured(databaseRuntime) {
 			_ = h.logger.Log(ctx, job.ID, "info", "deployment.database.resolved", databaseLogFields(databaseRuntime))
-			if !databaseRuntime.HostAccessOnly && databaseRuntime.Connection.Mode != providers.DatabaseModeCompose {
+			if databaseRuntime.Connection.Mode != providers.DatabaseModeNone &&
+				!databaseRuntime.HostAccessOnly && databaseRuntime.Connection.Mode != providers.DatabaseModeCompose {
 				if err := h.integrations.Database.TestApplicationConnection(ctx, p.ID); err != nil {
 					return nil, err
 				}
@@ -375,7 +376,7 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			}
 		}
 		composeEnvironment := mergedComposeEnvironment(projectEnvironment, databaseRuntime)
-		if len(composeEnvironment) > 0 || databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
+		if len(composeEnvironment) > 0 || databaseRuntimeConfigured(databaseRuntime) {
 			databaseProvider, ok := h.integrations.Compose.(providers.ComposeDatabaseProvider)
 			if !ok {
 				return nil, errors.New("provider unavailable: Compose environment/database integration")
@@ -730,20 +731,12 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		for _, module := range config.Modules {
 			modules = append(modules, containerspec.Module{Name: module.Name, Version: module.Version})
 		}
-		if databaseRuntime.Connection.Mode != providers.DatabaseModeNone && runtimeName == "php" {
-			engine := strings.ToLower(strings.TrimSpace(databaseRuntime.Connection.Engine))
-			switch engine {
-			case "mysql", "mariadb", "":
-				if !databaseRuntime.HostAccessOnly && !hasPHPMySQLDriver(config.Modules) {
-					return nil, errors.New("project PHP runtime does not contain pdo_mysql or mysqli")
-				}
-				if databaseRuntime.HostAccessOnly && !hasPHPMySQLDriver(config.Modules) {
-					return nil, errors.New("project PHP runtime does not contain a MySQL driver for host database access")
-				}
-			case "postgresql", "postgres":
-				if databaseRuntime.HostAccessOnly && !hasPHPPostgreSQLDriver(config.Modules) {
-					return nil, errors.New("project PHP runtime does not contain pgsql for host PostgreSQL access")
-				}
+		if databaseRuntimeConfigured(databaseRuntime) && runtimeName == "php" {
+			if databaseRuntimeUsesEngine(databaseRuntime, "mysql") && !hasPHPMySQLDriver(config.Modules) {
+				return nil, errors.New("project PHP runtime does not contain pdo_mysql or mysqli")
+			}
+			if databaseRuntimeUsesEngine(databaseRuntime, "postgresql") && !hasPHPPostgreSQLDriver(config.Modules) {
+				return nil, errors.New("project PHP runtime does not contain pgsql or pdo_pgsql")
 			}
 		}
 		spec, err = containerspec.GenerateManaged(p.ID, workDir, runtimeName, config.RuntimeVersion, modules, commitAfter, port)
@@ -764,10 +757,10 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			spec.Networks = append(spec.Networks, h.integrations.SharedNetwork)
 		}
 	}
-	if databaseRuntime.Connection.Mode != providers.DatabaseModeNone {
+	if databaseRuntimeConfigured(databaseRuntime) {
 		if !databaseRuntime.HostAccessOnly {
 			mergeDatabaseEnvironment(&spec, projectDatabaseEnvironment(databaseRuntime))
-			if databaseRuntime.Network != "" {
+			if databaseRuntime.Network != "" && !containsString(spec.Networks, databaseRuntime.Network) {
 				spec.Networks = append(spec.Networks, databaseRuntime.Network)
 			}
 		}
@@ -1055,7 +1048,7 @@ func mergedComposeEnvironment(environment runtimes.ResolvedEnvironment, database
 	for key, value := range environment.Sensitive {
 		result[key] = value
 	}
-	if database.Connection.Mode != providers.DatabaseModeNone && !database.HostAccessOnly {
+	if databaseRuntimeConfigured(database) && !database.HostAccessOnly {
 		for key, value := range projectDatabaseEnvironment(database) {
 			result[key] = value
 		}
@@ -1098,27 +1091,99 @@ func databaseLogFields(runtime providers.ProjectDatabaseRuntime) map[string]any 
 		"port":             connection.Port,
 		"database":         connection.Database,
 		"username":         connection.Username,
+		"shared_services":  runtime.SharedServices,
 		"host_access_only": runtime.HostAccessOnly,
 	}
 }
 
+func databaseRuntimeConfigured(runtime providers.ProjectDatabaseRuntime) bool {
+	return runtime.Connection.Mode != providers.DatabaseModeNone || len(runtime.SharedServices) > 0
+}
+
+func databaseRuntimeUsesEngine(runtime providers.ProjectDatabaseRuntime, engine string) bool {
+	target := strings.ToLower(strings.TrimSpace(engine))
+	if target == "mariadb" {
+		target = "mysql"
+	}
+	if target == "postgres" {
+		target = "postgresql"
+	}
+	if runtime.Connection.Mode != providers.DatabaseModeNone {
+		current := strings.ToLower(strings.TrimSpace(runtime.Connection.Engine))
+		if current == "" {
+			current = "mysql"
+		}
+		if current == "mariadb" {
+			current = "mysql"
+		}
+		if current == "postgres" {
+			current = "postgresql"
+		}
+		return current == target
+	}
+	for _, service := range runtime.SharedServices {
+		current := strings.ToLower(strings.TrimSpace(service.Engine))
+		if current == "mariadb" {
+			current = "mysql"
+		}
+		if current == "postgres" {
+			current = "postgresql"
+		}
+		if current == target {
+			return true
+		}
+	}
+	return false
+}
+
 func projectDatabaseEnvironment(runtime providers.ProjectDatabaseRuntime) map[string]string {
 	connection := runtime.Connection
-	port := strconv.Itoa(connection.Port)
-	password := string(runtime.Secret)
-	return map[string]string{
-		"DB_DRIVER":         "mysql",
-		"DB_HOST":           connection.Host,
-		"DB_PORT":           port,
-		"DB_DATABASE":       connection.Database,
-		"DB_USERNAME":       connection.Username,
-		"DB_PASSWORD":       password,
-		"DATABASE_HOST":     connection.Host,
-		"DATABASE_PORT":     port,
-		"DATABASE_NAME":     connection.Database,
-		"DATABASE_USER":     connection.Username,
-		"DATABASE_PASSWORD": password,
+	if connection.Mode != providers.DatabaseModeNone {
+		port := strconv.Itoa(connection.Port)
+		password := string(runtime.Secret)
+		return map[string]string{
+			"DB_DRIVER":         "mysql",
+			"DB_HOST":           connection.Host,
+			"DB_PORT":           port,
+			"DB_DATABASE":       connection.Database,
+			"DB_USERNAME":       connection.Username,
+			"DB_PASSWORD":       password,
+			"DATABASE_HOST":     connection.Host,
+			"DATABASE_PORT":     port,
+			"DATABASE_NAME":     connection.Database,
+			"DATABASE_USER":     connection.Username,
+			"DATABASE_PASSWORD": password,
+		}
 	}
+
+	result := map[string]string{}
+	for _, service := range runtime.SharedServices {
+		port := strconv.Itoa(service.Port)
+		switch strings.ToLower(strings.TrimSpace(service.Engine)) {
+		case "mysql", "mariadb":
+			result["MYSQL_HOST"] = service.Host
+			result["MYSQL_PORT"] = port
+		case "postgresql", "postgres":
+			result["PGHOST"] = service.Host
+			result["PGPORT"] = port
+			result["POSTGRES_HOST"] = service.Host
+			result["POSTGRES_PORT"] = port
+		}
+	}
+	if len(runtime.SharedServices) == 1 {
+		service := runtime.SharedServices[0]
+		port := strconv.Itoa(service.Port)
+		driver := "mysql"
+		if databaseRuntimeUsesEngine(runtime, "postgresql") {
+			driver = "pgsql"
+		}
+		result["DB_DRIVER"] = driver
+		result["DB_HOST"] = service.Host
+		result["DB_PORT"] = port
+		result["DATABASE_HOST"] = service.Host
+		result["DATABASE_PORT"] = port
+	}
+	return result
 }
 
 func hasPHPMySQLDriver(modules []RuntimeModule) bool {
