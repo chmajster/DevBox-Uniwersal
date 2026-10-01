@@ -50,7 +50,7 @@ function tabFromParam(value: string | null): Tab {
   return projectDetailTabs.some((item) => item.id === value) ? value as Tab : 'overview'
 }
 
-const deploymentStages = ['QUEUED', 'PREPARING', 'UPDATING_SOURCE', 'DATABASE', 'DEPENDENCIES', 'BUILDING', 'STARTING', 'HEALTHCHECK', 'SUCCESS'] as const
+const deploymentStages = ['QUEUED', 'PREPARING', 'UPDATING_SOURCE', 'DATABASE', 'DEPENDENCIES', 'BUILDING', 'RUNTIME_CONFIGURATION', 'STARTING', 'HEALTHCHECK', 'REVERSE_PROXY', 'SUCCESS'] as const
 
 const deploymentStageLabels: Record<string, string> = {
   QUEUED: 'W kolejce',
@@ -59,14 +59,21 @@ const deploymentStageLabels: Record<string, string> = {
   DATABASE: 'Konfiguracja bazy danych',
   DEPENDENCIES: 'Instalacja zależności',
   BUILDING: 'Budowanie obrazu',
+  RUNTIME_CONFIGURATION: 'Wykrywanie konfiguracji runtime',
   STARTING: 'Uruchamianie kontenera',
   HEALTHCHECK: 'Sprawdzanie healthcheck',
+  REVERSE_PROXY: 'Konfiguracja reverse proxy',
+  WAITING_FOR_CONFIGURATION: 'Oczekuje na konfigurację',
   SUCCESS: 'Zakończono',
   FAILED: 'Błąd',
 }
 
 function deploymentFinished(item: Deployment) {
   return item.status === 'SUCCESS' || item.status === 'FAILED' || item.stage === 'SUCCESS' || item.stage === 'FAILED'
+}
+
+function deploymentWaiting(item: Deployment) {
+  return item.status === 'WAITING_FOR_CONFIGURATION'
 }
 
 function deploymentProgress(item: Deployment) {
@@ -208,7 +215,7 @@ export function ProjectDetailPage() {
   }
 
   useEffect(() => {
-    if (!activeDeployment) return
+    if (!activeDeployment || deploymentWaiting(activeDeployment)) return
     let cancelled = false
     let timer = 0
 
@@ -345,10 +352,14 @@ export function ProjectDetailPage() {
         <div className="section-heading">
           <div>
             <span className="eyebrow">{activeDeployment ? 'AKTUALNY DEPLOYMENT' : 'OSTATNI DEPLOYMENT'}</span>
-            <h2>{currentDeployment.status === 'FAILED' ? `Błąd podczas: ${deploymentStageLabels[currentDeployment.stage] ?? currentDeployment.stage}` : deploymentStageLabels[currentDeployment.stage] ?? currentDeployment.stage}</h2>
+            <h2>{currentDeployment.status === 'FAILED'
+              ? `Błąd podczas: ${deploymentStageLabels[currentDeployment.stage] ?? currentDeployment.stage}`
+              : deploymentWaiting(currentDeployment)
+                ? 'Wymagana konfiguracja portu aplikacji'
+                : deploymentStageLabels[currentDeployment.stage] ?? currentDeployment.stage}</h2>
             <p className="muted"><code>{currentDeployment.id.slice(0, 12)}</code>{currentDeployment.job_id ? <> · job <code>{currentDeployment.job_id.slice(0, 12)}</code></> : null}</p>
           </div>
-          <span className={`console-badge ${currentDeployment.status === 'FAILED' ? 'badge-danger' : currentDeployment.status === 'SUCCESS' ? 'badge-success' : 'badge-info'}`}>{currentDeployment.status}</span>
+          <span className={`console-badge ${currentDeployment.status === 'FAILED' ? 'badge-danger' : currentDeployment.status === 'SUCCESS' ? 'badge-success' : 'badge-info'}`}>{deploymentStageLabels[currentDeployment.status] ?? currentDeployment.status}</span>
         </div>
         <div className="deployment-live-progress">
           <div><span>Postęp</span><strong>{deploymentProgress(currentDeployment)}%</strong></div>
@@ -363,7 +374,10 @@ export function ProjectDetailPage() {
             return <div key={stage} className={current ? currentDeployment.status === 'FAILED' ? 'is-failed' : 'is-current' : done ? 'is-done' : ''}><span></span><small>{deploymentStageLabels[stage]}</small></div>
           })}
         </div>
-        {currentDeployment.error && <div className="error-banner">{currentDeployment.error}</div>}
+        {currentDeployment.error && <div className="error-banner" style={{ whiteSpace: 'pre-line' }}>{currentDeployment.error}</div>}
+        {deploymentWaiting(currentDeployment) && user?.role !== 'viewer' && <div>
+          <button type="button" onClick={() => selectTab('ports')}>Skonfiguruj port</button>
+        </div>}
       </section>}
       <div className="table-wrap"><table><thead><tr><th>Status</th><th>Stage</th><th>Commit before</th><th>Commit after</th><th>Started</th><th>Duration</th><th>Error</th></tr></thead><tbody>{deployments.map((item) => <tr key={item.id}><td>{item.status}</td><td>{deploymentStageLabels[item.stage] ?? item.stage}</td><td><code>{item.commit_before?.slice(0, 10) || '—'}</code></td><td><code>{item.commit_after?.slice(0, 10) || '—'}</code></td><td>{item.started_at ? new Date(item.started_at).toLocaleString() : '—'}</td><td>{item.duration_ms ? `${item.duration_ms} ms` : '—'}</td><td className="error-cell">{item.error || '—'}</td></tr>)}{deployments.length === 0 && <tr><td colSpan={7} className="muted">Brak deploymentów.</td></tr>}</tbody></table></div>
     </div>}

@@ -20,15 +20,83 @@ export function PortSettingsFields({ settings, disabled, onChange }: FieldsProps
   const httpsAction = settings.https_enabled
     ? { label: 'Usuń HTTPS', change: { https_enabled: false } }
     : { label: '+ Dodaj HTTPS', change: { https_enabled: true } }
+  const candidates = settings.candidates ?? []
+  const infrastructure = settings.infrastructure_services ?? []
+  const services = Array.from(new Set(candidates.map((candidate) => candidate.service)))
+  if (settings.compose_service && !services.includes(settings.compose_service)) services.unshift(settings.compose_service)
+  const proxyDisabled = settings.reverse_proxy_mode === 'disabled'
+
+  function selectService(service: string) {
+    const candidate = candidates.find((item) => item.service === service)
+    onChange({
+      compose_service: service,
+      ...(candidate ? { container_port: candidate.port, protocol: candidate.protocol === 'https' ? 'https' : 'http' } : {}),
+    })
+  }
 
   return <fieldset disabled={disabled} aria-label="Mapowanie portów Docker" className="port-settings-fields">
     <div className="port-mapping-editor">
       <div className="port-mapping-toolbar">
         <div>
+          <strong>Reverse proxy</strong>
+          <small className="muted">DevBox wykrywa usługę HTTP aplikacji i pomija bazy danych, cache oraz inne usługi infrastrukturalne.</small>
+        </div>
+      </div>
+
+      <div className="form-grid reverse-proxy-settings">
+        <label>Tryb
+          <select aria-label="Tryb reverse proxy" value={settings.reverse_proxy_mode}
+            onChange={(event) => onChange({ reverse_proxy_mode: event.target.value as PortSettings['reverse_proxy_mode'] })}>
+            <option value="automatic">Automatyczny</option>
+            <option value="manual">Ręczny</option>
+            <option value="disabled">Wyłączony</option>
+          </select>
+        </label>
+        <label>Serwis
+          <select aria-label="Serwis aplikacji" disabled={proxyDisabled} value={settings.compose_service}
+            onChange={(event) => selectService(event.target.value)}>
+            <option value="">Automatycznie</option>
+            {services.map((service) => <option key={service} value={service}>{service}</option>)}
+          </select>
+        </label>
+        <label>Port kontenera
+          <input type="number" min={1} max={65535} step={1} disabled={proxyDisabled}
+            aria-label="Port kontenera reverse proxy" value={settings.container_port || ''}
+            placeholder="Auto"
+            onChange={(event) => onChange({ container_port: Number(event.target.value) })} />
+        </label>
+        <label>Protokół
+          <select aria-label="Protokół reverse proxy" disabled={proxyDisabled} value={settings.protocol}
+            onChange={(event) => onChange({ protocol: event.target.value as PortSettings['protocol'] })}>
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+          </select>
+        </label>
+        <label className="span-2">Healthcheck
+          <input disabled={proxyDisabled} value={settings.healthcheck}
+            placeholder="/ lub http://app:8000/health"
+            onChange={(event) => onChange({ healthcheck: event.target.value })} />
+        </label>
+      </div>
+
+      {settings.compose_service && settings.container_port > 0 && <div className="validation-box reverse-proxy-detection">
+        <strong>Wykryto: {settings.compose_service}:{settings.container_port}</strong>
+        <span>Źródło: {settings.detection_source || (settings.detection_mode === 'manual' ? 'konfiguracja ręczna' : 'docker-compose.yml')}</span>
+      </div>}
+      {candidates.length > 1 && <div className="validation-box">
+        <strong>Wymagany wybór portu aplikacji.</strong>
+        <span>{candidates.map((candidate) => `${candidate.service}:${candidate.port}`).join(', ')}</span>
+      </div>}
+      {infrastructure.length > 0 && <div className="port-mapping-help">
+        <span><strong>Pomijane usługi infrastrukturalne:</strong> {infrastructure.map((candidate) => `${candidate.service}:${candidate.port}`).join(', ')}</span>
+      </div>}
+
+      <div className="port-mapping-toolbar">
+        <div>
           <strong>Mapowania portów</strong>
           <small className="muted">Port hosta jest publikowany na zewnątrz, a port kontenera wskazuje port aplikacji wewnątrz Dockera.</small>
         </div>
-        <button type="button" className="secondary-button port-mapping-toggle"
+        <button type="button" className="secondary-button port-mapping-toggle" disabled={proxyDisabled}
           onClick={() => onChange(httpsAction.change)}>
           {httpsAction.label}
         </button>
@@ -48,19 +116,19 @@ export function PortSettingsFields({ settings, disabled, onChange }: FieldsProps
               <td>
                 <div className="port-mapping-cell">
                   <span className="port-map-kind">HTTP</span>
-                  <input type="number" required min={1} max={65535} step={1}
+                  <input type="number" required min={1} max={65535} step={1} disabled={proxyDisabled}
                     aria-label="Port hosta HTTP" value={settings.host_port || ''}
                     onChange={(event) => onChange({ host_port: Number(event.target.value) })} />
                 </div>
               </td>
               <td>
-                <input type="number" min={1} max={65535} step={1}
+                <input type="number" min={1} max={65535} step={1} disabled={proxyDisabled}
                   aria-label="Port kontenera HTTP" value={settings.container_port || ''}
                   placeholder="Auto"
                   onChange={(event) => onChange({ container_port: Number(event.target.value) })} />
               </td>
               <td>
-                <select aria-label="Typ protokołu HTTP" value="tcp" onChange={() => undefined}>
+                <select aria-label="Typ protokołu HTTP" value="tcp" disabled={proxyDisabled} onChange={() => undefined}>
                   <option value="tcp">TCP</option>
                 </select>
               </td>
@@ -69,18 +137,18 @@ export function PortSettingsFields({ settings, disabled, onChange }: FieldsProps
               <td>
                 <div className="port-mapping-cell">
                   <span className="port-map-kind">HTTPS</span>
-                  <input type="number" required min={1} max={65535} step={1}
+                  <input type="number" required min={1} max={65535} step={1} disabled={proxyDisabled}
                     aria-label="Port hosta HTTPS" value={settings.https_host_port || ''}
                     onChange={(event) => onChange({ https_host_port: Number(event.target.value) })} />
                 </div>
               </td>
               <td>
-                <input type="number" required min={1} max={65535} step={1}
+                <input type="number" required min={1} max={65535} step={1} disabled={proxyDisabled}
                   aria-label="Port kontenera HTTPS" value={settings.https_container_port || ''}
                   onChange={(event) => onChange({ https_container_port: Number(event.target.value) })} />
               </td>
               <td>
-                <select aria-label="Typ protokołu HTTPS" value="tcp" onChange={() => undefined}>
+                <select aria-label="Typ protokołu HTTPS" value="tcp" disabled={proxyDisabled} onChange={() => undefined}>
                   <option value="tcp">TCP</option>
                 </select>
               </td>
@@ -90,17 +158,10 @@ export function PortSettingsFields({ settings, disabled, onChange }: FieldsProps
       </div>
 
       <div className="port-mapping-help">
-        <span><strong>HTTP:</strong> puste pole portu kontenera oznacza Auto — DevBox wykryje EXPOSE lub port runtime.</span>
+        <span><strong>HTTP:</strong> puste pole portu kontenera oznacza Auto — DevBox wykryje Compose, EXPOSE, healthcheck lub runtime.</span>
         <span><strong>Host:</strong> od wskazanego portu DevBox szuka kolejnego wolnego numeru, np. 8080, 8081, 8082.</span>
         {settings.https_enabled && <span><strong>HTTPS:</strong> to passthrough TCP. DevBox nie tworzy certyfikatu ani serwera TLS.</span>}
       </div>
-
-      <label className="port-compose-setting">Usługa Compose <span className="muted">(opcjonalnie)</span>
-        <input value={settings.compose_service} maxLength={128}
-          placeholder="np. web — puste: wykryj jednoznacznie usługę web"
-          onChange={(event) => onChange({ compose_service: event.target.value })} />
-        <small className="muted">Dla Compose zapis włącza zarządzanie publikowanymi portami wybranej usługi. Wymaga Docker Compose 2.24.4+. Pliki źródłowe projektu pozostają bez zmian.</small>
-      </label>
     </div>
   </fieldset>
 }

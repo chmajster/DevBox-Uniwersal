@@ -212,68 +212,28 @@ func (p *CLIProvider) composeConfigJSON(ctx context.Context, directory, projectN
 }
 
 func selectComposePortBinding(data []byte) (providers.ComposePortBinding, error) {
-	var config struct {
-		Services map[string]struct {
-			Ports []struct {
-				Target    int             `json:"target"`
-				Published json.RawMessage `json:"published"`
-				Protocol  string          `json:"protocol"`
-			} `json:"ports"`
-		} `json:"services"`
+	discovery, err := discoverComposeApplicationPorts(data, "", 0)
+	if err != nil {
+		return providers.ComposePortBinding{}, err
 	}
-	if err := json.Unmarshal(data, &config); err != nil {
-		return providers.ComposePortBinding{}, fmt.Errorf("decode normalized compose config: %w", err)
-	}
-	type candidate struct {
-		binding providers.ComposePortBinding
-		score   int
-	}
-	candidates := make([]candidate, 0)
-	for serviceName, service := range config.Services {
-		for _, port := range service.Ports {
-			published := composeJSONPort(port.Published)
-			if published < 1 || published > 65535 || port.Target < 1 || port.Target > 65535 {
-				continue
-			}
-			protocol := strings.ToLower(strings.TrimSpace(port.Protocol))
-			if protocol == "" {
-				protocol = "tcp"
-			}
-			if protocol != "tcp" {
-				continue
-			}
-			candidates = append(candidates, candidate{
-				binding: providers.ComposePortBinding{
-					Service:           serviceName,
-					RequestedHostPort: published,
-					HostPort:          published,
-					ContainerPort:     port.Target,
-					Protocol:          protocol,
-				},
-				score: composePortScore(serviceName, port.Target),
-			})
+	if discovery.Selected == nil {
+		if len(discovery.Candidates) == 0 {
+			return providers.ComposePortBinding{}, fmt.Errorf("no HTTP application port found in compose config")
 		}
-	}
-	if len(candidates) == 0 {
-		return providers.ComposePortBinding{}, fmt.Errorf("no published TCP port found in compose config; publish the HTTP service port")
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].score == candidates[j].score {
-			if candidates[i].binding.RequestedHostPort == candidates[j].binding.RequestedHostPort {
-				return candidates[i].binding.ContainerPort < candidates[j].binding.ContainerPort
-			}
-			return candidates[i].binding.RequestedHostPort < candidates[j].binding.RequestedHostPort
+		items := make([]string, 0, len(discovery.Candidates))
+		for _, candidate := range discovery.Candidates {
+			items = append(items, fmt.Sprintf("%s:%d", candidate.Service, candidate.ContainerPort))
 		}
-		return candidates[i].score > candidates[j].score
-	})
-	if len(candidates) > 1 && candidates[0].score == candidates[1].score {
-		return providers.ComposePortBinding{}, fmt.Errorf(
-			"multiple compose ports are equally likely for reverse proxy: %s:%d and %s:%d; configure a project port or healthcheck URL",
-			candidates[0].binding.Service, candidates[0].binding.RequestedHostPort,
-			candidates[1].binding.Service, candidates[1].binding.RequestedHostPort,
-		)
+		return providers.ComposePortBinding{}, fmt.Errorf("multiple application ports require configuration: %s", strings.Join(items, ", "))
 	}
-	return candidates[0].binding, nil
+	selected := *discovery.Selected
+	if selected.HostPort < 1 || selected.HostPort > 65535 {
+		return providers.ComposePortBinding{}, fmt.Errorf("application service %s:%d is not published on the host", selected.Service, selected.ContainerPort)
+	}
+	return providers.ComposePortBinding{
+		Service: selected.Service, RequestedHostPort: selected.HostPort, HostPort: selected.HostPort,
+		ContainerPort: selected.ContainerPort, Protocol: "tcp",
+	}, nil
 }
 
 func composeJSONPort(raw json.RawMessage) int {
@@ -566,11 +526,12 @@ func (p *CLIProvider) ComposeTargetPort(ctx context.Context, directory, projectN
 				if convErr != nil || hostPort < 1 || hostPort > 65535 {
 					continue
 				}
+				score := composePortScore(service, containerPort)
+				if score < 0 {
+					continue
+				}
 				candidate := composePortCandidate{
-					service:       service,
-					containerPort: containerPort,
-					hostPort:      hostPort,
-					score:         composePortScore(service, containerPort),
+					service: service, containerPort: containerPort, hostPort: hostPort, score: score,
 				}
 				if current, exists := byHostPort[hostPort]; !exists || candidate.score > current.score {
 					byHostPort[hostPort] = candidate
@@ -604,36 +565,20 @@ func (p *CLIProvider) ComposeTargetPort(ctx context.Context, directory, projectN
 }
 
 func composePortScore(service string, containerPort int) int {
-	score := 0
-	switch strings.ToLower(strings.TrimSpace(service)) {
-	case "web":
-		score += 100
-	case "app":
-		score += 90
-	case "api":
-		score += 80
-	case "frontend":
-		score += 70
-	case "www":
-		score += 60
-	case "server":
-		score += 50
+	targets := map[int]int{containerPort: 0}
+	if composeServiceIsInfrastructure(service, "", targets) {
+		return -10000
 	}
-	switch containerPort {
-	case 80:
-		score += 50
-	case 8080:
-		score += 45
-	case 8000:
-		score += 40
-	case 3000:
-		score += 35
-	case 5000:
-		score += 30
-	case 443:
-		score += 20
-	case 8443:
-		score += 15
+	score := 10
+	if composeApplicationServiceNames[strings.ToLower(strings.TrimSpace(service))] {
+		score += 100
+	}
+	if composeApplicationPorts[containerPort] {
+		if containerPort == 443 || containerPort == 8443 {
+			score += 50
+		} else {
+			score += 60
+		}
 	}
 	return score
 }

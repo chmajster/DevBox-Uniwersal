@@ -17,7 +17,7 @@ import (
 )
 
 func TestDeploymentStateMachine(t *testing.T) {
-	states := []string{DeploymentQueued, DeploymentPreparing, DeploymentUpdatingSource, DeploymentDatabase, DeploymentDependencies, DeploymentBuilding, DeploymentStarting, DeploymentHealthcheck, DeploymentSuccess}
+	states := []string{DeploymentQueued, DeploymentPreparing, DeploymentUpdatingSource, DeploymentDatabase, DeploymentDependencies, DeploymentBuilding, DeploymentRuntimeConfiguration, DeploymentStarting, DeploymentHealthcheck, DeploymentReverseProxy, DeploymentSuccess}
 	for i := 0; i < len(states)-1; i++ {
 		if !validDeploymentTransition(states[i], states[i+1]) {
 			t.Fatalf("expected valid transition %s -> %s", states[i], states[i+1])

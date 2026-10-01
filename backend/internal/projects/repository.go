@@ -304,7 +304,7 @@ func (r *Repository) BindDeploymentJob(ctx context.Context, deploymentID, jobID 
 }
 
 func (r *Repository) StartDeployment(ctx context.Context, id, stage, commitBefore string, started time.Time) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE deployments SET status=?,current_stage=?,commit_before=?,started_at=? WHERE id=?`, stage, stage, nullable(commitBefore), started.UTC().Format(time.RFC3339Nano), id)
+	_, err := r.db.ExecContext(ctx, `UPDATE deployments SET status=?,current_stage=?,commit_before=?,started_at=?,finished_at=NULL,error_text=NULL WHERE id=?`, stage, stage, nullable(commitBefore), started.UTC().Format(time.RFC3339Nano), id)
 	return err
 }
 
@@ -312,6 +312,25 @@ func (r *Repository) SetDeploymentStage(ctx context.Context, id, stage string) e
 	_, err := r.db.ExecContext(ctx, `UPDATE deployments SET status=?,current_stage=? WHERE id=?`, stage, stage, id)
 	return err
 }
+func (r *Repository) SetDeploymentWaiting(ctx context.Context, id, stage, message string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE deployments SET status=?,current_stage=?,error_text=?,finished_at=NULL WHERE id=?`,
+		DeploymentWaitingForConfiguration, stage, nullable(message), id)
+	return err
+}
+
+func (r *Repository) WaitingDeployment(ctx context.Context, projectID string) (Deployment, bool, error) {
+	items, err := r.ListDeployments(ctx, projectID)
+	if err != nil {
+		return Deployment{}, false, err
+	}
+	for _, item := range items {
+		if item.Status == DeploymentWaitingForConfiguration && item.FinishedAt == nil {
+			return item, true, nil
+		}
+	}
+	return Deployment{}, false, nil
+}
+
 
 func (r *Repository) FinishDeployment(ctx context.Context, id, status, stage, commitAfter, errorText string, finished time.Time, duration time.Duration) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE deployments SET status=?,current_stage=?,commit_after=?,error_text=?,finished_at=?,duration_ms=?,revision=? WHERE id=?`,

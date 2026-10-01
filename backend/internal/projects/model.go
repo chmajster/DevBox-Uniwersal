@@ -16,11 +16,14 @@ const (
 	DeploymentUpdatingSource = "UPDATING_SOURCE"
 	DeploymentDatabase       = "DATABASE"
 	DeploymentDependencies   = "DEPENDENCIES"
-	DeploymentBuilding       = "BUILDING"
-	DeploymentStarting       = "STARTING"
-	DeploymentHealthcheck    = "HEALTHCHECK"
-	DeploymentSuccess        = "SUCCESS"
-	DeploymentFailed         = "FAILED"
+	DeploymentBuilding                 = "BUILDING"
+	DeploymentRuntimeConfiguration     = "RUNTIME_CONFIGURATION"
+	DeploymentStarting                 = "STARTING"
+	DeploymentHealthcheck              = "HEALTHCHECK"
+	DeploymentReverseProxy             = "REVERSE_PROXY"
+	DeploymentWaitingForConfiguration  = "WAITING_FOR_CONFIGURATION"
+	DeploymentSuccess                  = "SUCCESS"
+	DeploymentFailed                   = "FAILED"
 )
 
 type RuntimeModule struct {

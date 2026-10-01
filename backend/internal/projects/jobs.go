@@ -403,34 +403,20 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 		if err != nil {
 			return nil, err
 		}
-		if network.Configured {
-			publisher, ok := h.integrations.Compose.(providers.ComposePortPublisher)
-			if !ok {
-				return nil, fmt.Errorf("%w: configurable Compose port publishing", ErrProviderUnavailable)
+		proxyMode := reverseProxyMode(network.Settings)
+		if proxyMode == "disabled" {
+			if publisher, ok := h.integrations.Compose.(providers.ComposePortPublisher); ok {
+				if err := publisher.ClearComposePorts(composeDir, composeName); err != nil {
+					return nil, err
+				}
 			}
-			target, err := publisher.InspectComposePortTarget(ctx, composeDir, composeName, network.Settings.ComposeService)
-			if err != nil {
-				return nil, err
-			}
-			internalPort := network.Settings.ContainerPort
-			if internalPort == 0 {
-				internalPort = target.ContainerPort
-			}
-			portPlan, err = h.preparePortPlan(ctx, p, network, internalPort)
-			if err != nil {
-				return nil, err
-			}
-			restorePreviousCompose = network.Applied != nil || p.Status == "running"
-			restoreComposePorts, err = publisher.ConfigureComposePorts(ctx, composeDir, composeName, target.Service, portPlan.bindings())
-			if err != nil {
-				return nil, err
-			}
-			h.logPortPlan(ctx, job.ID, "reserved", portPlan)
-		} else if publisher, ok := h.integrations.Compose.(providers.ComposePortPublisher); ok {
-			// A project that has not opted in retains its own Compose port
-			// topology, including compatibility with legacy docker-compose.
-			if err := publisher.ClearComposePorts(composeDir, composeName); err != nil {
-				return nil, err
+		} else if !network.Configured {
+			if publisher, ok := h.integrations.Compose.(providers.ComposePortPublisher); ok {
+				// Fresh automatic projects must not inherit a stale override
+				// from an older project using the same source path/slug.
+				if err := publisher.ClearComposePorts(composeDir, composeName); err != nil {
+					return nil, err
+				}
 			}
 		}
 		if err := h.integrations.Compose.ComposeValidate(ctx, composeDir, composeName); err != nil {
@@ -452,17 +438,39 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 				return nil, fmt.Errorf("docker compose build: %w", err)
 			}
 		}
-		if !network.Configured {
-			binding, err := h.integrations.Compose.ComposePortBinding(ctx, composeDir, composeName)
-			if err != nil {
-				return nil, fmt.Errorf("docker compose port discovery: %w", err)
+		if err := setStage(DeploymentRuntimeConfiguration); err != nil {
+			return nil, err
+		}
+
+		waitForPortConfiguration := func(discovery providers.ComposePortDiscovery, stale bool) (map[string]any, error) {
+			if databaseCleanup != nil {
+				if cleanupErr := databaseCleanup(); cleanupErr != nil {
+					_ = h.logger.Log(ctx, job.ID, "warn", "deployment.database.cleanup_warning", map[string]any{"warning": cleanupErr.Error()})
+				}
+				databaseCleanup = nil
 			}
+			message := composePortDiscoveryMessage(discovery, stale)
+			if err := h.repo.SetDeploymentWaiting(ctx, deploymentID, DeploymentRuntimeConfiguration, message); err != nil {
+				return nil, err
+			}
+			_ = h.repo.UpdateStatus(ctx, p.ID, "waiting_for_configuration")
+			_ = h.logger.Log(ctx, job.ID, "warn", "deployment.compose.port.waiting_for_configuration", map[string]any{
+				"project_id": p.ID, "candidates": discovery.Candidates, "infrastructure": discovery.Infrastructure,
+			})
+			return map[string]any{
+				"deployment_id": deploymentID,
+				"status": DeploymentWaitingForConfiguration,
+				"candidates": discovery.Candidates,
+			}, nil
+		}
+
+		allocateLegacyBinding := func(binding providers.ComposePortBinding, preferredHealthcheck string) error {
 			assignedPort := 0
 			if p.Port != nil && *p.Port > 0 {
 				assignedPort = *p.Port
 			} else {
 				if h.integrations.Ports == nil {
-					return nil, errors.New("provider unavailable: port allocator")
+					return errors.New("provider unavailable: port allocator")
 				}
 				startPort := binding.RequestedHostPort
 				switch startPort {
@@ -471,24 +479,137 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 				case 443:
 					startPort = 8443
 				}
-				if parsed, ok := healthcheckPort(p.Healthcheck); ok {
+				if parsed, ok := healthcheckPort(preferredHealthcheck); ok {
 					startPort = parsed
+				}
+				if startPort < 1 || startPort > 65535 {
+					startPort = 8080
 				}
 				lease, reserveErr := h.integrations.Ports.ReserveFrom(ctx, p.ID, "application", startPort)
 				if reserveErr != nil {
-					return nil, fmt.Errorf("allocate compose host port from %d: %w", startPort, reserveErr)
+					return fmt.Errorf("allocate compose host port from %d: %w", startPort, reserveErr)
 				}
 				assignedPort = lease.Port
 				legacyAllocatedPort = lease.Port
 				_ = h.logger.Log(ctx, job.ID, "info", "deployment.compose.port.allocated", map[string]any{
-					"project_id":     p.ID,
-					"requested_port": startPort,
-					"assigned_port":  assignedPort,
+					"project_id": p.ID, "requested_port": startPort, "assigned_port": assignedPort,
 				})
 			}
 			binding.HostPort = assignedPort
-
 			legacyBinding = &binding
+			return nil
+		}
+
+		if proxyMode != "disabled" {
+			manualSelection := network.Settings.ReverseProxyMode == "manual" ||
+				network.Settings.DetectionMode == "manual" ||
+				(network.Configured && network.Settings.DetectionMode == "" &&
+					(network.Settings.ComposeService != "" || network.Settings.ContainerPort > 0))
+			if manualSelection {
+				publisher, ok := h.integrations.Compose.(providers.ComposePortPublisher)
+				if !ok {
+					return nil, fmt.Errorf("%w: configurable Compose port publishing", ErrProviderUnavailable)
+				}
+				target, targetErr := publisher.InspectComposePortTarget(ctx, composeDir, composeName, network.Settings.ComposeService)
+				if targetErr != nil {
+					if discoverer, ok := h.integrations.Compose.(providers.ComposePortDiscoverer); ok {
+						discovery, discoveryErr := discoverer.DiscoverComposeApplicationPorts(ctx, composeDir, composeName, composeDiscoveryHealthcheck(p, network.Settings))
+						if discoveryErr == nil {
+							if _, saveErr := h.repo.saveComposePortDiscovery(ctx, p.ID, discovery); saveErr != nil {
+								return nil, saveErr
+							}
+							return waitForPortConfiguration(discovery, true)
+						}
+					}
+					return nil, targetErr
+				}
+				internalPort := network.Settings.ContainerPort
+				if internalPort == 0 {
+					internalPort = target.ContainerPort
+				}
+				if internalPort == 0 {
+					if discoverer, ok := h.integrations.Compose.(providers.ComposePortDiscoverer); ok {
+						discovery, discoveryErr := discoverer.DiscoverComposeApplicationPorts(ctx, composeDir, composeName, composeDiscoveryHealthcheck(p, network.Settings))
+						if discoveryErr == nil {
+							if _, saveErr := h.repo.saveComposePortDiscovery(ctx, p.ID, discovery); saveErr != nil {
+								return nil, saveErr
+							}
+							return waitForPortConfiguration(discovery, true)
+						}
+					}
+					return nil, errors.New("Nie znaleziono portu HTTP aplikacji.")
+				}
+				portPlan, err = h.preparePortPlan(ctx, p, network, internalPort)
+				if err != nil {
+					return nil, err
+				}
+				restorePreviousCompose = network.Applied != nil || p.Status == "running"
+				restoreComposePorts, err = publisher.ConfigureComposePorts(ctx, composeDir, composeName, target.Service, portPlan.bindings())
+				if err != nil {
+					return nil, err
+				}
+				h.logPortPlan(ctx, job.ID, "reserved", portPlan)
+			} else if discoverer, ok := h.integrations.Compose.(providers.ComposePortDiscoverer); ok {
+				discovery, err := discoverer.DiscoverComposeApplicationPorts(ctx, composeDir, composeName, composeDiscoveryHealthcheck(p, network.Settings))
+				if err != nil {
+					return nil, fmt.Errorf("docker compose port discovery: %w", err)
+				}
+				if network.Settings.DetectionMode == "automatic" &&
+					network.Settings.ComposeFingerprint != "" &&
+					network.Settings.ComposeFingerprint == discovery.Fingerprint &&
+					network.Settings.ComposeService != "" && network.Settings.ContainerPort > 0 {
+					for _, candidate := range discovery.Candidates {
+						if candidate.Service == network.Settings.ComposeService && candidate.ContainerPort == network.Settings.ContainerPort {
+							cached := candidate
+							discovery.Selected = &cached
+							break
+						}
+					}
+				}
+				staleDiscovery := network.Settings.ComposeFingerprint != "" && network.Settings.ComposeFingerprint != discovery.Fingerprint
+				network, err = h.repo.saveComposePortDiscovery(ctx, p.ID, discovery)
+				if err != nil {
+					return nil, err
+				}
+				if discovery.Selected == nil {
+					return waitForPortConfiguration(discovery, staleDiscovery)
+				}
+				selected := *discovery.Selected
+				if selected.HostPort == 0 || network.Configured {
+					publisher, ok := h.integrations.Compose.(providers.ComposePortPublisher)
+					if !ok {
+						return nil, fmt.Errorf("%w: configurable Compose port publishing", ErrProviderUnavailable)
+					}
+					portPlan, err = h.preparePortPlan(ctx, p, network, selected.ContainerPort)
+					if err != nil {
+						return nil, err
+					}
+					restorePreviousCompose = network.Applied != nil || p.Status == "running"
+					restoreComposePorts, err = publisher.ConfigureComposePorts(ctx, composeDir, composeName, selected.Service, portPlan.bindings())
+					if err != nil {
+						return nil, err
+					}
+					h.logPortPlan(ctx, job.ID, "reserved", portPlan)
+				} else {
+					binding := providers.ComposePortBinding{
+						Service: selected.Service, RequestedHostPort: selected.HostPort,
+						HostPort: selected.HostPort, ContainerPort: selected.ContainerPort, Protocol: "tcp",
+					}
+					if err := allocateLegacyBinding(binding, composeDiscoveryHealthcheck(p, network.Settings)); err != nil {
+						return nil, err
+					}
+				}
+			} else {
+				// Compatibility path for third-party Compose providers. The
+				// built-in provider always implements structured discovery.
+				binding, err := h.integrations.Compose.ComposePortBinding(ctx, composeDir, composeName)
+				if err != nil {
+					return nil, fmt.Errorf("docker compose port discovery: %w", err)
+				}
+				if err := allocateLegacyBinding(binding, composeDiscoveryHealthcheck(p, network.Settings)); err != nil {
+					return nil, err
+				}
+			}
 		}
 		if err := setStage(DeploymentStarting); err != nil {
 			return nil, err
@@ -541,8 +662,11 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 			h.logPortPlan(ctx, job.ID, "published", portPlan)
 		}
 		composeCommitted = true
+		if err := setStage(DeploymentReverseProxy); err != nil {
+			return nil, err
+		}
 		var routeWarning string
-		if h.integrations.Routes != nil {
+		if proxyMode != "disabled" && h.integrations.Routes != nil {
 			if targetPort == 0 {
 				routeWarning = "reverse proxy not configured: healthy application has no host target port"
 			} else if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), targetPort); err != nil {
@@ -693,6 +817,9 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	} else {
 		_ = h.logger.Log(ctx, job.ID, "info", "runtime.container.build.skipped", map[string]any{"image": spec.Image, "fingerprint": spec.Fingerprint})
 	}
+	if err := setStage(DeploymentRuntimeConfiguration); err != nil {
+		return nil, err
+	}
 
 	if err := setStage(DeploymentStarting); err != nil {
 		return nil, err
@@ -714,8 +841,11 @@ func (h *DeploymentHandler) Run(ctx context.Context, job domain.Job) (result map
 	}); err != nil {
 		return nil, err
 	}
+	if err := setStage(DeploymentReverseProxy); err != nil {
+		return nil, err
+	}
 	var routeWarning string
-	if h.integrations.Routes != nil {
+	if reverseProxyMode(network.Settings) != "disabled" && h.integrations.Routes != nil {
 		if err := h.integrations.Routes.EnsureProjectRoute(ctx, p.ID, routeHostname(p), port); err != nil {
 			routeWarning = "reverse proxy: " + err.Error()
 			_ = h.logger.Log(ctx, job.ID, "warn", "deployment.reverse_proxy.warning", map[string]any{
@@ -837,6 +967,38 @@ func healthcheckPort(value string) (int, bool) {
 	return port, err == nil && port > 0 && port <= 65535
 }
 
+func composeDiscoveryHealthcheck(project Project, settings PortSettings) string {
+	configured := strings.TrimSpace(settings.Healthcheck)
+	if configured != "" && configured != "/" {
+		return configured
+	}
+	return strings.TrimSpace(project.Healthcheck)
+}
+
+func composePortDiscoveryMessage(discovery providers.ComposePortDiscovery, stale bool) string {
+	var text strings.Builder
+	if stale {
+		text.WriteString("Zapisana konfiguracja portu jest nieaktualna.\n\n")
+	}
+	if len(discovery.Candidates) > 0 {
+		text.WriteString("Nie udało się jednoznacznie określić portu aplikacji.")
+		text.WriteString("\n\nWykryte porty aplikacyjne:")
+		for _, candidate := range discovery.Candidates {
+			fmt.Fprintf(&text, "\n- %s:%d (%s)", candidate.Service, candidate.ContainerPort, candidate.Protocol)
+		}
+	} else {
+		text.WriteString("Nie znaleziono portu HTTP aplikacji.")
+	}
+	if len(discovery.Infrastructure) > 0 {
+		text.WriteString("\n\nWykryte serwisy infrastrukturalne:")
+		for _, candidate := range discovery.Infrastructure {
+			fmt.Fprintf(&text, "\n- %s:%d", candidate.Service, candidate.ContainerPort)
+		}
+		text.WriteString("\n\nSerwisy infrastrukturalne nie są używane przez reverse proxy.")
+	}
+	return text.String()
+}
+
 func routeHostname(p Project) string {
 	if p.Domain != nil && strings.TrimSpace(*p.Domain) != "" {
 		return strings.TrimSpace(*p.Domain)
@@ -871,14 +1033,16 @@ func payloadBool(payload map[string]any, key string) bool {
 
 func validDeploymentTransition(from, to string) bool {
 	next := map[string]string{
-		DeploymentQueued:         DeploymentPreparing,
-		DeploymentPreparing:      DeploymentUpdatingSource,
-		DeploymentUpdatingSource: DeploymentDatabase,
-		DeploymentDatabase:       DeploymentDependencies,
-		DeploymentDependencies:   DeploymentBuilding,
-		DeploymentBuilding:       DeploymentStarting,
-		DeploymentStarting:       DeploymentHealthcheck,
-		DeploymentHealthcheck:    DeploymentSuccess,
+		DeploymentQueued:               DeploymentPreparing,
+		DeploymentPreparing:            DeploymentUpdatingSource,
+		DeploymentUpdatingSource:       DeploymentDatabase,
+		DeploymentDatabase:             DeploymentDependencies,
+		DeploymentDependencies:         DeploymentBuilding,
+		DeploymentBuilding:             DeploymentRuntimeConfiguration,
+		DeploymentRuntimeConfiguration: DeploymentStarting,
+		DeploymentStarting:             DeploymentHealthcheck,
+		DeploymentHealthcheck:          DeploymentReverseProxy,
+		DeploymentReverseProxy:         DeploymentSuccess,
 	}
 	return next[from] == to
 }
