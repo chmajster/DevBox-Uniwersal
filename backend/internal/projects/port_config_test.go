@@ -252,6 +252,41 @@ func TestPortConfigurationHTTPRejectsInvalidPayloadAndBusyDeployment(t *testing.
 	}
 }
 
+func TestComposeDiscoveryPersistsPublishedAndResolvedHostPort(t *testing.T) {
+	repo, project, _ := integrationProject(t, Project{Runtime: "static"})
+	ctx := context.Background()
+	discovery := providers.ComposePortDiscovery{
+		Selected: &providers.ComposePortCandidate{
+			Service: "app", ContainerPort: 80, HostPort: 9080,
+			Protocol: "http", Source: "docker-compose.yml",
+		},
+		Candidates: []providers.ComposePortCandidate{{
+			Service: "app", ContainerPort: 80, HostPort: 9080,
+			Protocol: "http", Source: "docker-compose.yml",
+		}},
+		Fingerprint: "compose-v1",
+	}
+	config, err := repo.saveComposePortDiscovery(ctx, project.ID, discovery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Settings.ComposeService != "app" || config.Settings.ContainerPort != 80 ||
+		config.Settings.HostPort != 9080 || config.Settings.Protocol != "http" ||
+		config.Settings.DetectionMode != "automatic" || config.Settings.DetectionSource != "docker-compose.yml" {
+		t.Fatalf("discovery not persisted completely: %+v", config.Settings)
+	}
+	if err := repo.saveResolvedComposeHostPort(ctx, project.ID, 9081); err != nil {
+		t.Fatal(err)
+	}
+	config, err = repo.PortConfiguration(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Settings.HostPort != 9081 {
+		t.Fatalf("resolved host port = %d, want 9081", config.Settings.HostPort)
+	}
+}
+
 func TestManualComposePortSelectionIsNotOverwrittenByAutomaticDiscovery(t *testing.T) {
 	repo, project, deploymentID := integrationProject(t, Project{Runtime: "static"})
 	ctx := context.Background()
