@@ -46,6 +46,7 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("GET /api/v1/projects/{id}/runtime/config", secure(domain.RoleViewer, m.runtimeConfig))
 	mux.Handle("PUT /api/v1/projects/{id}/runtime/config", secure(domain.RoleOperator, m.updateRuntimeConfig))
 	mux.Handle("POST /api/v1/projects/{id}/runtime/rebuild", secure(domain.RoleOperator, m.rebuildRuntime))
+	mux.Handle("POST /api/v1/projects/{id}/runtime/generate-compose", secure(domain.RoleOperator, m.generateRuntimeCompose))
 	mux.Handle("GET /api/v1/runtimes/{runtime}/modules", secure(domain.RoleViewer, m.runtimeModules))
 }
 
@@ -309,6 +310,23 @@ func (m *Module) rebuildRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeData(w, http.StatusAccepted, job)
+}
+
+func (m *Module) generateRuntimeCompose(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	result, err := m.service.GenerateRuntimeCompose(r.Context(), id)
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	actor := actorID(r)
+	if err := m.audit.Record(r.Context(), actor, "project.runtime.compose.generate", "project", &id, map[string]any{
+		"compose_path": result.ComposePath, "dockerfile_path": result.DockerfilePath, "runtime": result.Runtime,
+	}, nil); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "audit_failed", "Compose files generated but audit persistence failed")
+		return
+	}
+	writeData(w, http.StatusCreated, result)
 }
 
 func (m *Module) runtimeModules(w http.ResponseWriter, r *http.Request) {
