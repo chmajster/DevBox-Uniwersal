@@ -251,7 +251,6 @@ func TestPortConfigurationHTTPRejectsInvalidPayloadAndBusyDeployment(t *testing.
 	}
 }
 
-
 func TestManualComposePortSelectionIsNotOverwrittenByAutomaticDiscovery(t *testing.T) {
 	repo, project, deploymentID := integrationProject(t, Project{Runtime: "static"})
 	ctx := context.Background()
