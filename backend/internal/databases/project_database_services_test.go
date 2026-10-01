@@ -93,7 +93,6 @@ func TestProjectDatabaseServicesCanBeCleared(t *testing.T) {
 	}
 }
 
-
 func TestSharedDevBoxMySQLSelectionResolvesApplicationRuntime(t *testing.T) {
 	ctx := context.Background()
 	service, _, _, _ := databaseBindingTestService(t)
