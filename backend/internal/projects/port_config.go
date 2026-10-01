@@ -17,12 +17,20 @@ var ErrPortConfigurationBusy = errors.New("port configuration cannot change duri
 var composeServiceName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 
 type PortSettings struct {
-	ContainerPort      int    `json:"container_port"`
-	HostPort           int    `json:"host_port"`
-	HTTPSEnabled       bool   `json:"https_enabled"`
-	HTTPSContainerPort int    `json:"https_container_port"`
-	HTTPSHostPort      int    `json:"https_host_port"`
-	ComposeService     string `json:"compose_service"`
+	ContainerPort         int                              `json:"container_port"`
+	HostPort              int                              `json:"host_port"`
+	HTTPSEnabled          bool                             `json:"https_enabled"`
+	HTTPSContainerPort    int                              `json:"https_container_port"`
+	HTTPSHostPort         int                              `json:"https_host_port"`
+	ComposeService        string                           `json:"compose_service"`
+	ReverseProxyMode      string                           `json:"reverse_proxy_mode"`
+	Protocol              string                           `json:"protocol"`
+	Healthcheck           string                           `json:"healthcheck"`
+	DetectionSource       string                           `json:"detection_source,omitempty"`
+	DetectionMode         string                           `json:"detection_mode,omitempty"`
+	ComposeFingerprint    string                           `json:"compose_fingerprint,omitempty"`
+	Candidates            []providers.ComposePortCandidate `json:"candidates,omitempty"`
+	InfrastructureServices []providers.ComposePortCandidate `json:"infrastructure_services,omitempty"`
 }
 
 type AppliedPortSettings struct {
@@ -39,10 +47,50 @@ type PortConfiguration struct {
 }
 
 func DefaultPortSettings() PortSettings {
-	return PortSettings{HostPort: 8080, HTTPSContainerPort: 443, HTTPSHostPort: 8443}
+	return PortSettings{
+		HostPort: 8080, HTTPSContainerPort: 443, HTTPSHostPort: 8443,
+		ReverseProxyMode: "automatic", Protocol: "http", Healthcheck: "/",
+	}
+}
+
+func normalizePortSettings(settings PortSettings) PortSettings {
+	settings.ComposeService = strings.TrimSpace(settings.ComposeService)
+	settings.ReverseProxyMode = strings.ToLower(strings.TrimSpace(settings.ReverseProxyMode))
+	if settings.ReverseProxyMode == "" {
+		settings.ReverseProxyMode = "automatic"
+	}
+	settings.Protocol = strings.ToLower(strings.TrimSpace(settings.Protocol))
+	if settings.Protocol == "" {
+		settings.Protocol = "http"
+	}
+	settings.Healthcheck = strings.TrimSpace(settings.Healthcheck)
+	if settings.Healthcheck == "" {
+		settings.Healthcheck = "/"
+	}
+	settings.DetectionMode = strings.ToLower(strings.TrimSpace(settings.DetectionMode))
+	if settings.HostPort == 0 {
+		settings.HostPort = 8080
+	}
+	if settings.HTTPSContainerPort == 0 {
+		settings.HTTPSContainerPort = 443
+	}
+	if settings.HTTPSHostPort == 0 {
+		settings.HTTPSHostPort = 8443
+	}
+	return settings
 }
 
 func ValidatePortSettings(settings PortSettings) error {
+	settings = normalizePortSettings(settings)
+	if settings.ReverseProxyMode != "automatic" && settings.ReverseProxyMode != "manual" && settings.ReverseProxyMode != "disabled" {
+		return fmt.Errorf("%w: reverse_proxy_mode must be automatic, manual or disabled", ErrInvalidInput)
+	}
+	if settings.Protocol != "http" && settings.Protocol != "https" {
+		return fmt.Errorf("%w: protocol must be http or https", ErrInvalidInput)
+	}
+	if settings.ReverseProxyMode == "manual" && settings.ContainerPort == 0 {
+		return fmt.Errorf("%w: manual reverse proxy mode requires container_port", ErrInvalidInput)
+	}
 	if settings.ContainerPort < 0 || settings.ContainerPort > 65535 {
 		return fmt.Errorf("%w: container_port must be 0 (automatic) or between 1 and 65535", ErrInvalidInput)
 	}
@@ -85,12 +133,14 @@ func (r *Repository) PortConfiguration(ctx context.Context, projectID string) (P
 	if err := json.Unmarshal([]byte(desired), &result.Settings); err != nil {
 		return PortConfiguration{}, fmt.Errorf("read desired port configuration: %w", err)
 	}
+	result.Settings = normalizePortSettings(result.Settings)
 	result.Configured = configured != 0
 	if applied.Valid && applied.String != "" {
 		var state AppliedPortSettings
 		if err := json.Unmarshal([]byte(applied.String), &state); err != nil {
 			return PortConfiguration{}, fmt.Errorf("read applied port configuration: %w", err)
 		}
+		state.Settings = normalizePortSettings(state.Settings)
 		result.Applied = &state
 	}
 	return result, nil
@@ -101,7 +151,25 @@ func (s *Service) PortConfiguration(ctx context.Context, projectID string) (Port
 }
 
 func (s *Service) UpdatePortConfiguration(ctx context.Context, projectID string, settings PortSettings) (PortConfiguration, error) {
-	settings.ComposeService = strings.TrimSpace(settings.ComposeService)
+	settings = normalizePortSettings(settings)
+	current, currentErr := s.repo.PortConfiguration(ctx, projectID)
+	if currentErr != nil {
+		return PortConfiguration{}, currentErr
+	}
+	// Discovery metadata is server-owned. User edits select the effective
+	// service/listener but cannot forge a Compose fingerprint or infrastructure list.
+	settings.ComposeFingerprint = current.Settings.ComposeFingerprint
+	settings.Candidates = current.Settings.Candidates
+	settings.InfrastructureServices = current.Settings.InfrastructureServices
+	if settings.ReverseProxyMode == "manual" ||
+		(settings.ComposeService != "" && settings.ContainerPort > 0 &&
+			(settings.ComposeService != current.Settings.ComposeService || settings.ContainerPort != current.Settings.ContainerPort)) {
+		settings.DetectionMode = "manual"
+		settings.DetectionSource = "user"
+	} else if settings.DetectionMode == "" {
+		settings.DetectionMode = current.Settings.DetectionMode
+		settings.DetectionSource = current.Settings.DetectionSource
+	}
 	if err := ValidatePortSettings(settings); err != nil {
 		return PortConfiguration{}, err
 	}
@@ -156,6 +224,51 @@ func (s *Service) UpdatePortConfiguration(ctx context.Context, projectID string,
 		return PortConfiguration{}, err
 	}
 	return s.repo.PortConfiguration(ctx, projectID)
+}
+
+func (r *Repository) saveComposePortDiscovery(ctx context.Context, projectID string, discovery providers.ComposePortDiscovery) (PortConfiguration, error) {
+	config, err := r.PortConfiguration(ctx, projectID)
+	if err != nil {
+		return PortConfiguration{}, err
+	}
+	settings := normalizePortSettings(config.Settings)
+	settings.Candidates = discovery.Candidates
+	settings.InfrastructureServices = discovery.Infrastructure
+	settings.ComposeFingerprint = discovery.Fingerprint
+
+	if settings.ReverseProxyMode == "automatic" && settings.DetectionMode != "manual" {
+		settings.DetectionMode = "automatic"
+		if discovery.Selected != nil {
+			settings.ComposeService = discovery.Selected.Service
+			settings.ContainerPort = discovery.Selected.ContainerPort
+			settings.Protocol = discovery.Selected.Protocol
+			settings.DetectionSource = discovery.Selected.Source
+		} else {
+			settings.ComposeService = ""
+			settings.ContainerPort = 0
+			settings.DetectionSource = "docker-compose.yml"
+		}
+	}
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return PortConfiguration{}, err
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO project_port_publishing(project_id,desired_json,user_configured,updated_at)
+		VALUES(?,?,0,?)
+		ON CONFLICT(project_id) DO UPDATE SET
+			desired_json=excluded.desired_json,
+			updated_at=excluded.updated_at
+	`, projectID, string(data), now)
+	if err != nil {
+		return PortConfiguration{}, err
+	}
+	return r.PortConfiguration(ctx, projectID)
+}
+
+func reverseProxyMode(settings PortSettings) string {
+	return normalizePortSettings(settings).ReverseProxyMode
 }
 
 func (r *Repository) saveAppliedPorts(ctx context.Context, projectID string, state AppliedPortSettings, requested PortSettings) error {
