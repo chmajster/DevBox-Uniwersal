@@ -5,6 +5,7 @@ import type { Job } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { usePolling } from '../control-room/usePolling'
 import { ConfigurationFields, DetectionResult } from '../applications/components'
+import { DirectoryPicker } from '../components/DirectoryPicker'
 import { message, readConfiguration, sourceNames, type ApplicationDetail, type CreateApplication, type Detection } from '../applications/model'
 
 export function ApplicationWizardPage() {
@@ -12,6 +13,8 @@ export function ApplicationWizardPage() {
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   const [source, setSource] = useState('git')
+  const [localPath, setLocalPath] = useState('')
+  const [directoryOpen, setDirectoryOpen] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [detected, setDetected] = useState<Detection | null>(null)
@@ -56,10 +59,33 @@ export function ApplicationWizardPage() {
     <form ref={form} onSubmit={(event) => void submit(event)} noValidate>
       <fieldset className="acp-card" hidden={step !== 0} disabled={busy}><legend>Źródło aplikacji</legend><div className="acp-fields">
         <label>Nazwa<input name="name" required maxLength={120} autoComplete="off" /></label>
-        <label>Rodzaj źródła<select value={source} onChange={(event) => { setSource(event.target.value); setDetected(null); setAnalysisID('') }}>{Object.entries(sourceNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label>Rodzaj źródła<select value={source} onChange={(event) => { setSource(event.target.value); setDirectoryOpen(false); setDetected(null); setAnalysisID('') }}>{Object.entries(sourceNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="acp-wide">Opis<input name="description" maxLength={500} /></label>
         {source === 'git' && <><label className="acp-wide">Adres repozytorium<input name="repository_url" required placeholder="https://github.com/owner/repository.git" /></label><label>Gałąź lub tag<input name="reference" placeholder="Domyślna gałąź repozytorium" /></label><label>ID zapisanych poświadczeń Git<input name="credential_id" placeholder="Opcjonalnie" /><small>Identyfikator z modułu Poświadczenia. Nie wpisuj tokenu.</small></label></>}
-        {source === 'local' && <label className="acp-wide">Katalog na hoście DevBox<input name="local_path" required placeholder="/opt/devbox/projects/aplikacja" /><small>Ścieżka serwera / WSL, nie komputera przeglądarki. Musi należeć do dozwolonych katalogów.</small></label>}
+        {source === 'local' && <>
+          <div className="acp-wide application-directory-field">
+            <label htmlFor="application-local-path">Katalog na hoście DevBox</label>
+            <div className="application-directory-row">
+              <input
+                id="application-local-path"
+                name="local_path"
+                required
+                value={localPath}
+                onChange={(event) => setLocalPath(event.target.value)}
+                placeholder="/opt/devbox/projects/aplikacja"
+                autoComplete="off"
+              />
+              <button type="button" className="secondary-button" onClick={() => setDirectoryOpen(true)}>Przeglądaj</button>
+            </div>
+            <small>Ścieżka serwera / WSL, nie komputera przeglądarki. Musi należeć do dozwolonych katalogów.</small>
+          </div>
+          {directoryOpen && <DirectoryPicker
+            value={localPath}
+            endpoint="/filesystem/directories"
+            onSelect={setLocalPath}
+            onClose={() => setDirectoryOpen(false)}
+          />}
+        </>}
         {source === 'docker_image' && <label className="acp-wide">Obraz Docker / OCI<input name="docker_image" required placeholder="nginx:alpine" /></label>}
         {source === 'empty' && <p>Pusty katalog powstanie przy wdrożeniu. Przed deployem dodaj kod albo wybierz runtime static dla pustej strony.</p>}
       </div></fieldset>
