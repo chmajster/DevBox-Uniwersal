@@ -18,6 +18,7 @@ interface DirectoryPickerProps {
   value: string
   onSelect: (path: string) => void
   onClose: () => void
+  endpoint?: string
 }
 
 function errorMessage(error: unknown) {
@@ -74,7 +75,7 @@ function FolderIcon({ open = false }: { open?: boolean }) {
   </span>
 }
 
-export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerProps) {
+export function DirectoryPicker({ value, onSelect, onClose, endpoint = '/project-directories' }: DirectoryPickerProps) {
   const [selected, setSelected] = useState(value.trim())
   const [currentPath, setCurrentPath] = useState('')
   const [roots, setRoots] = useState<DirectoryEntry[]>([])
@@ -141,7 +142,7 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
 
     try {
       const suffix = path ? '?path=' + encodeURIComponent(path) : ''
-      const listing = await request<DirectoryListing>('/project-directories' + suffix, { signal: options.signal })
+      const listing = await request<DirectoryListing>(endpoint + suffix, { signal: options.signal })
       if (options.signal?.aborted) return null
       cacheListing(key, listing)
       return listing
@@ -319,7 +320,7 @@ export function DirectoryPicker({ value, onSelect, onClose }: DirectoryPickerPro
     setCreateBusy(true)
     setCreateError('')
     try {
-      const entry = await request<DirectoryEntry>('/project-directories', {
+      const entry = await request<DirectoryEntry>(endpoint, {
         method: 'POST',
         body: JSON.stringify({ parent: currentPath, name }),
       })
