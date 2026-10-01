@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { DirectoryPathField } from './DirectoryPathField'
 
 describe('directory path field', () => {
-  it('renders one synchronized path input and tree toggle', () => {
+  it('renders one synchronized path input and browse action', () => {
     const html = renderToStaticMarkup(
       <DirectoryPathField
         id="project-path"
@@ -17,7 +17,7 @@ describe('directory path field', () => {
 
     expect(html).toContain('path-picker-synchronized')
     expect(html).toContain('role="combobox"')
-    expect(html).toContain('Pokaż drzewko')
+    expect(html).toContain('Przeglądaj')
     expect(html).toContain('/mnt/c/Users/Chris/Documents/GitHub/OpenServiceNOW')
     expect(html).toContain('aria-autocomplete="list"')
   })

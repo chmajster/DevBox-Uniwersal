@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -38,6 +39,10 @@ func (s *Service) BrowseDirectories(path string) (DirectoryListing, error) {
 
 func (s *Service) SuggestDirectories(path string) (DirectorySuggestions, error) {
 	return suggestDirectories(path, s.directoryBrowseRoots, maxDirectorySuggestions)
+}
+
+func (s *Service) CreateDirectory(parent, name string) (DirectoryEntry, error) {
+	return createDirectory(parent, name, s.directoryBrowseRoots)
 }
 
 func normalizeDirectoryBrowseRoots(projectsRoot string, configured []string) []string {
@@ -139,6 +144,8 @@ func browseDirectories(path string, roots []string) (DirectoryListing, error) {
 			break
 		}
 	}
+
+	sortDirectoryEntries(directories)
 
 	parent := filepath.Dir(resolved)
 	if parent == resolved || !directoryPathAllowed(parent, roots) {
@@ -244,6 +251,7 @@ func suggestDirectories(path string, roots []string, limit int) (DirectorySugges
 			break
 		}
 	}
+	sortDirectoryEntries(items)
 	return DirectorySuggestions{Path: path, Items: items}, nil
 }
 
@@ -278,7 +286,76 @@ func browseRootSuggestions(roots []string, query string, limit int) []DirectoryE
 			break
 		}
 	}
+	sortDirectoryEntries(items)
 	return items
+}
+
+func createDirectory(parent, name string, roots []string) (DirectoryEntry, error) {
+	parent = strings.TrimSpace(parent)
+	name = strings.TrimSpace(name)
+	if err := validateBrowsePathInput(parent); err != nil {
+		return DirectoryEntry{}, err
+	}
+	if err := validateDirectoryName(name); err != nil {
+		return DirectoryEntry{}, err
+	}
+
+	resolvedParent, err := filepath.EvalSymlinks(filepath.Clean(parent))
+	if err != nil {
+		return DirectoryEntry{}, classifyDirectoryBrowseError("resolve parent directory", err)
+	}
+	if !directoryPathAllowed(resolvedParent, roots) {
+		return DirectoryEntry{}, fmt.Errorf("%w: path is outside configured browse roots", ErrDirectoryAccess)
+	}
+	info, err := os.Stat(resolvedParent)
+	if err != nil {
+		return DirectoryEntry{}, classifyDirectoryBrowseError("stat parent directory", err)
+	}
+	if !info.IsDir() {
+		return DirectoryEntry{}, fmt.Errorf("%w: parent path is not a directory", ErrInvalidInput)
+	}
+
+	childPath := filepath.Join(resolvedParent, name)
+	if _, err := os.Lstat(childPath); err == nil {
+		return DirectoryEntry{}, fmt.Errorf("%w: directory already exists", ErrInvalidInput)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return DirectoryEntry{}, classifyDirectoryBrowseError("check target directory", err)
+	}
+
+	if err := os.Mkdir(childPath, 0o750); err != nil {
+		return DirectoryEntry{}, classifyDirectoryBrowseError("create directory", err)
+	}
+	created, err := filepath.EvalSymlinks(childPath)
+	if err != nil {
+		_ = os.Remove(childPath)
+		return DirectoryEntry{}, classifyDirectoryBrowseError("resolve created directory", err)
+	}
+	if !directoryPathAllowed(created, roots) {
+		_ = os.Remove(childPath)
+		return DirectoryEntry{}, fmt.Errorf("%w: created path is outside configured browse roots", ErrDirectoryAccess)
+	}
+	return DirectoryEntry{Name: name, Path: created}, nil
+}
+
+func validateDirectoryName(name string) error {
+	if name == "" || len(name) > 255 || strings.ContainsRune(name, '\x00') {
+		return fmt.Errorf("%w: invalid directory name", ErrInvalidInput)
+	}
+	if name == "." || name == ".." || strings.ContainsAny(name, "/\\") || filepath.Base(name) != name {
+		return fmt.Errorf("%w: directory name must be a single path segment", ErrInvalidInput)
+	}
+	return nil
+}
+
+func sortDirectoryEntries(items []DirectoryEntry) {
+	sort.SliceStable(items, func(i, j int) bool {
+		left := strings.ToLower(items[i].Name)
+		right := strings.ToLower(items[j].Name)
+		if left == right {
+			return items[i].Name < items[j].Name
+		}
+		return left < right
+	})
 }
 
 func validateBrowsePathInput(path string) error {

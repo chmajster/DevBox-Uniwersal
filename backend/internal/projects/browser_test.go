@@ -199,3 +199,57 @@ func TestSuggestDirectoriesDoesNotExposeSymlinkEscape(t *testing.T) {
 		t.Fatalf("symlink escaping configured root must not be suggested: %#v", suggestions.Items)
 	}
 }
+
+func TestCreateDirectoryCreatesChildInsideAllowedRoot(t *testing.T) {
+	root := t.TempDir()
+
+	entry, err := createDirectory(root, "New Project", []string{root})
+	if err != nil {
+		t.Fatalf("createDirectory() error = %v", err)
+	}
+	want := filepath.Join(root, "New Project")
+	if entry.Name != "New Project" || entry.Path != want {
+		t.Fatalf("unexpected created entry: %#v", entry)
+	}
+	info, err := os.Stat(want)
+	if err != nil {
+		t.Fatalf("created directory stat failed: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("created path is not a directory: %q", want)
+	}
+}
+
+func TestCreateDirectoryRejectsInvalidNames(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"", ".", "..", "../escape", "nested/child", "nested\\child"} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := createDirectory(root, name, []string{root}); !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput for %q, got %v", name, err)
+			}
+		})
+	}
+}
+
+func TestCreateDirectoryRejectsParentOutsideConfiguredRoots(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if _, err := createDirectory(outside, "blocked", []string{root}); !errors.Is(err, ErrDirectoryAccess) {
+		t.Fatalf("expected ErrDirectoryAccess, got %v", err)
+	}
+}
+
+func TestCreateDirectoryRejectsSymlinkParentOutsideConfiguredRoots(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation can require additional privileges on Windows")
+	}
+	root := t.TempDir()
+	outside := t.TempDir()
+	link := filepath.Join(root, "escape")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := createDirectory(link, "blocked", []string{root}); !errors.Is(err, ErrDirectoryAccess) {
+		t.Fatalf("expected ErrDirectoryAccess, got %v", err)
+	}
+}

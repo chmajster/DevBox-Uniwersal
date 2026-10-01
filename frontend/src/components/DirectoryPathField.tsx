@@ -185,11 +185,7 @@ export function DirectoryPathField({
     }
   }
 
-  function toggleBrowser() {
-    if (browserOpen) {
-      setBrowserOpen(false)
-      return
-    }
+  function openBrowser() {
     setBrowserOpen(true)
     setTyping(false)
     setSuggestions([])
@@ -248,8 +244,8 @@ export function DirectoryPathField({
           )}
         </div>}
       </div>
-      {!disabled && <button type="button" className="secondary" onClick={toggleBrowser}>
-        {browserOpen ? 'Ukryj drzewko' : 'Pokaż drzewko'}
+      {!disabled && <button type="button" className="secondary" onClick={openBrowser}>
+        Przeglądaj
       </button>}
     </div>
     {helpText && <span className="muted small">{helpText}</span>}

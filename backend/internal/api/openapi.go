@@ -48,6 +48,7 @@ var documentedRoutes = []documentedRoute{
 	{"POST", "/api/v1/projects", "Create project", "operator"},
 	{"POST", "/api/v1/projects/import", "Import local project", "operator"},
 	{"GET", "/api/v1/project-directories", "Browse or suggest allowed local project directories", "operator"},
+	{"POST", "/api/v1/project-directories", "Create a directory inside an allowed local project root", "operator"},
 	{"GET", "/api/v1/projects/{id}", "Get project", "viewer"},
 	{"GET", "/api/v1/projects/{id}/files", "Browse project source directory", "viewer"},
 	{"PATCH", "/api/v1/projects/{id}", "Update project", "operator"},

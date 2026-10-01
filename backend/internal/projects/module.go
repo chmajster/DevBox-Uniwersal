@@ -31,6 +31,7 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/projects", secure(domain.RoleOperator, m.create))
 	mux.Handle("POST /api/v1/projects/import", secure(domain.RoleOperator, m.importLocal))
 	mux.Handle("GET /api/v1/project-directories", secure(domain.RoleOperator, m.browseDirectories))
+	mux.Handle("POST /api/v1/project-directories", secure(domain.RoleOperator, m.createDirectory))
 	mux.Handle("GET /api/v1/projects/directories", secure(domain.RoleOperator, m.browseDirectories)) // legacy alias
 	mux.Handle("GET /api/v1/projects/{id}", secure(domain.RoleViewer, m.get))
 	mux.Handle("GET /api/v1/projects/{id}/files", secure(domain.RoleViewer, m.files))
@@ -90,6 +91,32 @@ func (m *Module) browseDirectories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeData(w, http.StatusOK, listing)
+}
+
+func (m *Module) createDirectory(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Parent string `json:"parent"`
+		Name   string `json:"name"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	entry, err := m.service.CreateDirectory(input.Parent, input.Name)
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	actor := actorID(r)
+	targetID := entry.Path
+	if err := m.audit.Record(r.Context(), actor, "project.directory_create", "directory", &targetID, map[string]any{
+		"parent": input.Parent,
+		"name":   input.Name,
+	}, nil); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "audit_failed", "directory created but audit persistence failed")
+		return
+	}
+	writeData(w, http.StatusCreated, entry)
 }
 
 func (m *Module) create(w http.ResponseWriter, r *http.Request) {
