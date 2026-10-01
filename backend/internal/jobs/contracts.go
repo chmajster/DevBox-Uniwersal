@@ -9,6 +9,7 @@ import (
 type Request struct {
 	Type        string
 	ProjectID   *string
+	ApplicationID *string
 	RequestedBy *string
 	Payload     map[string]any
 }
