@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/apphealth"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/applications"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/audit"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/auth"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/backups"
@@ -24,17 +24,21 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/credentials"
 	controldb "github.com/chmajster/DevBox-Uniwersal/backend/internal/database"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/databases"
+	composedriver "github.com/chmajster/DevBox-Uniwersal/backend/internal/drivers/compose"
+	dockerfiledriver "github.com/chmajster/DevBox-Uniwersal/backend/internal/drivers/dockerfile"
+	imagedriver "github.com/chmajster/DevBox-Uniwersal/backend/internal/drivers/image"
+	manageddriver "github.com/chmajster/DevBox-Uniwersal/backend/internal/drivers/managed"
 	dockermodule "github.com/chmajster/DevBox-Uniwersal/backend/internal/docker"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/monitoring"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/operations"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/plugins"
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/projects"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/proxy"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/scriptapps"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/sourcegit"
 	devsystem "github.com/chmajster/DevBox-Uniwersal/backend/internal/system"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/updater"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/webui"
@@ -277,33 +281,47 @@ func serve() error {
 	healthChecker := proxy.NewHealthChecker(networkRepo)
 	networkService := proxy.NewService(networkRepo, nginxProvider, hostsManager, healthChecker, cfg.HealthTimeout)
 	networkModule := proxy.NewModule(networkService, portManager, healthChecker, nginxProvider, auditService, cfg.HealthTimeout)
-	appHealthService := apphealth.NewService(db, cfg.HealthMonitorInterval, cfg.HealthTimeout, cfg.HealthHistoryRetentionDays)
-	appHealthModule := apphealth.NewModule(appHealthService, auditService)
-
-	gitClient := projects.NewGitClient(secretStore)
-	projectRepo := projects.NewRepository(db)
-	projectService := projects.NewService(projectRepo, gitClient, jobRunner, secretStore, cfg.ProjectsRoot, cfg.DirectoryBrowseRoots...)
-	for _, jobHandler := range []jobs.Handler{
-		projects.NewGitJobHandler(projects.JobClone, projectRepo, gitClient, jobRunner),
-		projects.NewGitJobHandler(projects.JobFetch, projectRepo, gitClient, jobRunner),
-		projects.NewGitJobHandler(projects.JobPull, projectRepo, gitClient, jobRunner),
-		projects.NewGitJobHandler(projects.JobCheckout, projectRepo, gitClient, jobRunner),
-		projects.NewDeploymentHandler(projectRepo, gitClient, runtimeRegistry, jobRunner, projects.DeploymentIntegrations{
-			Ports:         portManager,
-			Routes:        networkService,
-			Compose:       dockerProvider,
-			Managed:       dockerProvider,
-			Database:      databaseService,
-			Environment:   runtimeEnvironmentResolver,
-			Networks:      dockerProvider,
-			SharedNetwork: cfg.SharedAppNetwork,
-		}),
+	gitClient := sourcegit.New(secretStore)
+	applicationRepo := applications.NewRepository(db)
+	applicationPorts := applications.NewApplicationPortAllocator(db, cfg.PortRangeStart, cfg.PortRangeEnd)
+	applicationDrivers := applications.NewDriverRegistry()
+	for _, driver := range []applications.DeploymentDriver{
+		manageddriver.New(dockerProvider, runtimeRegistry, applicationPorts, dockerProvider, cfg.SharedAppNetwork),
+		dockerfiledriver.New(dockerProvider, applicationPorts, dockerProvider, cfg.SharedAppNetwork),
+		imagedriver.New(dockerProvider, applicationPorts, dockerProvider, cfg.SharedAppNetwork),
+		composedriver.New(dockerProvider, applicationPorts, dockerProvider, cfg.SharedAppNetwork),
 	} {
-		if err := jobRunner.Register(jobHandler); err != nil {
-			logger.Error("job handler registration failed", "type", jobHandler.Type(), "error", err)
+		if err := applicationDrivers.Register(driver); err != nil {
+			logger.Error("application driver registration failed", "driver", driver.Name(), "error", err)
 			os.Exit(1)
 		}
 	}
+	applicationService := applications.NewService(
+		applicationRepo,
+		applicationDrivers,
+		jobRunner,
+		gitClient,
+		dockerProvider,
+		credentialRepo,
+		cfg.ProjectsRoot,
+		cfg.DirectoryBrowseRoots...,
+	)
+	for _, handler := range []jobs.Handler{
+		applications.NewDetectJobHandler(applicationService, jobRunner),
+		applications.NewDeployJobHandler(applicationService, jobRunner),
+		applications.NewLifecycleJobHandler(applicationService, jobRunner, applications.JobStart),
+		applications.NewLifecycleJobHandler(applicationService, jobRunner, applications.JobStop),
+		applications.NewLifecycleJobHandler(applicationService, jobRunner, applications.JobRestart),
+		applications.NewLifecycleJobHandler(applicationService, jobRunner, applications.JobRemove),
+		applications.NewLifecycleJobHandler(applicationService, jobRunner, applications.JobReconcile),
+	} {
+		if err := jobRunner.Register(handler); err != nil {
+			logger.Error("application job handler registration failed", "type", handler.Type(), "error", err)
+			os.Exit(1)
+		}
+	}
+	applicationModule := applications.NewModule(applicationService, auditService)
+
 	pluginOptions := []plugins.ServiceOption{
 		plugins.WithJobRunner(jobRunner),
 		plugins.WithMySQLDatabaseServer(managedMySQL),
@@ -323,18 +341,9 @@ func serve() error {
 		logger.Error("job runner start failed", "error", err)
 		os.Exit(1)
 	}
-	go appHealthService.Run(workerCtx)
-	reconciledJobs, err := projectService.ReconcileAutoStart(context.Background())
-	if err != nil {
-		logger.Error("desired-state reconciliation failed", "error", err)
-		os.Exit(1)
-	}
-	if len(reconciledJobs) > 0 {
-		logger.Info("desired-state reconciliation queued", "jobs", len(reconciledJobs))
-	}
-	projectModule := projects.NewModule(projectService, auditService)
 	updaterModule := updater.NewModule(updater.NewService(cfg.AppVersion, cfg.NginxHelperBinary, cfg.SudoBinary), auditService)
 	pluginModule := plugins.NewModule(pluginService, auditService)
+	go applicationService.RunReconciler(workerCtx, 30*time.Second)
 
 	scriptAppRepo := scriptapps.NewRepository(db)
 	scriptAppService := scriptapps.NewService(scriptAppRepo, jobRunner)
@@ -375,12 +384,11 @@ func serve() error {
 		updaterModule,
 		pluginModule,
 		runtimeModule,
-		projectModule,
+		applicationModule,
 		scriptAppModule,
 		dockerModule,
 		databaseModule,
 		networkModule,
-		appHealthModule,
 		backupModule,
 		monitoring.NewModule(monitoring.NewCollector()),
 		operations.NewModule(logRegistry),
