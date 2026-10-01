@@ -246,6 +246,9 @@ func (r *Repository) saveComposePortDiscovery(ctx context.Context, projectID str
 		if discovery.Selected != nil {
 			settings.ComposeService = discovery.Selected.Service
 			settings.ContainerPort = discovery.Selected.ContainerPort
+			if discovery.Selected.HostPort > 0 {
+				settings.HostPort = discovery.Selected.HostPort
+			}
 			settings.Protocol = discovery.Selected.Protocol
 			settings.DetectionSource = discovery.Selected.Source
 		} else {
@@ -274,6 +277,35 @@ func (r *Repository) saveComposePortDiscovery(ctx context.Context, projectID str
 
 func reverseProxyMode(settings PortSettings) string {
 	return normalizePortSettings(settings).ReverseProxyMode
+}
+
+func (r *Repository) saveResolvedComposeHostPort(ctx context.Context, projectID string, hostPort int) error {
+	if hostPort < 1 || hostPort > 65535 {
+		return fmt.Errorf("%w: resolved compose host port must be between 1 and 65535", ErrInvalidInput)
+	}
+	config, err := r.PortConfiguration(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	settings := config.Settings
+	settings.HostPort = hostPort
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE project_port_publishing SET desired_json=?,updated_at=? WHERE project_id=?`,
+		string(data), time.Now().UTC().Format(time.RFC3339Nano), projectID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: port configuration not found", ErrNotFound)
+	}
+	return nil
 }
 
 func (r *Repository) saveAppliedPorts(ctx context.Context, projectID string, state AppliedPortSettings, requested PortSettings) error {
