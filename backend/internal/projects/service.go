@@ -468,20 +468,42 @@ func (s *Service) enqueueDeployment(ctx context.Context, id string, actor *strin
 	if p.ArchivedAt != nil {
 		return domain.Job{}, fmt.Errorf("%w: archived projects cannot be deployed", ErrInvalidInput)
 	}
-	d := Deployment{ID: NewID(), ProjectID: id, Status: DeploymentQueued, Stage: DeploymentQueued, TriggeredBy: actor, CreatedAt: time.Now().UTC()}
-	if err := s.repo.CreateDeployment(ctx, d); err != nil {
-		return domain.Job{}, err
+	var d Deployment
+	resuming := false
+	if !forceRebuild {
+		waiting, found, waitErr := s.repo.WaitingDeployment(ctx, id)
+		if waitErr != nil {
+			return domain.Job{}, waitErr
+		}
+		if found {
+			d = waiting
+			resuming = true
+			reconcile = true
+		}
+	}
+	if !resuming {
+		d = Deployment{ID: NewID(), ProjectID: id, Status: DeploymentQueued, Stage: DeploymentQueued, TriggeredBy: actor, CreatedAt: time.Now().UTC()}
+		if err := s.repo.CreateDeployment(ctx, d); err != nil {
+			return domain.Job{}, err
+		}
 	}
 	payload := map[string]any{"project_id": id, "deployment_id": d.ID}
 	if reconcile {
 		payload["reconcile"] = true
+	}
+	if resuming {
+		payload["resume"] = true
 	}
 	if forceRebuild {
 		payload["force_rebuild"] = true
 	}
 	job, err := s.jobRunner.Enqueue(ctx, jobs.Request{Type: JobDeploy, ProjectID: &id, RequestedBy: actor, Payload: payload})
 	if err != nil {
-		_ = s.repo.FinishDeployment(ctx, d.ID, DeploymentFailed, DeploymentFailed, "", err.Error(), time.Now().UTC(), 0)
+		if resuming {
+			_ = s.repo.SetDeploymentWaiting(ctx, d.ID, d.Stage, d.Error)
+		} else {
+			_ = s.repo.FinishDeployment(ctx, d.ID, DeploymentFailed, DeploymentFailed, "", err.Error(), time.Now().UTC(), 0)
+		}
 		return domain.Job{}, err
 	}
 	if err := s.repo.BindDeploymentJob(ctx, d.ID, job.ID); err != nil {
