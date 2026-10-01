@@ -101,7 +101,7 @@ def install_api(context, role='admin', authenticated=True):
                         memory=dict(available=True, usage_percent=37.5, used_bytes=6*1024**3, total_bytes=16*1024**3, free_bytes=10*1024**3),
                         disk=dict(available=True, usage_percent=42, used_bytes=210*1024**3, total_bytes=500*1024**3, free_bytes=290*1024**3, path='/'),
                         process=dict(host_process_count=148, pid=100, goroutines=18, heap_allocated_bytes=1024, runtime_reserved_bytes=2048, uptime_seconds=5000))
-        elif endpoint == '/filesystem/directories':
+        elif endpoint == '/project-directories':
             root = '/opt/devbox/projects'
             selected = root + '/aplikacja'
             path = parse_qs(parsed.query).get('path', [''])[0]
