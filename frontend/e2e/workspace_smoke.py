@@ -270,7 +270,13 @@ def main():
             expect(page.get_by_text('/opt/devbox/projects/aplikacja', exact=True).last).to_be_visible()
             page.get_by_role('button', name='Wybierz katalog', exact=True).click()
             expect(local_path).to_have_value('/opt/devbox/projects/aplikacja')
-            source_select.select_option('docker_image')
+            # Start the existing Docker-image wizard flow from a clean form so the
+            # directory-browser regression does not leave asynchronous UI state behind.
+            page.reload()
+            expect(page.get_by_role('heading', name='Dodaj aplikację', exact=True)).to_be_visible()
+            page.get_by_label('Nazwa', exact=True).fill('Nowa aplikacja')
+            page.get_by_label('Rodzaj źródła').select_option('docker_image')
+            expect(page.get_by_label('Obraz Docker / OCI', exact=True)).to_be_visible()
             page.get_by_label('Obraz Docker / OCI', exact=True).fill('nginx:alpine')
             page.get_by_role('button', name='Dalej', exact=True).click()
             page.get_by_label('Port wewnętrzny', exact=True).fill('80')
