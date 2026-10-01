@@ -7,11 +7,11 @@ import (
 )
 
 type Request struct {
-	Type        string
-	ProjectID   *string
+	Type          string
+	ProjectID     *string
 	ApplicationID *string
-	RequestedBy *string
-	Payload     map[string]any
+	RequestedBy   *string
+	Payload       map[string]any
 }
 
 type Handler interface {

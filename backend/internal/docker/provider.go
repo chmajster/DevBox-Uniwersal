@@ -172,7 +172,7 @@ func (p *CLIProvider) InspectContainer(ctx context.Context, id string) (Containe
 			Running    bool   `json:"Running"`
 			StartedAt  string `json:"StartedAt"`
 			FinishedAt string `json:"FinishedAt"`
-			Health struct {
+			Health     struct {
 				Status string `json:"Status"`
 			} `json:"Health"`
 		} `json:"State"`

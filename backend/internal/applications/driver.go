@@ -10,57 +10,57 @@ import (
 )
 
 type DetectRequest struct {
-	SourceType string
-	Source Source
-	WorkDir string
+	SourceType    string
+	Source        Source
+	WorkDir       string
 	Configuration map[string]any
 }
 
 type PlanRequest struct {
-	Application Application
-	Source Source
-	WorkDir string
-	Detection DetectionResult
-	Configuration map[string]any
+	Application    Application
+	Source         Source
+	WorkDir        string
+	Detection      DetectionResult
+	Configuration  map[string]any
 	SourceRevision string
 }
 
 type ExecutionRequest struct {
 	Application Application
-	Source Source
-	WorkDir string
-	Deployment Deployment
-	Workloads []Workload
-	Endpoints []Endpoint
+	Source      Source
+	WorkDir     string
+	Deployment  Deployment
+	Workloads   []Workload
+	Endpoints   []Endpoint
 }
 
 type InspectRequest struct {
 	Application Application
-	Source Source
-	WorkDir string
-	Workloads []Workload
-	Endpoints []Endpoint
+	Source      Source
+	WorkDir     string
+	Workloads   []Workload
+	Endpoints   []Endpoint
 }
 
 type DeploymentResult struct {
-	Resources map[string]ResourceState `json:"resources"`
-	EndpointPorts map[string]int `json:"endpoint_ports,omitempty"`
-	Warnings []string `json:"warnings,omitempty"`
+	Resources     map[string]ResourceState `json:"resources"`
+	EndpointPorts map[string]int           `json:"endpoint_ports,omitempty"`
+	Warnings      []string                 `json:"warnings,omitempty"`
 }
 
 type ResourceState struct {
-	ResourceID string `json:"resource_id"`
-	Image string `json:"image,omitempty"`
+	ResourceID    string `json:"resource_id"`
+	Image         string `json:"image,omitempty"`
 	ObservedState string `json:"observed_state"`
-	HealthState string `json:"health_state"`
+	HealthState   string `json:"health_state"`
 }
 
 type ObservedWorkload struct {
-	Name string `json:"name"`
-	ResourceID string `json:"resource_id,omitempty"`
-	Image string `json:"image,omitempty"`
+	Name          string `json:"name"`
+	ResourceID    string `json:"resource_id,omitempty"`
+	Image         string `json:"image,omitempty"`
 	ObservedState string `json:"observed_state"`
-	HealthState string `json:"health_state"`
+	HealthState   string `json:"health_state"`
 }
 
 type DeploymentDriver interface {
@@ -76,17 +76,23 @@ type DeploymentDriver interface {
 }
 
 type DriverRegistry struct {
-	mu sync.RWMutex
+	mu      sync.RWMutex
 	drivers map[string]DeploymentDriver
 }
 
-func NewDriverRegistry() *DriverRegistry { return &DriverRegistry{drivers: map[string]DeploymentDriver{}} }
+func NewDriverRegistry() *DriverRegistry {
+	return &DriverRegistry{drivers: map[string]DeploymentDriver{}}
+}
 
 func (r *DriverRegistry) Register(driver DeploymentDriver) error {
-	if driver == nil || driver.Name() == "" { return fmt.Errorf("%w: driver name is required", ErrInvalidInput) }
+	if driver == nil || driver.Name() == "" {
+		return fmt.Errorf("%w: driver name is required", ErrInvalidInput)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, exists := r.drivers[driver.Name()]; exists { return fmt.Errorf("%w: driver %q is already registered", ErrConflict, driver.Name()) }
+	if _, exists := r.drivers[driver.Name()]; exists {
+		return fmt.Errorf("%w: driver %q is already registered", ErrConflict, driver.Name())
+	}
 	r.drivers[driver.Name()] = driver
 	return nil
 }
@@ -102,7 +108,9 @@ func (r *DriverRegistry) Names() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]string, 0, len(r.drivers))
-	for name := range r.drivers { out = append(out, name) }
+	for name := range r.drivers {
+		out = append(out, name)
+	}
 	sort.Strings(out)
 	return out
 }
