@@ -41,6 +41,10 @@ type ContainerLogProvider interface {
 	Logs(context.Context,string,int,bool)(io.ReadCloser,error)
 }
 
+type CredentialResolver interface {
+	SecretRef(context.Context,string)(kind,scope,name string,err error)
+}
+
 type Service struct {
 	repo *Repository
 	drivers *DriverRegistry
@@ -48,13 +52,14 @@ type Service struct {
 	jobs jobs.JobRunner
 	git GitSourceProvider
 	logs ContainerLogProvider
+	credentials CredentialResolver
 	projectsRoot string
 	allowedRoots []string
 }
 
-func NewService(repo *Repository,drivers *DriverRegistry,runner jobs.JobRunner,git GitSourceProvider,logs ContainerLogProvider,projectsRoot string,allowedRoots ...string)*Service{
+func NewService(repo *Repository,drivers *DriverRegistry,runner jobs.JobRunner,git GitSourceProvider,logs ContainerLogProvider,credentials CredentialResolver,projectsRoot string,allowedRoots ...string)*Service{
 	roots:=append([]string{projectsRoot},allowedRoots...)
-	return &Service{repo:repo,drivers:drivers,selector:NewSelector(drivers),jobs:runner,git:git,logs:logs,projectsRoot:projectsRoot,allowedRoots:normalizeRoots(roots)}
+	return &Service{repo:repo,drivers:drivers,selector:NewSelector(drivers),jobs:runner,git:git,logs:logs,credentials:credentials,projectsRoot:projectsRoot,allowedRoots:normalizeRoots(roots)}
 }
 
 type Summary struct {
@@ -243,13 +248,14 @@ func(s *Service)prepareSource(ctx context.Context,app Application,source Source)
 		return workDir,"",nil
 	case SourceGit:
 		if s.git==nil{return "","",fmt.Errorf("%w: git",ErrProviderUnavailable)}
+		credentialRef,err:=s.gitCredentialRef(ctx,source.CredentialID);if err!=nil{return "","",err}
 		if s.git.IsRepository(ctx,workDir){
-			if err:=s.git.PullWithCredential(ctx,workDir,source.CredentialID);err!=nil{return "","",err}
+			if err:=s.git.PullWithCredential(ctx,workDir,credentialRef);err!=nil{return "","",err}
 			if source.Reference!=""{if err:=s.git.Checkout(ctx,workDir,source.Reference);err!=nil{return "","",err}}
 		}else{
 			if info,err:=os.Stat(workDir);err==nil&&info.IsDir(){entries,_:=os.ReadDir(workDir);if len(entries)>0{return "","",fmt.Errorf("%w: Git destination is not empty",ErrConflict)}}
 			if err:=os.MkdirAll(filepath.Dir(workDir),0o750);err!=nil{return "","",err}
-			if err:=s.git.Clone(ctx,providers.GitSource{RepositoryURL:source.RepositoryURL,Reference:source.Reference,Destination:workDir,CredentialRef:source.CredentialID});err!=nil{return "","",err}
+			if err:=s.git.Clone(ctx,providers.GitSource{RepositoryURL:source.RepositoryURL,Reference:source.Reference,Destination:workDir,CredentialRef:credentialRef});err!=nil{return "","",err}
 		}
 		revision,err:=s.git.Revision(ctx,workDir);if err!=nil{return "","",err}
 		return workDir,revision,nil
@@ -304,3 +310,13 @@ func redactLogLine(line string)string{
 	return line
 }
 func sortedKeys(m map[string]any)[]string{out:=make([]string,0,len(m));for key:=range m{out=append(out,key)};sort.Strings(out);return out}
+
+func(s *Service)gitCredentialRef(ctx context.Context,id *string)(*string,error){
+	if id==nil||strings.TrimSpace(*id)==""{return nil,nil}
+	value:=strings.TrimSpace(*id)
+	if strings.Count(value,"|")==2{return &value,nil}
+	if s.credentials==nil{return nil,fmt.Errorf("%w: credential resolver is not configured",ErrProviderUnavailable)}
+	kind,scope,name,err:=s.credentials.SecretRef(ctx,value);if err!=nil{return nil,fmt.Errorf("resolve Git credential: %w",err)}
+	ref:=kind+"|"+scope+"|"+name
+	return &ref,nil
+}
