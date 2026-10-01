@@ -1,4 +1,4 @@
-import type { DockerContainer, Project } from '../api/types'
+import type { Deployment, DockerContainer, Project } from '../api/types'
 import { normalizeOperationalStatus } from '../status'
 import { dockerContainersForProject } from './dockerContainerGroups'
 
@@ -37,3 +37,26 @@ export function resolveApplicationRuntimeStatus(
   return 'STOPPED'
 }
 
+
+export function resolveApplicationDisplayStatus(
+  project: Project,
+  containers: DockerContainer[],
+  dockerStateAvailable: boolean,
+  activeDeployment?: Deployment,
+): string {
+  if (activeDeployment) {
+    const stage = activeDeployment.stage.trim().toUpperCase()
+    const status = activeDeployment.status.trim().toUpperCase()
+    const finished =
+      status === 'SUCCESS' ||
+      status === 'FAILED' ||
+      stage === 'SUCCESS' ||
+      stage === 'FAILED'
+
+    if (!finished) {
+      return stage === 'BUILDING' ? 'BUILDING' : 'DEPLOYING'
+    }
+  }
+
+  return resolveApplicationRuntimeStatus(project, containers, dockerStateAvailable)
+}
