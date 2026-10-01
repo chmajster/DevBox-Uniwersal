@@ -162,11 +162,20 @@ export interface RuntimeContainerConfig {
   project_id: string
   runtime: string
   runtime_version: string
-  container_policy: 'auto' | 'custom'
+  container_policy: 'auto' | 'generated_compose' | 'custom'
   modules: RuntimeModule[]
   container_name?: string
   image_tag?: string
   build_fingerprint?: string
+}
+
+export interface GeneratedComposeResult {
+  compose_path: string
+  dockerfile_path: string
+  runtime: string
+  runtime_version: string
+  host_port: number
+  container_port: number
 }
 
 export interface RuntimeValidation {
