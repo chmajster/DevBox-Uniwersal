@@ -458,13 +458,13 @@ export function ProjectDetailPage() {
 
         <DirectoryPathField
           id="project-local-path"
-          label="Ścieżka do aplikacji"
+          label="Katalog na hoście DevBox"
           disabled={user?.role === 'viewer' || project.source_type !== 'local'}
           value={config.local_path}
           onChange={(path) => setConfig({ ...config, local_path: path })}
           required={project.source_type === 'local'}
           helpText={project.source_type === 'local'
-            ? 'Podaj istniejący katalog aplikacji. Ścieżka jest walidowana po stronie backendu, a drzewo i pole pozostają zsynchronizowane.'
+            ? 'Ścieżka serwera / WSL, nie komputera przeglądarki. Musi należeć do dozwolonych katalogów.'
             : 'Dla źródeł Git i pustych projektów katalog jest zarządzany przez DevBox i nie można go zmienić ręcznie.'}
         />
 
