@@ -7,8 +7,9 @@ const (
 	SourceLocal = "local"
 	SourceEmpty = "empty"
 
-	ContainerPolicyAuto   = "auto"
-	ContainerPolicyCustom = "custom"
+	ContainerPolicyAuto             = "auto"
+	ContainerPolicyGeneratedCompose = "generated_compose"
+	ContainerPolicyCustom           = "custom"
 
 	DeploymentQueued         = "QUEUED"
 	DeploymentPreparing      = "PREPARING"
@@ -42,6 +43,15 @@ type RuntimeContainerState struct {
 	ContainerName string
 	ImageTag      string
 	Fingerprint   string
+}
+
+type GeneratedComposeResult struct {
+	ComposePath    string `json:"compose_path"`
+	DockerfilePath string `json:"dockerfile_path"`
+	Runtime        string `json:"runtime"`
+	RuntimeVersion string `json:"runtime_version"`
+	HostPort       int    `json:"host_port"`
+	ContainerPort  int    `json:"container_port"`
 }
 
 type Project struct {
