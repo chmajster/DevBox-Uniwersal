@@ -12,7 +12,7 @@ import { ProjectDatabaseSection } from '../runtime/ProjectDatabaseSection'
 import { ProjectPortsSection } from '../runtime/ProjectPortsSection'
 import { publishedApplicationURL } from '../runtime/portSettings'
 import { usePolling } from '../control-room/usePolling'
-import { resolveApplicationRuntimeStatus } from './applicationRuntimeStatus'
+import { resolveApplicationDisplayStatus } from './applicationRuntimeStatus'
 
 type DockerContainerCollection = DockerContainer[] | { items?: DockerContainer[]; containers?: DockerContainer[] }
 
@@ -219,6 +219,7 @@ export function ProjectDetailPage() {
         const tracked = items.find((item) => item.id === activeDeployment.id)
         if (tracked && deploymentFinished(tracked)) {
           await loadProject()
+          dockerListing.refresh()
           return
         }
       } catch (cause) {
@@ -286,17 +287,22 @@ export function ProjectDetailPage() {
     ? publishedApplicationURL(typeof window === 'undefined' ? 'http://localhost/' : window.location.href, project.port, false)
     : ''
 
-  const currentApplicationStatus = resolveApplicationRuntimeStatus(
+  const currentApplicationStatus = resolveApplicationDisplayStatus(
     project,
     dockerListing.data ?? [],
     dockerListing.data !== null && !dockerListing.error,
+    activeDeployment,
   )
 
   return <>
     <div className="page-heading">
       <div><Link to="/apps" className="muted-link">← Aplikacje</Link><h1>{project.name}</h1><p className="muted">{project.description || project.local_path}</p></div>
       <div className="project-heading-actions">
-        <div className="project-current-status" aria-live="polite" title={dockerListing.error ? 'Status Docker chwilowo niedostępny — pokazano ostatni status projektu.' : 'Aktualny status aplikacji na podstawie uruchomionych kontenerów.'}>
+        <div className="project-current-status" aria-live="polite" title={activeDeployment
+            ? `Trwa deployment: ${deploymentStageLabels[activeDeployment.stage] ?? activeDeployment.stage}.`
+            : dockerListing.error
+              ? 'Status Docker chwilowo niedostępny — pokazano ostatni status projektu.'
+              : 'Aktualny status aplikacji na podstawie uruchomionych kontenerów.'}>
           <span>Status aplikacji</span>
           <StatusBadge status={currentApplicationStatus} />
         </div>
