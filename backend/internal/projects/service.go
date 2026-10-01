@@ -58,8 +58,8 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 	if input.ContainerPolicy == "" {
 		input.ContainerPolicy = ContainerPolicyAuto
 	}
-	if input.ContainerPolicy != ContainerPolicyAuto && input.ContainerPolicy != ContainerPolicyCustom {
-		return Project{}, nil, fmt.Errorf("%w: container_policy must be auto or custom", ErrInvalidInput)
+	if input.ContainerPolicy != ContainerPolicyAuto && input.ContainerPolicy != ContainerPolicyGeneratedCompose && input.ContainerPolicy != ContainerPolicyCustom {
+		return Project{}, nil, fmt.Errorf("%w: container_policy must be auto, generated_compose or custom", ErrInvalidInput)
 	}
 	if input.Runtime != "" {
 		if err := containerspec.Validate(input.Runtime, strings.TrimSpace(input.RuntimeVersion), nil); err != nil {
@@ -406,8 +406,8 @@ func (s *Service) UpdateRuntimeContainerConfig(ctx context.Context, id string, c
 	if config.ContainerPolicy == "" {
 		config.ContainerPolicy = ContainerPolicyAuto
 	}
-	if config.ContainerPolicy != ContainerPolicyAuto && config.ContainerPolicy != ContainerPolicyCustom {
-		return RuntimeContainerConfig{}, fmt.Errorf("%w: container_policy must be auto or custom", ErrInvalidInput)
+	if config.ContainerPolicy != ContainerPolicyAuto && config.ContainerPolicy != ContainerPolicyGeneratedCompose && config.ContainerPolicy != ContainerPolicyCustom {
+		return RuntimeContainerConfig{}, fmt.Errorf("%w: container_policy must be auto, generated_compose or custom", ErrInvalidInput)
 	}
 	modules := make([]containerspec.Module, 0, len(config.Modules))
 	for _, module := range config.Modules {
@@ -424,6 +424,22 @@ func (s *Service) UpdateRuntimeContainerConfig(ctx context.Context, id string, c
 		return RuntimeContainerConfig{}, err
 	}
 	return s.repo.RuntimeContainerConfig(ctx, id)
+}
+
+func (s *Service) GenerateRuntimeCompose(ctx context.Context, id string) (GeneratedComposeResult, error) {
+	project, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return GeneratedComposeResult{}, err
+	}
+	config, err := s.repo.RuntimeContainerConfig(ctx, id)
+	if err != nil {
+		return GeneratedComposeResult{}, err
+	}
+	workDir, err := SafeWorkingDirectory(project.LocalPath, project.WorkingDirectory)
+	if err != nil {
+		return GeneratedComposeResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	return generateDevBoxCompose(project, config, workDir, project.CurrentCommit)
 }
 
 func (s *Service) RebuildRuntime(ctx context.Context, id string, actor *string) (domain.Job, error) {

@@ -32,7 +32,7 @@ export function ApplicationsPage() {
           {projects.map((project) => <tr key={project.id}>
             <td><Link to={`/projects/${encodeURIComponent(project.id)}/overview`}>{project.name}</Link></td>
             <td>{project.runtime ?? '—'}</td>
-            <td>{project.container_policy === 'custom' ? 'Custom Docker' : 'Managed Docker'}</td>
+            <td>{project.container_policy === 'generated_compose' ? 'DevBox Compose' : project.container_policy === 'custom' ? 'Custom Docker' : 'Managed Docker'}</td>
             <td><StatusBadge status={project.status} /></td>
             <td>{project.working_directory ?? project.local_path ?? '—'}</td>
           </tr>)}

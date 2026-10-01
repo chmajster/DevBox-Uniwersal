@@ -14,7 +14,7 @@ interface FormState {
   local_path: string
   runtime: string
   runtime_version: string
-  container_policy: 'auto' | 'custom'
+  container_policy: 'auto' | 'generated_compose' | 'custom'
   working_directory: string
   build_command: string
   start_command: string
@@ -204,8 +204,9 @@ export function ProjectWizardPage() {
       </label>
 
       <label>Kontener
-        <select value={form.container_policy} onChange={(event) => set('container_policy', event.target.value as 'auto' | 'custom')}>
+        <select value={form.container_policy} onChange={(event) => set('container_policy', event.target.value as 'auto' | 'generated_compose' | 'custom')}>
           <option value="auto">Automatycznie: użyj Dockerfile/Compose lub wygeneruj kontener</option>
+          <option value="generated_compose">DevBox Compose: generuj compose.yaml z ustawień DevBox</option>
           <option value="custom">Tylko własny Dockerfile / Compose</option>
         </select>
       </label>
@@ -240,7 +241,7 @@ export function ProjectWizardPage() {
       <div><span>Nazwa</span><strong>{form.name}</strong></div>
       <div><span>Źródło</span><strong>{form.source_type}</strong></div>
       <div><span>Runtime</span><strong>{form.runtime || 'automatyczne wykrywanie'}</strong></div>
-      <div><span>Kontener</span><strong>{form.container_policy === 'auto' ? 'automatyczny' : 'własny Docker'}</strong></div>
+      <div><span>Kontener</span><strong>{form.container_policy === 'generated_compose' ? 'DevBox Compose' : form.container_policy === 'auto' ? 'automatyczny' : 'własny Docker'}</strong></div>
       {form.source_type === 'git' && <>
         <div className="span-2"><span>Repo</span><strong>{form.repository_url}</strong></div>
         <div><span>Branch</span><strong>{form.branch || 'domyślna gałąź repo'}</strong></div>

@@ -1338,6 +1338,42 @@ a.secondary-button:hover { background: var(--panel-alt); text-decoration: none; 
   white-space: nowrap;
 }
 .runtime-modules-note { margin: 0; }
+.runtime-compose-generator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: -2px;
+  padding: 12px 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--panel-alt);
+}
+.runtime-compose-generator > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.runtime-compose-generator strong {
+  font-size: 12px;
+}
+.runtime-compose-generator p {
+  margin: 0;
+  line-height: 1.45;
+}
+.runtime-compose-generator button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .runtime-compose-generator {
+    display: grid;
+  }
+  .runtime-compose-generator button {
+    width: 100%;
+  }
+}
+
 
 .php-module-picker {
   display: grid;
