@@ -165,15 +165,15 @@ func TestComposeTargetPortPrefersWebOverPublishedDatabase(t *testing.T) {
 
 func TestComposeTargetPortRejectsAmbiguousPublishedPorts(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services:\n  worker1:\n    image: busybox\n  worker2:\n    image: busybox\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services:\n  web1:\n    image: busybox\n  web2:\n    image: busybox\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	runner := &stubRunner{responses: []runnerResponse{
 		{stdout: "Docker Compose version v2.29.0\n"},
 		{stdout: "one123\ntwo123\n"},
-		{stdout: "[{\"Config\":{\"Labels\":{\"com.docker.compose.service\":\"worker1\"}},\"NetworkSettings\":{\"Ports\":{\"9000/tcp\":[{\"HostIp\":\"0.0.0.0\",\"HostPort\":\"19000\"}]}}}]"},
-		{stdout: "[{\"Config\":{\"Labels\":{\"com.docker.compose.service\":\"worker2\"}},\"NetworkSettings\":{\"Ports\":{\"9001/tcp\":[{\"HostIp\":\"0.0.0.0\",\"HostPort\":\"19001\"}]}}}]"},
+		{stdout: "[{\"Config\":{\"Labels\":{\"com.docker.compose.service\":\"web1\"}},\"NetworkSettings\":{\"Ports\":{\"8080/tcp\":[{\"HostIp\":\"0.0.0.0\",\"HostPort\":\"19000\"}]}}}]"},
+		{stdout: "[{\"Config\":{\"Labels\":{\"com.docker.compose.service\":\"web2\"}},\"NetworkSettings\":{\"Ports\":{\"8080/tcp\":[{\"HostIp\":\"0.0.0.0\",\"HostPort\":\"19001\"}]}}}]"},
 	}}
 	provider := newCLIProviderWithRunner(runner)
 

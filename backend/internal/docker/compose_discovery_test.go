@@ -4,14 +4,14 @@ import "testing"
 
 func TestComposeApplicationPortDiscovery(t *testing.T) {
 	tests := []struct {
-		name          string
-		config        string
-		healthcheck   string
+		name           string
+		config         string
+		healthcheck    string
 		dockerfilePort int
-		service       string
-		port          int
-		ambiguous     bool
-		candidates    int
+		service        string
+		port           int
+		ambiguous      bool
+		candidates     int
 		infrastructure int
 	}{
 		{
@@ -55,18 +55,18 @@ func TestComposeApplicationPortDiscovery(t *testing.T) {
 				"mysql":{"image":"mysql:8","ports":[{"target":3306,"published":"3306","protocol":"tcp"}]}
 			}}`,
 			healthcheck: "http://app:8000/health",
-			service: "app", port: 8000, candidates: 1, infrastructure: 1,
+			service:     "app", port: 8000, candidates: 1, infrastructure: 1,
 		},
 		{
-			name: "G expose only is detected",
-			config: `{"services":{"app":{"image":"example/app","expose":["80"]}}}`,
+			name:    "G expose only is detected",
+			config:  `{"services":{"app":{"image":"example/app","expose":["80"]}}}`,
 			service: "app", port: 80, candidates: 1,
 		},
 		{
-			name: "H Dockerfile EXPOSE is fallback",
-			config: `{"services":{"app":{"image":"example/app"}}}`,
+			name:           "H Dockerfile EXPOSE is fallback",
+			config:         `{"services":{"app":{"image":"example/app"}}}`,
 			dockerfilePort: 8080,
-			service: "app", port: 8080, candidates: 1,
+			service:        "app", port: 8080, candidates: 1,
 		},
 	}
 	for _, test := range tests {

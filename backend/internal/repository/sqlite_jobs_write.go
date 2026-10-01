@@ -16,7 +16,7 @@ func (r *SQLiteJobs) CreateJob(ctx context.Context, job domain.Job) error {
 	if err != nil {
 		return fmt.Errorf("marshal job payload: %w", err)
 	}
-	_, err = r.db.ExecContext(ctx, `INSERT INTO jobs(id,type,status,project_id,requested_by,payload_json,created_at) VALUES(?,?,?,?,?,?,?)`, job.ID, job.Type, job.Status, job.ProjectID, job.RequestedBy, string(payload), job.CreatedAt.UTC().Format(time.RFC3339Nano))
+	_, err = r.db.ExecContext(ctx, `INSERT INTO jobs(id,type,status,project_id,application_id,requested_by,payload_json,created_at) VALUES(?,?,?,?,?,?,?,?)`, job.ID, job.Type, job.Status, job.ProjectID, job.ApplicationID, job.RequestedBy, string(payload), job.CreatedAt.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("create job: %w", err)
 	}
@@ -69,16 +69,35 @@ func (r *SQLiteJobs) FailJob(ctx context.Context, id, message string, finished t
 	return err
 }
 func (r *SQLiteJobs) CancelJob(ctx context.Context, id string, finished time.Time) error {
-	res, err := r.db.ExecContext(ctx, `UPDATE jobs SET status='cancelled',finished_at=? WHERE id=? AND status IN ('queued','running')`, finished.UTC().Format(time.RFC3339Nano), id)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// A running application retains its unique operation lock until rollback
+	// finishes. Queued jobs have no external side effects and finish immediately.
+	res, err := tx.ExecContext(ctx, `UPDATE jobs SET status='cancelled',finished_at=CASE WHEN application_id IS NOT NULL AND status='running' THEN NULL ELSE ? END WHERE id=? AND status IN ('queued','running')`, finished.UTC().Format(time.RFC3339Nano), id)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("job cannot be cancelled")
 	}
-	return nil
+	_, err = tx.ExecContext(ctx, `UPDATE application_deployments SET status='cancelled',stage='CANCELLED',finished_at=? WHERE job_id=? AND status IN ('queued','running')`, finished.UTC().Format(time.RFC3339Nano), id)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+func (r *SQLiteJobs) FinishCancellation(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE jobs SET finished_at=? WHERE id=? AND status='cancelled' AND finished_at IS NULL`, time.Now().UTC().Format(time.RFC3339Nano), id)
+	return err
 }
 func (r *SQLiteJobs) RequeueRunning(ctx context.Context) error {
+	// No handler from the previous process remains alive after startup.
+	if _, err := r.db.ExecContext(ctx, `UPDATE jobs SET finished_at=? WHERE status='cancelled' AND finished_at IS NULL`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
 	_, err := r.db.ExecContext(ctx, `UPDATE jobs SET status='queued',started_at=NULL,error=NULL WHERE status='running'`)
 	return err
 }

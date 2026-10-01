@@ -1,9 +1,10 @@
+import type { Application } from '../applications/model'
 import { request } from '../api/client'
-import type { DatabaseResource, DockerContainer, DockerStatus, Job, MySQLStatus, PortResource, Project, ProxyStatus, SystemInfo } from '../api/types'
+import type { DatabaseResource, DockerContainer, DockerStatus, Job, MySQLStatus, PortResource, ProxyStatus, SystemInfo } from '../api/types'
 
 export interface ServiceReading { name: string; state: 'running' | 'unhealthy' | 'unknown'; detail: string; elapsed: number | null; to: string }
 export interface Overview {
-  projects: Project[] | null; containers: DockerContainer[] | null; databases: DatabaseResource[] | null
+  applications: Application[] | null; containers: DockerContainer[] | null; databases: DatabaseResource[] | null
   ports: PortResource[] | null; jobs: Job[] | null; system: SystemInfo | null
   services: ServiceReading[]; errors: string[]
 }
@@ -28,12 +29,12 @@ async function services(signal: AbortSignal): Promise<ServiceReading[]> {
   }))
 }
 export async function loadOverview(signal: AbortSignal): Promise<Overview> {
-  const results = await Promise.allSettled([list<Project>('/projects', signal), list<DockerContainer>('/docker/containers', signal), list<DatabaseResource>('/databases', signal), list<PortResource>('/ports', signal), list<Job>('/jobs', signal), request<SystemInfo>('/system/info', { signal }), services(signal)] as const)
+  const results = await Promise.allSettled([list<Application>('/applications', signal), list<DockerContainer>('/docker/containers', signal), list<DatabaseResource>('/databases', signal), list<PortResource>('/ports', signal), list<Job>('/jobs', signal), request<SystemInfo>('/system/info', { signal }), services(signal)] as const)
   const errors: string[] = []
   function value<T>(result: PromiseSettledResult<T>, name: string): T | null {
     if (result.status === 'fulfilled') return result.value
     errors.push(`${name}: ${result.reason instanceof Error ? result.reason.message : 'Brak danych'}`)
     return null
   }
-  return { projects: value(results[0], 'Aplikacje'), containers: value(results[1], 'Kontenery'), databases: value(results[2], 'Bazy danych'), ports: value(results[3], 'Porty'), jobs: value(results[4], 'Zadania'), system: value(results[5], 'System'), services: value(results[6], 'Usługi') ?? [], errors }
+  return { applications: value(results[0], 'Aplikacje'), containers: value(results[1], 'Kontenery'), databases: value(results[2], 'Bazy danych'), ports: value(results[3], 'Porty'), jobs: value(results[4], 'Zadania'), system: value(results[5], 'System'), services: value(results[6], 'Usługi') ?? [], errors }
 }

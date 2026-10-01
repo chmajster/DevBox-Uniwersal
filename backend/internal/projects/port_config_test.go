@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -85,7 +86,7 @@ func TestPortConfigurationDefaultsValidationAndDeploymentLock(t *testing.T) {
 	settings.ContainerPort = 80
 	settings.HostPort = 9080
 	saved, err := service.UpdatePortConfiguration(ctx, project.ID, settings)
-	if err != nil || !saved.Configured || saved.Settings != settings || saved.Applied != nil {
+	if err != nil || !saved.Configured || !reflect.DeepEqual(saved.Settings, settings) || saved.Applied != nil {
 		t.Fatalf("save = %+v, %v", saved, err)
 	}
 	for _, invalid := range []int{0, -1, 65536} {
@@ -250,7 +251,6 @@ func TestPortConfigurationHTTPRejectsInvalidPayloadAndBusyDeployment(t *testing.
 		t.Fatalf("busy status = %d: %s", response.Code, response.Body.String())
 	}
 }
-
 
 func TestManualComposePortSelectionIsNotOverwrittenByAutomaticDiscovery(t *testing.T) {
 	repo, project, deploymentID := integrationProject(t, Project{Runtime: "static"})

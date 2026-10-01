@@ -17,12 +17,10 @@ import { LogsPage } from './pages/LogsPage'
 import { LoginPage } from './pages/LoginPage'
 import { PortsPage } from './pages/PortsPage'
 import { PluginsPage } from './pages/PluginsPage'
-import { ProjectDetailPage } from './pages/ProjectDetailPage'
-import { ProjectDetailsPage } from './pages/ProjectDetailsPage'
-import { ProjectWizardPage } from './pages/ProjectWizardPage'
-import { ProjectsPage } from './pages/ProjectsPage'
+import { ApplicationDetailPage } from './pages/ApplicationDetailPage'
+import { ApplicationWizardPage } from './pages/ApplicationWizardPage'
+import { ApplicationsPage } from './pages/ApplicationsPage'
 import { ROUTES } from './routes'
-import { ProjectRuntimePage } from './pages/ProjectRuntimePage'
 import { RuntimeManagerPage } from './pages/RuntimeManagerPage'
 import { UpdatesPage } from './pages/UpdatesPage'
 import { UsersPage } from './pages/UsersPage'
@@ -34,14 +32,14 @@ export function App() {
     <Route element={<ProtectedRoute />}>
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
-        <Route path={ROUTES.applications} element={<ProjectsPage />} />
+        <Route path={ROUTES.applications} element={<ApplicationsPage />} />
         <Route path={ROUTES.credentials} element={<CredentialsPage />} />
         <Route path={ROUTES.users} element={<UsersPage />} />
         <Route path={ROUTES.scriptApps} element={<ScriptAppsPage />} />
         <Route path="/applications" element={<Navigate to={ROUTES.applications} replace />} />
-        <Route path="apps/new" element={<ProjectWizardPage />} />
-        <Route path="apps/:id" element={<ProjectDetailPage />} />
-        <Route path={ROUTES.project} element={<ProjectDetailsPage />} />
+        <Route path="apps/new" element={<ApplicationWizardPage />} />
+        <Route path="apps/:id" element={<ApplicationDetailPage />} />
+        <Route path={ROUTES.project} element={<Navigate to="/apps" replace />} />
         <Route path={ROUTES.logs} element={<LogsPage />} />
         <Route path={ROUTES.health} element={<HealthPage />} />
         <Route path={ROUTES.backups} element={<BackupsPage />} />
@@ -54,7 +52,7 @@ export function App() {
         <Route path={ROUTES.plugins} element={<PluginsPage />} />
         <Route path="docker" element={<DockerPage />} />
         <Route path="runtimes" element={<RuntimeManagerPage />} />
-        <Route path="projects/:projectId/runtime" element={<ProjectRuntimePage />} />
+        <Route path="projects/:projectId/runtime" element={<Navigate to="/apps" replace />} />
         <Route path={ROUTES.jobs} element={<JobsPage />} />
         <Route path={ROUTES.audit} element={<AuditPage />} />
         <Route path={ROUTES.updates} element={<UpdatesPage />} />

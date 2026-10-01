@@ -1,0 +1,40 @@
+.acp { max-width: 1440px; margin: 0 auto; display: grid; gap: 20px; }
+.acp h1 { margin: 6px 0; font-size: clamp(1.65rem, 3vw, 2.25rem); }
+.acp h2 { margin: 0 0 14px; font-size: 1.12rem; }
+.acp p { line-height: 1.6; }
+.acp-header, .acp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.acp-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.acp-card { padding: 24px; background: var(--panel, var(--surface)); border: 1px solid var(--border); border-radius: 12px; min-width: 0; }
+.acp fieldset { margin: 0 0 20px; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+.acp fieldset[hidden] { display: none; }
+.acp legend { font-weight: 650; padding: 0 8px; }
+.acp-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; }
+.acp-wide { grid-column: 1 / -1; }
+.acp label { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; font-size: .92rem; }
+.acp input:not([type=checkbox]), .acp textarea, .acp select { width: 100%; min-height: 42px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-alt, var(--surface)); color: var(--text); font: inherit; }
+.acp textarea { resize: vertical; }
+.acp input:focus-visible, .acp textarea:focus-visible, .acp select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.acp label.acp-check { flex-direction: row; align-items: flex-start; margin-top: 16px; line-height: 1.5; }
+.acp small { color: var(--muted); line-height: 1.5; }
+.acp-line { display: block; margin-top: 6px; overflow-wrap: anywhere; }
+.acp-status { display: inline-flex; align-items: center; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); font-size: .8rem; font-weight: 650; white-space: nowrap; }
+.acp-status-good { color: var(--success, #157347); background: color-mix(in srgb, var(--success, #157347) 10%, transparent); }
+.acp-status-bad { color: var(--danger, #bb2d3b); background: color-mix(in srgb, var(--danger, #bb2d3b) 10%, transparent); }
+.acp-status-warn { color: var(--warning, #986700); background: color-mix(in srgb, var(--warning, #986700) 10%, transparent); }
+.acp-status-neutral { color: var(--muted); }
+.acp-notice { border-left: 3px solid var(--warning, #986700); padding: 12px 16px; background: var(--panel-alt); border-radius: 5px; overflow-wrap: anywhere; }
+.acp-table { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; }
+.acp-table table { width: 100%; border-collapse: collapse; }
+.acp-table th, .acp-table td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; max-width: 380px; overflow-wrap: anywhere; }
+.acp-table th { background: var(--panel-alt); font-size: .78rem; text-transform: uppercase; letter-spacing: .035em; color: var(--muted); }
+.acp-table tbody tr:last-child td { border-bottom: 0; }
+.acp-steps, .acp-tabs { display: flex; gap: 10px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.acp-steps span { padding: 8px 12px; color: var(--muted); }
+.acp-steps [aria-current], .acp-tabs [aria-current] { color: var(--accent); border-bottom: 2px solid var(--accent); }
+.acp-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 0; }
+.acp-facts dt { color: var(--muted); font-size: .82rem; margin-bottom: 8px; }
+.acp-facts dd { margin: 0; overflow-wrap: anywhere; }
+.acp-logs { background: var(--panel-alt); border: 1px solid var(--border); padding: 18px; border-radius: 8px; max-height: 65vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .82rem; line-height: 1.6; }
+.acp-secret-list { display: grid; gap: 10px; margin: 20px 0; }
+.acp-secret-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding: 10px 0; }
+@media (max-width: 720px) { .acp-fields, .acp-facts { grid-template-columns: 1fr; } .acp-card { padding: 16px; } .acp-header { align-items: flex-start; } .acp-toolbar > label { width: 100%; } }

@@ -2,13 +2,12 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { Icon, type IconName } from '../components/Icon'
-import { StatusBadge } from '../components/StatusBadge'
+import { ApplicationStatus } from '../applications/components'
 import { useControlRoom } from '../control-room/ControlRoomContext'
 import { LogPreview } from '../control-room/LogPreview'
 import { MetricHistory } from '../control-room/MetricHistory'
 import { ResourceGauge } from '../control-room/ResourceGauge'
 import { bytes, jobState, pendingJobs, recent, time, uptime } from '../control-room/model'
-import { normalizeOperationalStatus } from '../status'
 
 function PanelHeading({ title, icon, to, link = 'Szczegóły' }: { title: string; icon: IconName; to?: string; link?: string }) {
   return <div className="console-panel-heading"><h2><Icon name={icon} size={19} />{title}</h2>{to && <Link to={to}>{link} <Icon name="chevron" size={13} /></Link>}</div>
@@ -27,11 +26,11 @@ export function DashboardPage() {
   const data = overview.data
   const host = monitoring.error ? null : monitoring.data
   const services = data?.services ?? []
-  const projects = data?.projects
+  const projects = data?.applications
   const containers = data?.containers
   const jobs = data?.jobs
-  const appRunning = projects?.filter((item) => normalizeOperationalStatus(item.status) === 'RUNNING').length
-  const appStopped = projects?.filter((item) => normalizeOperationalStatus(item.status) === 'STOPPED').length
+  const appRunning = projects?.filter((item) => item.status === 'running').length
+  const appStopped = projects?.filter((item) => item.status === 'stopped').length
   const containerRunning = containers?.filter((item) => item.state.toLowerCase() === 'running').length
   const queued = jobs?.filter((job) => ['queued', 'pending'].includes(job.status.toLowerCase())).length
   const runningJobs = jobs?.filter((job) => job.status.toLowerCase() === 'running').length
@@ -72,7 +71,7 @@ export function DashboardPage() {
       </section>
       <section className="console-panel console-applications"><PanelHeading title="Ostatnie aplikacje" icon="box" to="/apps" link="Wszystkie aplikacje" />
         <div className="console-table-scroll"><table><caption className="sr-only">Ostatnio dodane aplikacje</caption><thead><tr>{['Nazwa', 'Status', 'Runtime', 'Domena', 'Port', 'Dodano'].map((name) => <th scope="col" key={name}>{name}</th>)}</tr></thead><tbody>
-          {recent(projects ?? []).slice(0, 4).map((project) => <tr key={project.id}><td><Link className="console-app-name" to={`/apps/${encodeURIComponent(project.id)}`}><span className="service-icon"><Icon name="code" size={19} /></span><span><strong>{project.name}</strong><small>{project.description || project.source_type}</small></span></Link></td><td><StatusBadge status={project.status} /></td><td><span className="runtime-tag">{project.runtime || '—'}</span></td><td className="clip-cell" title={project.domain}>{project.domain || '—'}</td><td>{project.port ?? '—'}</td><td title={time(project.created_at, true)}>{time(project.created_at).slice(0, 5)}</td></tr>)}
+          {recent(projects ?? []).slice(0, 4).map((project) => <tr key={project.id}><td><Link className="console-app-name" to={`/apps/${encodeURIComponent(project.id)}`}><span className="service-icon"><Icon name="code" size={19} /></span><span><strong>{project.name}</strong><small>{project.description || project.source_type}</small></span></Link></td><td><ApplicationStatus value={project.status} /></td><td><span className="runtime-tag">{project.runtime?.name || '—'}</span></td><td className="clip-cell" title={project.primary_endpoint?.domain}>{project.primary_endpoint?.domain || '—'}</td><td>{project.primary_endpoint?.host_port ?? '—'}</td><td title={time(project.created_at, true)}>{time(project.created_at).slice(0, 5)}</td></tr>)}
           {!projects?.length && <tr><td colSpan={6} className="console-empty">{projects === null || projects === undefined ? 'Brak odczytu aplikacji.' : 'Brak aplikacji. Dodaj projekt Git lub katalog lokalny.'}</td></tr>}
         </tbody></table></div>
       </section>

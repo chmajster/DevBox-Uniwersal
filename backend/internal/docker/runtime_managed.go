@@ -205,7 +205,10 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 		rollback()
 		return fmt.Errorf("create managed container: %w", err)
 	}
-	for _, network := range spec.Networks[1:] {
+	for i, network := range spec.Networks {
+		if i == 0 {
+			continue
+		}
 		if err := p.ConnectNetwork(ctx, spec.ContainerName, network); err != nil {
 			rollback()
 			return fmt.Errorf("connect managed container network: %w", err)
@@ -215,7 +218,7 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 		rollback()
 		return fmt.Errorf("start managed container: %w", err)
 	}
-	if err := p.waitManagedHealthy(ctx, spec.ContainerName, spec.HostPort); err != nil {
+	if err := p.waitManagedHealthy(ctx, spec.ContainerName, spec.HostPort, spec.HealthPath); err != nil {
 		rollback()
 		return err
 	}
@@ -301,10 +304,17 @@ func (p *CLIProvider) RemoveManaged(ctx context.Context, containerName string) e
 	return err
 }
 
-func (p *CLIProvider) waitManagedHealthy(ctx context.Context, containerName string, hostPort int) error {
+func (p *CLIProvider) waitManagedHealthy(ctx context.Context, containerName string, hostPort int, paths ...string) error {
 	deadline := time.Now().Add(30 * time.Second)
-	client := &http.Client{Timeout: 2 * time.Second}
-	target := "http://127.0.0.1:" + strconv.Itoa(hostPort) + "/"
+	client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	path := "/"
+	if len(paths) > 0 && paths[0] != "" {
+		path = paths[0]
+	}
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.ContainsAny(path, "\r\n") {
+		return errors.New("invalid health path")
+	}
+	target := "http://127.0.0.1:" + strconv.Itoa(hostPort) + path
 	var lastErr error
 	for {
 		if ctx.Err() != nil {

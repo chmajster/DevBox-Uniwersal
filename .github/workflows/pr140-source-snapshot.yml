@@ -1,0 +1,29 @@
+name: PR source verification snapshot
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pr140-source-snapshot.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Archive checked-out source without Git credentials
+        run: |
+          git rev-parse HEAD > /tmp/source-revision.txt
+          tar --exclude='./.git' -czf /tmp/pr140-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr140-source-snapshot
+          path: |
+            /tmp/pr140-source.tar.gz
+            /tmp/source-revision.txt
+          retention-days: 1

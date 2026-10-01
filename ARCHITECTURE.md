@@ -24,7 +24,9 @@ backend/
   internal/runtimes/       Runtime detection and runtime contracts
   internal/containerspec/  managed application image specifications
   internal/providers/      cross-module provider contracts
-  internal/projects/       owned by Git/Projects agent
+  internal/applications/   application/source/workload/endpoint lifecycle, API and reconciliation
+  internal/drivers/        managed, Dockerfile, OCI image and Compose deployment drivers
+  internal/projects/      legacy Project module; not mounted by the active composition root
   internal/docker/         owned by Docker agent
   internal/databases/      owned by Database agent
   internal/proxy/          owned by Reverse Proxy agent
@@ -134,3 +136,7 @@ The HTTP API runs unprivileged. Operations requiring Administrator/root privileg
 ### Project port publishing
 
 `projects.PortConfiguration` keeps desired settings and the last applied mapping in additive SQLite state. Deployment jobs use the central `PortManager` through the optional `SequentialPortAllocator`/`PortLeaseOwner` contracts, keep previous leases until a replacement is healthy, and retain leases when cleanup cannot safely confirm the ports are unused. Resolved host ports become the stable project settings. Generated container listeners are configured in `containerspec`; actual Docker and opt-in Compose publication remains in the Docker provider. Compose overrides are stored in a private durable directory, not in the application source tree. See ADR-010 and `docs/project-port-publishing.md`.
+
+## Application ownership
+
+ADR 012 defines the active Application control plane. The workspace is no longer a thin UI over Project records. Jobs, desired/observed state, staged topology, stable endpoint leases and encrypted application secrets have dedicated contracts. See `docs/application-control-plane.md` for API, concurrency, deletion and compatibility boundaries.

@@ -57,6 +57,7 @@ export interface Job {
   type: string
   status: string
   project_id?: string
+  application_id?: string
   requested_by?: string
   payload?: Record<string, unknown>
   result?: Record<string, unknown>
@@ -723,4 +724,177 @@ export interface ScriptAppLogs {
   manager: string
   target?: string
   logs: string
+}
+
+export type ApplicationSourceType = 'git' | 'local' | 'docker_image' | 'empty'
+export type ApplicationDriver = 'managed' | 'dockerfile' | 'compose' | 'image'
+export type DesiredState = 'running' | 'stopped'
+export type ObservedState = 'running' | 'starting' | 'stopped' | 'exited' | 'missing' | 'failed' | 'unknown'
+export type HealthState = 'healthy' | 'unhealthy' | 'degraded' | 'unknown'
+
+export interface ApplicationSourceRecord {
+  application_id: string
+  repository_url?: string
+  reference?: string
+  local_path?: string
+  docker_image?: string
+  credential_id?: string
+  current_revision?: string
+}
+
+export interface ApplicationRuntimeRecord {
+  application_id: string
+  name: string
+  version?: string
+  metadata?: Record<string, unknown>
+}
+
+export interface ApplicationWorkload {
+  id: string
+  application_id: string
+  name: string
+  role: 'web' | 'api' | 'admin' | 'worker' | 'scheduler' | 'database' | 'cache' | 'queue' | 'search' | 'internal' | string
+  driver_resource_id?: string
+  image?: string
+  desired_state: DesiredState
+  observed_state: ObservedState
+  health_state: HealthState
+  primary: boolean
+  metadata?: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface ApplicationEndpoint {
+  id: string
+  application_id: string
+  workload_id: string
+  name: string
+  protocol: 'http' | 'https' | 'tcp'
+  container_port: number
+  host_port?: number
+  domain?: string
+  public: boolean
+  primary: boolean
+  tls_mode: string
+  health_path?: string
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ApplicationDeployment {
+  id: string
+  application_id: string
+  job_id?: string
+  driver: string
+  status: string
+  stage: string
+  source_revision?: string
+  started_at?: string
+  finished_at?: string
+  triggered_by?: string
+  error?: string
+  plan_snapshot?: Record<string, unknown>
+  created_at: string
+}
+
+export interface ControlPlaneApplication {
+  id: string
+  name: string
+  slug: string
+  description: string
+  source_type: ApplicationSourceType
+  driver: string
+  desired_state: DesiredState
+  observed_state: ObservedState
+  health_state: HealthState
+  auto_start: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ApplicationSummary extends ControlPlaneApplication {
+  source: ApplicationSourceRecord
+  runtime?: ApplicationRuntimeRecord
+  workload_count: number
+  primary_endpoint?: ApplicationEndpoint
+  last_deployment?: ApplicationDeployment
+  status: string
+}
+
+export interface ApplicationDetail extends ControlPlaneApplication {
+  source: ApplicationSourceRecord
+  runtime?: ApplicationRuntimeRecord
+  workloads: ApplicationWorkload[]
+  endpoints: ApplicationEndpoint[]
+  deployments: ApplicationDeployment[]
+  status: string
+}
+
+export interface DetectionService {
+  name: string
+  suggested_role: string
+  primary: boolean
+  confidence: string
+  reason?: string
+  metadata?: Record<string, unknown>
+}
+
+export interface DetectionEndpoint {
+  service: string
+  protocol: 'http' | 'https' | 'tcp'
+  container_port: number
+  primary: boolean
+  confidence: string
+  reason?: string
+}
+
+export interface ApplicationDetection {
+  driver: string
+  confidence: string
+  runtime?: string
+  version?: string
+  services?: DetectionService[]
+  endpoints?: DetectionEndpoint[]
+  warnings?: string[]
+  reasons?: string[]
+  requires_configuration: boolean
+}
+
+export interface ApplicationDetectResponse {
+  detection?: ApplicationDetection
+  job?: Job
+}
+
+export interface ApplicationCreateInput {
+  name: string
+  description?: string
+  source_type: ApplicationSourceType
+  source: {
+    repository_url?: string
+    reference?: string
+    local_path?: string
+    docker_image?: string
+    credential_id?: string
+  }
+  driver?: string
+  desired_state?: DesiredState
+  auto_start?: boolean
+  configuration?: Record<string, unknown>
+}
+
+export interface ApplicationStateView {
+  application_id: string
+  desired_state: DesiredState
+  observed_state: ObservedState
+  health_state: HealthState
+  status: string
+  workloads: ApplicationWorkload[]
+  checked_at: string
+}
+
+export interface ApplicationRuntimeLog {
+  workload: string
+  line: string
 }

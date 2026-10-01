@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01 — Application control plane (PR #140)
+
+- Completed the `/applications` workspace, source wizard, service/endpoint inventory, live state, configuration recovery, encrypted secrets, deployment history and owned job cancel/retry.
+- Corrected compilation/port validation, first-image discovery, stable port reuse, runtime/module application, Compose aliases and primary selection, staging topology, cancellation locks and stale provider observations.
+- Added additive operation-lock migration, API/driver regressions and opt-in real Docker lifecycle tests for all four drivers; removed the temporary dependency snapshot from the application verification workflow.
+- Documented migration boundaries, persistent-data protection and non-atomic Compose recovery in `docs/application-control-plane.md` and ADR 012. Legacy Project data is retained but not automatically converted.
+
 ## 2026-09-29 — Managed image reference hardening
 
 ### Fixed

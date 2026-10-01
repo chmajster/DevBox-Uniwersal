@@ -51,17 +51,18 @@ type Session struct {
 }
 
 type Job struct {
-	ID          string         `json:"id"`
-	Type        string         `json:"type"`
-	Status      string         `json:"status"`
-	ProjectID   *string        `json:"project_id,omitempty"`
-	RequestedBy *string        `json:"requested_by,omitempty"`
-	Payload     map[string]any `json:"payload,omitempty"`
-	Result      map[string]any `json:"result,omitempty"`
-	Error       *string        `json:"error,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	StartedAt   *time.Time     `json:"started_at,omitempty"`
-	FinishedAt  *time.Time     `json:"finished_at,omitempty"`
+	ID            string         `json:"id"`
+	Type          string         `json:"type"`
+	Status        string         `json:"status"`
+	ProjectID     *string        `json:"project_id,omitempty"`
+	ApplicationID *string        `json:"application_id,omitempty"`
+	RequestedBy   *string        `json:"requested_by,omitempty"`
+	Payload       map[string]any `json:"payload,omitempty"`
+	Result        map[string]any `json:"result,omitempty"`
+	Error         *string        `json:"error,omitempty"`
+	CreatedAt     time.Time      `json:"created_at"`
+	StartedAt     *time.Time     `json:"started_at,omitempty"`
+	FinishedAt    *time.Time     `json:"finished_at,omitempty"`
 }
 
 type AuditEvent struct {

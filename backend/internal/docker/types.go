@@ -51,6 +51,7 @@ type Container struct {
 type ContainerDetail struct {
 	Container
 	Running    bool              `json:"running"`
+	Health     string            `json:"health,omitempty"`
 	StartedAt  string            `json:"started_at,omitempty"`
 	FinishedAt string            `json:"finished_at,omitempty"`
 	Labels     map[string]string `json:"labels,omitempty"`
