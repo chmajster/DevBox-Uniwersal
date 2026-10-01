@@ -7,8 +7,6 @@ func init() {
 		documentedRoute{"GET", "/api/v1/applications", "List applications and observed status", "viewer"},
 		documentedRoute{"POST", "/api/v1/applications", "Create application", "operator"},
 		documentedRoute{"POST", "/api/v1/applications/detect", "Analyze application source", "operator"},
-		documentedRoute{"GET", "/api/v1/filesystem/directories", "Browse allowed DevBox host directories", "operator"},
-		documentedRoute{"POST", "/api/v1/filesystem/directories", "Create a directory inside an allowed DevBox host root", "operator"},
 		documentedRoute{"GET", "/api/v1/applications/{id}", "Application detail", "viewer"},
 		documentedRoute{"PATCH", "/api/v1/applications/{id}", "Update public application configuration", "operator"},
 		documentedRoute{"DELETE", "/api/v1/applications/{id}", "Queue safe application removal", "admin"},
