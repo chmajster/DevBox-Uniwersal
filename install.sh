@@ -616,7 +616,19 @@ build_backend() {
 build_frontend() {
   [[ -f "$ROOT_DIR/frontend/package-lock.json" ]] || fail "Brak frontend/package-lock.json."
   command -v npm >/dev/null 2>&1 || fail "Brak npm po instalacji pakietów."
-  (cd "$ROOT_DIR/frontend" && npm ci >>"$LOG_FILE" 2>&1 && npm run build >>"$LOG_FILE" 2>&1)
+
+  if ! (cd "$ROOT_DIR/frontend" && npm ci >>"$LOG_FILE" 2>&1); then
+    emit FAIL "npm ci dla frontendu zakończyło się błędem. Ostatnie linie logu:"
+    tail -n 80 "$LOG_FILE" 2>/dev/null || true
+    exit 1
+  fi
+
+  if ! (cd "$ROOT_DIR/frontend" && npm run build >>"$LOG_FILE" 2>&1); then
+    emit FAIL "Build frontendu zakończył się błędem. Ostatnie linie logu:"
+    tail -n 80 "$LOG_FILE" 2>/dev/null || true
+    exit 1
+  fi
+
   [[ -f "$ROOT_DIR/frontend/dist/index.html" ]] || fail "Build frontendu nie utworzył dist/index.html."
   emit " OK " "Frontend zbudowany."
 }
