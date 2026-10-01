@@ -81,7 +81,6 @@ export function ApplicationWizardPage() {
           </div>
           {directoryOpen && <DirectoryPicker
             value={localPath}
-            endpoint="/filesystem/directories"
             onSelect={setLocalPath}
             onClose={() => setDirectoryOpen(false)}
           />}
