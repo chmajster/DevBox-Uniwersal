@@ -33,6 +33,25 @@ type ComposePortTarget struct {
 	ContainerPort int
 }
 
+type ComposePortCandidate struct {
+	Service       string `json:"service"`
+	ContainerPort int    `json:"port"`
+	HostPort      int    `json:"host_port,omitempty"`
+	Protocol      string `json:"protocol"`
+	Source        string `json:"source"`
+}
+
+type ComposePortDiscovery struct {
+	Selected       *ComposePortCandidate  `json:"selected,omitempty"`
+	Candidates     []ComposePortCandidate `json:"candidates"`
+	Infrastructure []ComposePortCandidate `json:"infrastructure"`
+	Fingerprint    string                 `json:"fingerprint"`
+}
+
+type ComposePortDiscoverer interface {
+	DiscoverComposeApplicationPorts(ctx context.Context, directory, projectName, healthcheck string) (ComposePortDiscovery, error)
+}
+
 // ComposePortPublisher configures only the selected web service. The returned
 // rollback restores its previous override, never the user's Compose source.
 type ComposePortPublisher interface {
