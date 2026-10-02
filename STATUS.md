@@ -4,6 +4,8 @@ DevBox Universal is an integrated local development control plane.
 
 ## Application control plane (PR #140)
 
+- Manual “Odśwież stan” queues an owned deployment job to recreate application containers, opens deployment history and respects Operator/Admin permissions and active-operation locks. Automatic state polling remains observational; unchanged managed images retain fingerprint-based reuse.
+
 - The active `/apps` workspace uses `/api/v1/applications`, with Git/local/image/empty onboarding and managed/Dockerfile/image/Compose drivers.
 - Live workload-derived state, explicit configuration waiting, persistent endpoint identities/leases, configuration and encrypted secret editing, owned deployment/lifecycle jobs, cancellation/retry and audit.
 - Application list/details and reconciliation refresh every five seconds; unavailable providers invalidate observations rather than retain green state.

@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent } from 'react'
+import { useCallback, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { request } from '../api/client'
 import type { Job } from '../api/types'
@@ -77,6 +77,7 @@ export function ApplicationDetailPage() {
   const [tab, setTab] = useState<typeof tabs[number]>('Przegląd')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const actionPending = useRef(false)
   const [jobID, setJobID] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [confirmation, setConfirmation] = useState('')
@@ -93,9 +94,12 @@ export function ApplicationDetailPage() {
   const editable = user?.role === 'admin' || user?.role === 'operator'
   const locked = busy || !!app?.active_operation
   async function action(action: string) {
+    if (!editable || locked || actionPending.current) return
+    actionPending.current = true
+    if (action === 'deploy') setTab('Wdrożenia')
     setBusy(true); setError('')
     try { const result = await request<Job | { job: Job }>(`/applications/${encodeURIComponent(id)}/${action}`, { method: 'POST' }); setJobID('job' in result ? result.job.id : result.id); detail.refresh() }
-    catch (error) { setError(message(error)) } finally { setBusy(false) }
+    catch (error) { setError(message(error)) } finally { actionPending.current = false; setBusy(false) }
   }
   async function remove(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError('')
@@ -108,7 +112,7 @@ export function ApplicationDetailPage() {
   const recent = app.deployments[0]
   return <div className="acp"><header className="acp-header"><div><Link to="/apps">Aplikacje</Link><h1>{app.name}</h1><p>{app.description || sourceNames[app.source_type]}</p></div><div className="acp-actions"><ApplicationStatus value={detail.data?.stateError ? 'unknown' : app.status} />{url && <a className="button-link secondary-button" href={url} target="_blank" rel="noreferrer">Otwórz aplikację ↗</a>}<button disabled={!editable || locked} onClick={() => void action('deploy')}>Deploy</button></div></header>
     {(error || detail.error || detail.data?.stateError) && <p className="error-banner" role="alert">{error || detail.error || `Odczyt stanu nie powiódł się: ${detail.data?.stateError}`}</p>}
-    <div className="acp-toolbar"><span>Odczyt: {detail.updatedAt ? new Date(detail.updatedAt).toLocaleTimeString('pl-PL') : '—'}</span><div className="acp-actions">{['start', 'stop', 'restart'].map((actionName, i) => <button className="secondary-button" key={actionName} disabled={!editable || locked || !app.workloads.length} onClick={() => void action(actionName)}>{['Uruchom', 'Zatrzymaj', 'Restart'][i]}</button>)}<button className="secondary-button" onClick={detail.refresh}>Odśwież stan</button>{user?.role === 'admin' && <button className="secondary-button" disabled={locked} onClick={() => { setConfirmation(''); setDeleting(true) }}>Usuń</button>}</div></div>
+    <div className="acp-toolbar"><span>Odczyt: {detail.updatedAt ? new Date(detail.updatedAt).toLocaleTimeString('pl-PL') : '—'}</span><div className="acp-actions">{['start', 'stop', 'restart'].map((actionName, i) => <button className="secondary-button" key={actionName} disabled={!editable || locked || !app.workloads.length} onClick={() => void action(actionName)}>{['Uruchom', 'Zatrzymaj', 'Restart'][i]}</button>)}<button className="secondary-button" disabled={!editable || locked} title="Ponownie wdróż aplikację i odtwórz jej kontenery" onClick={() => void action('deploy')}>Odśwież stan</button>{user?.role === 'admin' && <button className="secondary-button" disabled={locked} onClick={() => { setConfirmation(''); setDeleting(true) }}>Usuń</button>}</div></div>
     {app.active_operation && <p className="acp-notice" role="status">Operacja: {app.active_operation.type} · {app.active_operation.status}. <Link to={`/jobs?job=${encodeURIComponent(app.active_operation.id)}`}>Postęp i anulowanie</Link></p>}
     {jobID && !app.active_operation && <p role="status">Zlecone zadanie: <Link to={`/jobs?job=${encodeURIComponent(jobID)}`}>{jobID.slice(0, 8)}</Link>. Stan aplikacji jest odczytywany niezależnie od wyniku zadania.</p>}
     {recent?.status === 'waiting_for_configuration' && <p className="acp-notice">Wdrożenie wymaga konfiguracji. Ustaw serwis / port lub wymagane sekrety, zapisz i ponownie uruchom Deploy. Szczegóły są w zdarzeniach i wyniku zadania.</p>}
