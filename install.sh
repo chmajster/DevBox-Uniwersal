@@ -130,10 +130,17 @@ Usage:
   ./install.sh --status
   ./install.sh --repair
   ./install.sh --update
+  ./install.sh --reinstall
+  curl -fsSL https://raw.githubusercontent.com/chmajster/DevBox-Uniwersal/main/install.sh | sudo bash -s -- --reinstall
   ./install.sh --uninstall [--purge]
   ./install.sh --help
 
 Options:
+  --reinstall
+            Completely remove the current DevBox installation and all DevBox
+            data, then perform a clean installation from scratch.
+            Equivalent to --uninstall --purge followed by --install.
+
   --purge   With --uninstall, also remove /var/lib/devbox and the devbox user.
             Data is preserved by default.
 USAGE
@@ -144,7 +151,7 @@ parse_args() {
   PURGE=0
   while (($#)); do
     case "$1" in
-      --install|--status|--repair|--update|--uninstall|--help)
+      --install|--status|--repair|--update|--reinstall|--uninstall|--help)
         [[ -z "$MODE" ]] || return 2
         MODE="$1"
         ;;
@@ -908,6 +915,16 @@ run_install() {
   emit INFO "Logowanie hasłem jest wyłączone. Panel lokalny otwiera się bez ekranu logowania."
 }
 
+run_reinstall() {
+  require_root
+  emit WARN "Tryb --reinstall usunie cala konfiguracje i wszystkie dane DevBox przed ponowna instalacja."
+  PURGE=1
+  run_uninstall
+  PURGE=0
+  emit INFO "Czyszczenie zakonczone. Rozpoczynam czysta instalacje DevBox Universal."
+  run_install
+}
+
 run_status() {
   stage 1 "System"
   local pretty
@@ -990,6 +1007,7 @@ main() {
   fi
   case "$MODE" in
     --install|--repair|--update) run_install ;;
+    --reinstall) run_reinstall ;;
     --status) run_status ;;
     --uninstall) run_uninstall ;;
     --help) usage ;;
