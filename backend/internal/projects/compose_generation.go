@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -80,7 +81,7 @@ func generateDevBoxCompose(project Project, config RuntimeContainerConfig, workD
 }
 
 func generatedComposeYAML(project Project, spec containerspec.DeploymentSpec, hostPort int) string {
-	return devBoxGeneratedMarker + "\n" +
+	compose := devBoxGeneratedMarker + "\n" +
 		"# Regenerate from DevBox Runtime settings; manual edits may be overwritten.\n" +
 		"services:\n" +
 		"  app:\n" +
@@ -96,6 +97,21 @@ func generatedComposeYAML(project Project, spec containerspec.DeploymentSpec, ho
 		"      io.devbox.managed: " + strconv.Quote("true") + "\n" +
 		"      io.devbox.project: " + strconv.Quote(project.ID) + "\n" +
 		"      io.devbox.runtime: " + strconv.Quote(spec.Runtime) + "\n"
+	if len(spec.BindMounts) > 0 {
+		compose += "    volumes:\n"
+		sources := make([]string, 0, len(spec.BindMounts))
+		for source := range spec.BindMounts {
+			sources = append(sources, source)
+		}
+		sort.Strings(sources)
+		for _, source := range sources {
+			compose += "      - type: bind\n        source: .\n        target: " + strconv.Quote(spec.BindMounts[source]) + "\n        read_only: false\n"
+		}
+		for _, target := range spec.AnonymousVolumes {
+			compose += "      - type: volume\n        target: " + strconv.Quote(target) + "\n"
+		}
+	}
+	return compose
 }
 
 func ensureComposeGenerationIsSafe(workDir string) error {

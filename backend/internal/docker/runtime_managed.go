@@ -270,7 +270,7 @@ func managedMountArgs(spec containerspec.DeploymentSpec) ([]string, error) {
 		if !info.IsDir() {
 			return nil, fmt.Errorf("%w: bind mount source must be a directory", ErrInvalidInput)
 		}
-		args = append(args, "--mount", "type=bind,source="+source+",target="+target)
+		args = append(args, "--mount", "type=bind,source="+source+",target="+target+",rw")
 	}
 
 	volumes := append([]string(nil), spec.AnonymousVolumes...)

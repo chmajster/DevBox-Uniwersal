@@ -4,6 +4,8 @@ DevBox Universal is an integrated local development control plane.
 
 ## Application control plane (PR #140)
 
+- Managed runtime source directories use explicit read-write Docker bind mounts; DevBox-generated Compose includes the same live source mount and preserves dependency volumes. Container-created files in the source tree remain visible on the host. DevBox does not use `chmod 777` as a default permission fix.
+
 - Application form radio options use compact controls aligned with their labels, including the Compose onboarding choice.
 
 - The independent directory-picker module restores browse, autocomplete and directory creation under `/api/v1/project-directories`, with existing Operator RBAC, audit and allowlisted-root/symlink protections. Legacy Project lifecycle routes remain unmounted.

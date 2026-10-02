@@ -12,6 +12,9 @@ func TestGenerateDevBoxComposeWritesRuntimeArtifacts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("<?php echo 'ok';"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "composer.json"), []byte(`{"require":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	port := 18080
 	project := Project{
@@ -52,6 +55,8 @@ func TestGenerateDevBoxComposeWritesRuntimeArtifacts(t *testing.T) {
 		"dockerfile: \".devbox/Dockerfile\"",
 		"\"18080:8080\"",
 		"io.devbox.project: \"project-1\"",
+		"- type: bind\n        source: .\n        target: \"/app\"\n        read_only: false",
+		"- type: volume\n        target: \"/app/vendor\"",
 	} {
 		if !strings.Contains(string(compose), expected) {
 			t.Fatalf("generated compose is missing %q:\n%s", expected, compose)

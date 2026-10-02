@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-02 — Writable live application mounts
+
+- Managed Docker containers now request source bind mounts explicitly as read-write. DevBox-generated Compose also binds the source directory live with `read_only: false` and keeps anonymous dependency volumes.
+- Files created by an application inside its mounted source tree are reflected on the host. No default `chmod 777` behavior was added.
+- Added regressions for explicit Docker CLI `rw`, paths containing spaces, and generated Compose mount/dependency volume configuration.
+
 ## 2026-10-02 — Application onboarding radio layout
 
 - Keep radio buttons and checkboxes compact in application forms. Align radio options next to their labels instead of stretching controls across the Compose choice panel. No API or migration changes.

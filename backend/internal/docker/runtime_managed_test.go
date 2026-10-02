@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -30,7 +31,10 @@ func TestManagedExtraHostArgsRejectsArbitraryMapping(t *testing.T) {
 }
 
 func TestManagedMountArgsAddsLiveBindAndDependencyVolume(t *testing.T) {
-	dir := t.TempDir()
+	dir := t.TempDir() + " project with spaces"
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	args, err := managedMountArgs(containerspec.DeploymentSpec{
 		BindMounts:       map[string]string{dir: "/app"},
 		AnonymousVolumes: []string{"/app/vendor"},
@@ -38,7 +42,7 @@ func TestManagedMountArgsAddsLiveBindAndDependencyVolume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "--mount|type=bind,source=" + dir + ",target=/app|--mount|type=volume,target=/app/vendor"
+	want := "--mount|type=bind,source=" + dir + ",target=/app,rw|--mount|type=volume,target=/app/vendor"
 	if got := strings.Join(args, "|"); got != want {
 		t.Fatalf("managedMountArgs() = %s, want %s", got, want)
 	}
