@@ -309,6 +309,38 @@ func (s *Service) ResolveRuntimeDatabase(ctx context.Context, projectID string) 
 		HostGateway: requiresDockerHostGateway(connection),
 	}
 	if connection.Mode == DatabaseModeNone {
+		services, err := s.repo.ProjectDatabaseServices(ctx, projectID)
+		if err != nil {
+			return providers.ProjectDatabaseRuntime{}, err
+		}
+		if len(services.Engines) == 0 {
+			return result, nil
+		}
+		result.Network = DefaultManagedMySQLNetwork
+		if s.managed != nil {
+			result.Network = s.managed.Network()
+		}
+		for _, engineName := range services.Engines {
+			engine, err := s.engineFor(engineName)
+			if err != nil {
+				return providers.ProjectDatabaseRuntime{}, err
+			}
+			host, port := engine.Endpoint()
+			if applicationEngine, ok := engine.(interface {
+				ApplicationEndpoint() providers.DatabaseEndpoint
+			}); ok {
+				endpoint := applicationEngine.ApplicationEndpoint()
+				host, port = endpoint.Host, endpoint.Port
+			}
+			if strings.TrimSpace(host) == "" || port < 1 || port > 65535 {
+				return providers.ProjectDatabaseRuntime{}, fmt.Errorf("shared %s database application endpoint is unavailable", engineName)
+			}
+			result.SharedServices = append(result.SharedServices, providers.SharedDatabaseService{
+				Engine: engineName,
+				Host:   host,
+				Port:   port,
+			})
+		}
 		return result, nil
 	}
 	binding, err := s.repo.DatabaseBindingByProject(ctx, projectID)

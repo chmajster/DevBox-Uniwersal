@@ -68,7 +68,7 @@ const databaseModeOptions: Array<{ mode: DatabaseMode; title: string; descriptio
   {
     mode: 'managed',
     title: 'Bazy danych DevBox',
-    description: 'Wybierz MySQL/MariaDB, PostgreSQL albo oba serwery. Dane połączenia są stałe; bazy, konta i uprawnienia zarządzasz w module Bazy danych.',
+    description: 'Wybierz MySQL/MariaDB, PostgreSQL albo oba serwery. Kontener aplikacji zostanie automatycznie podłączony do sieci devbox-apps i skierowany na wybrany kontener bazy.',
   },
   {
     mode: 'external',
@@ -334,7 +334,7 @@ export function ProjectDatabaseSection({ projectId }: Props) {
       {draft.mode === 'managed' && <>
         <div className="validation-box span-2">
           <strong>Wybierz serwer SQL dla tej aplikacji.</strong>
-          <span>Ten widok zapisuje wyłącznie wybór MySQL/MariaDB, PostgreSQL albo obu serwerów i pokazuje stałe dane połączenia. Nie tworzy baz, kont, haseł ani grantów.</span>
+          <span>DevBox automatycznie dołącza kontener aplikacji do <code>devbox-apps</code> i ustawia host/port wybranego serwera w runtime. Ten widok nie tworzy baz, kont, haseł ani grantów.</span>
         </div>
         <div className="database-mode-options span-2">
           {([

@@ -92,3 +92,29 @@ func TestProjectDatabaseServicesCanBeCleared(t *testing.T) {
 		t.Fatalf("expected project database services to be cleared, got %v", loaded.Engines)
 	}
 }
+
+func TestSharedDevBoxMySQLSelectionResolvesApplicationRuntime(t *testing.T) {
+	ctx := context.Background()
+	service, _, _, _ := databaseBindingTestService(t)
+
+	if _, err := service.UpdateProjectDatabaseServices(ctx, "project-1", ProjectDatabaseServicesInput{Engines: []string{"mysql"}}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := service.ResolveRuntimeDatabase(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.Connection.Mode != DatabaseModeNone {
+		t.Fatalf("shared service selection must remain credential-free, got mode %q", runtime.Connection.Mode)
+	}
+	if runtime.Network != DefaultManagedMySQLNetwork {
+		t.Fatalf("runtime network = %q, want %q", runtime.Network, DefaultManagedMySQLNetwork)
+	}
+	if len(runtime.SharedServices) != 1 {
+		t.Fatalf("shared services = %+v, want one MySQL endpoint", runtime.SharedServices)
+	}
+	serviceEndpoint := runtime.SharedServices[0]
+	if serviceEndpoint.Engine != "mysql" || serviceEndpoint.Host != DefaultManagedMySQLContainer || serviceEndpoint.Port != 3306 {
+		t.Fatalf("unexpected shared MySQL endpoint: %+v", serviceEndpoint)
+	}
+}
