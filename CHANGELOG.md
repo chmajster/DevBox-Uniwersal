@@ -1,14 +1,8 @@
 # Changelog
 
-## 2026-10-02 — Explicit Compose onboarding choice
+## 2026-10-02 — Application onboarding radio layout
 
-- Automatically analyze sources in the final onboarding step; when Docker Compose is detected, ask whether to use it and block creation until answered. Declining allows a managed runtime or Dockerfile and persists that explicit driver.
-- Invalidate analysis after source/configuration edits and ignore previous analysis-job results. Added Compose-choice rendering regressions. No API or migration changes.
-
-## 2026-10-02 — Application creation conflicts
-
-- Resolve generated slug collisions between different application names using an application ID suffix, with the SQLite unique constraint arbitrating concurrent creation.
-- Replace generic creation/update conflicts for duplicate names with an actionable explanation. Added concurrent slug-collision and case-insensitive duplicate-name regressions. No migrations or API shape changes.
+- Keep radio buttons and checkboxes compact in application forms. Align radio options next to their labels instead of stretching controls across the Compose choice panel. No API or migration changes.
 
 ## 2026-10-02 — Directory picker API recovery
 
