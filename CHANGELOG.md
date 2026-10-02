@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-02 — Application container refresh
+
+- Changed the application detail “Odśwież stan” button to enqueue the existing deployment job and recreate application containers with the current source/configuration. The UI opens deployment history and exposes the job progress link.
+- Restricted the action to Admin/Operator and blocked it during active operations and pending requests, including rapid repeated clicks. Automatic state polling stays read-only; unchanged managed images continue to use the existing build cache.
+- No API contract or database migration changes.
+
 ## 2026-10-01 — Application control plane (PR #140)
 
 - Completed the `/applications` workspace, source wizard, service/endpoint inventory, live state, configuration recovery, encrypted secrets, deployment history and owned job cancel/retry.
