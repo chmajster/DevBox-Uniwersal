@@ -26,7 +26,7 @@ backend/
   internal/providers/      cross-module provider contracts
   internal/applications/   application/source/workload/endpoint lifecycle, API and reconciliation
   internal/drivers/        managed, Dockerfile, OCI image and Compose deployment drivers
-  internal/projects/      legacy Project module; not mounted by the active composition root
+  internal/projects/      legacy Project lifecycle unmounted; independent directory picker mounted
   internal/docker/         owned by Docker agent
   internal/databases/      owned by Database agent
   internal/proxy/          owned by Reverse Proxy agent

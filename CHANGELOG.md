@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-02 — Directory picker API recovery
+
+- Fixed HTTP 404 in the application directory picker by mounting directory routes independently of the retired Project lifecycle module. Restored browse, autocomplete, folder creation and the legacy browse alias using the existing protected handlers.
+- Added route regressions for real filesystem browsing/creation, root restrictions, audit and Operator permissions. No API payload or database migration changes.
+
 ## 2026-10-02 — Application container refresh
 
 - Changed the application detail “Odśwież stan” button to enqueue the existing deployment job and recreate application containers with the current source/configuration. The UI opens deployment history and exposes the job progress link.

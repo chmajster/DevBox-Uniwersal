@@ -33,6 +33,7 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/monitoring"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/operations"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/plugins"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/projects"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/proxy"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
@@ -321,6 +322,7 @@ func serve() error {
 		}
 	}
 	applicationModule := applications.NewModule(applicationService, auditService)
+	directoryModule := projects.NewDirectoryModule(cfg.ProjectsRoot, auditService, cfg.DirectoryBrowseRoots...)
 
 	pluginOptions := []plugins.ServiceOption{
 		plugins.WithJobRunner(jobRunner),
@@ -385,6 +387,7 @@ func serve() error {
 		pluginModule,
 		runtimeModule,
 		applicationModule,
+		directoryModule,
 		scriptAppModule,
 		dockerModule,
 		databaseModule,

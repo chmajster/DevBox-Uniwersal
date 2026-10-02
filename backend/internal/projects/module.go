@@ -24,15 +24,13 @@ func (m *Module) Name() string { return "projects" }
 
 func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddleware) {
 	m.registerPortRoutes(mux, middleware)
+	m.registerDirectoryRoutes(mux, middleware)
 	secure := func(role domain.Role, handler http.HandlerFunc) http.Handler {
 		return middleware.Authenticate(middleware.RequireRole(role, handler))
 	}
 	mux.Handle("GET /api/v1/projects", secure(domain.RoleViewer, m.list))
 	mux.Handle("POST /api/v1/projects", secure(domain.RoleOperator, m.create))
 	mux.Handle("POST /api/v1/projects/import", secure(domain.RoleOperator, m.importLocal))
-	mux.Handle("GET /api/v1/project-directories", secure(domain.RoleOperator, m.browseDirectories))
-	mux.Handle("POST /api/v1/project-directories", secure(domain.RoleOperator, m.createDirectory))
-	mux.Handle("GET /api/v1/projects/directories", secure(domain.RoleOperator, m.browseDirectories)) // legacy alias
 	mux.Handle("GET /api/v1/projects/{id}", secure(domain.RoleViewer, m.get))
 	mux.Handle("GET /api/v1/projects/{id}/files", secure(domain.RoleViewer, m.files))
 	mux.Handle("PATCH /api/v1/projects/{id}", secure(domain.RoleOperator, m.update))
