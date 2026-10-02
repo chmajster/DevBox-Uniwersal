@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-02 — Explicit Compose onboarding choice
+
+- Automatically analyze sources in the final onboarding step; when Docker Compose is detected, ask whether to use it and block creation until answered. Declining allows a managed runtime or Dockerfile and persists that explicit driver.
+- Invalidate analysis after source/configuration edits and ignore previous analysis-job results. Added Compose-choice rendering regressions. No API or migration changes.
+
+## 2026-10-02 — Application creation conflicts
+
+- Resolve generated slug collisions between different application names using an application ID suffix, with the SQLite unique constraint arbitrating concurrent creation.
+- Replace generic creation/update conflicts for duplicate names with an actionable explanation. Added concurrent slug-collision and case-insensitive duplicate-name regressions. No migrations or API shape changes.
+
 ## 2026-10-02 — Directory picker API recovery
 
 - Fixed HTTP 404 in the application directory picker by mounting directory routes independently of the retired Project lifecycle module. Restored browse, autocomplete, folder creation and the legacy browse alias using the existing protected handlers.

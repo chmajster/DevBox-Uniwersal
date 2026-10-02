@@ -258,7 +258,15 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 	}
 	configJSON, _ := json.Marshal(input.Configuration)
 	app := Application{ID: id, Name: name, Slug: slug, Description: strings.TrimSpace(input.Description), SourceType: sourceType, SourceConfig: configJSON, Driver: strings.TrimSpace(input.Driver), DesiredState: desired, ObservedState: ObservedUnknown, HealthState: HealthUnknown, AutoStart: input.AutoStart, CreatedBy: actor, CreatedAt: now, UpdatedAt: now}
-	if err := s.repo.Create(ctx, app, source); err != nil {
+	err := s.repo.Create(ctx, app, source)
+	if errors.Is(err, errSlugConflict) {
+		// Different display names can normalize to the same slug. The unique
+		// database constraint arbitrates concurrent creates; use this app's
+		// identity only after a collision, without changing existing resources.
+		app.Slug = slug + "-" + id
+		err = s.repo.Create(ctx, app, source)
+	}
+	if err != nil {
 		return Detail{}, err
 	}
 	return s.Get(ctx, id)
