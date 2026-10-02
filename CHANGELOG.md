@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-02 — Application onboarding radio layout
+
+- Keep radio buttons and checkboxes compact in application forms. Align radio options next to their labels instead of stretching controls across the Compose choice panel. No API or migration changes.
+
 ## 2026-10-02 — Directory picker API recovery
 
 - Fixed HTTP 404 in the application directory picker by mounting directory routes independently of the retired Project lifecycle module. Restored browse, autocomplete, folder creation and the legacy browse alias using the existing protected handlers.

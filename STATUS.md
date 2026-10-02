@@ -4,6 +4,8 @@ DevBox Universal is an integrated local development control plane.
 
 ## Application control plane (PR #140)
 
+- Application form radio options use compact controls aligned with their labels, including the Compose onboarding choice.
+
 - The independent directory-picker module restores browse, autocomplete and directory creation under `/api/v1/project-directories`, with existing Operator RBAC, audit and allowlisted-root/symlink protections. Legacy Project lifecycle routes remain unmounted.
 
 - Manual “Odśwież stan” queues an owned deployment job to recreate application containers, opens deployment history and respects Operator/Admin permissions and active-operation locks. Automatic state polling remains observational; unchanged managed images retain fingerprint-based reuse.
