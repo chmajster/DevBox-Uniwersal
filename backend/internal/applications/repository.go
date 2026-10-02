@@ -11,6 +11,9 @@ import (
 	"time"
 )
 
+// errSlugConflict distinguishes generated identity collisions from duplicate display names.
+var errSlugConflict = fmt.Errorf("%w: generated application identifier already exists", ErrConflict)
+
 type Repository struct{ db *sql.DB }
 
 func NewRepository(db *sql.DB) *Repository { return &Repository{db: db} }
@@ -649,7 +652,14 @@ func classifyDBError(operation string, err error) error {
 	if err == nil {
 		return nil
 	}
-	if strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "unique constraint") {
+		if strings.Contains(message, "applications.name") {
+			return fmt.Errorf("%w: an application with this name already exists; choose a different name or open the existing application", ErrConflict)
+		}
+		if strings.Contains(message, "applications.slug") {
+			return fmt.Errorf("%w: %s", errSlugConflict, operation)
+		}
 		return fmt.Errorf("%w: %s", ErrConflict, operation)
 	}
 	return fmt.Errorf("%s: %w", operation, err)
