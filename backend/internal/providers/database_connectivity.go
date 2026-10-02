@@ -26,8 +26,15 @@ type DatabaseConnection struct {
 	Mode      DatabaseMode `json:"mode"`
 }
 
+type SharedDatabaseService struct {
+	Engine string
+	Host   string
+	Port   int
+}
+
 type ProjectDatabaseRuntime struct {
 	Connection         DatabaseConnection
+	SharedServices     []SharedDatabaseService
 	Secret             []byte
 	Network            string
 	ApplicationService string
