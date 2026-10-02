@@ -150,6 +150,7 @@ func Catalog(runtime string) ([]ModuleOption, error) {
 
 func Validate(runtime, version string, modules []Module) error {
 	runtime = NormalizeRuntime(runtime)
+	version = strings.TrimSpace(version)
 	defs, ok := catalogs[runtime]
 	if !ok {
 		return fmt.Errorf("unsupported managed runtime %q", runtime)
@@ -180,6 +181,7 @@ func Validate(runtime, version string, modules []Module) error {
 
 func GenerateManaged(projectID, workDir, runtime, version string, modules []Module, revision string, hostPort int) (DeploymentSpec, error) {
 	runtime = NormalizeRuntime(runtime)
+	version = strings.TrimSpace(version)
 	if version == "" {
 		version = DefaultVersion(runtime)
 	}

@@ -152,6 +152,13 @@ tbody tr:last-child td { border-bottom: 0; }
 .job-progress-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .job-progress-grid > div { display: grid; gap: 4px; }
 .job-progress-grid span { color: var(--muted); font-size: 12px; }
+.job-progress > progress { margin: 2px 0 8px; }
+.job-progress .error-banner { overflow-wrap: anywhere; }
+.job-progress .log-console { display: grid; gap: 0; padding: 8px 12px; min-width: 0; }
+.job-progress .job-log-line { grid-template-columns: 72px 54px minmax(0, 1fr); gap: 12px; align-items: start; min-width: 0; padding: 7px 2px; border-color: var(--border-soft); line-height: 1.5; }
+.job-progress .job-log-line time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.job-progress .job-log-line strong { color: var(--text); font-size: 11px; }
+.job-progress .job-log-line span { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .centered { min-height: 100vh; display: grid; place-items: center; }
 
@@ -172,7 +179,8 @@ tbody tr:last-child td { border-bottom: 0; }
   .filter-bar { grid-template-columns: 1fr; }
   .search-filter { grid-column: auto; }
   .job-progress-grid { grid-template-columns: 1fr; }
-  .log-line { grid-template-columns: 1fr; gap: 3px; }
+  .job-progress .job-log-line { grid-template-columns: 64px 44px minmax(0, 1fr); gap: 8px; }
+  .log-line:not(.job-log-line) { grid-template-columns: 1fr; gap: 3px; }
 }
 
 

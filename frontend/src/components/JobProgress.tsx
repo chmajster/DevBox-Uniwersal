@@ -51,9 +51,9 @@ export function JobProgress({ job, logs, now }: { job: Job; logs: LogEntry[]; no
       {job.error && <div className="error-banner" role="alert">{job.error}</div>}
       <div className="log-console" aria-label="Job logs">
         {logs.length === 0
-          ? <div className="muted">No job log entries.</div>
+          ? <div className="muted">Brak wpisów w logu zadania.</div>
           : logs.map((entry) => (
-              <div className="log-line" key={entry.id}>
+              <div className="log-line job-log-line" key={entry.id}>
                 <time>{new Date(entry.created_at).toLocaleTimeString()}</time>
                 <strong>{entry.level.toUpperCase()}</strong>
                 <span>{entry.message}{typeof entry.fields?.stage === 'string' ? ` · ${entry.fields.stage}` : ''}</span>
