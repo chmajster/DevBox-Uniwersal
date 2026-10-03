@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -47,6 +49,21 @@ func validateConfiguration(config map[string]any) error {
 			v, ok := value.(string)
 			if !ok || (v != "" && (!strings.HasPrefix(v, "/") || strings.HasPrefix(v, "//") || strings.ContainsAny(v, "\r\n"))) {
 				return fmt.Errorf("%w: health_path must be an absolute URL path", ErrInvalidInput)
+			}
+		case "root_dir":
+			v, ok := value.(string)
+			if !ok || strings.ContainsAny(v, "\\\x00\r\n") || path.IsAbs(v) || filepath.IsAbs(v) {
+				return fmt.Errorf("%w: root_dir must be a relative application path", ErrInvalidInput)
+			}
+			for _, part := range strings.Split(strings.ReplaceAll(v, "\\", "/"), "/") {
+				if part == ".." {
+					return fmt.Errorf("%w: root_dir must stay inside the source", ErrInvalidInput)
+				}
+			}
+		case "deployment_driver":
+			v, ok := value.(string)
+			if !ok || (v != "" && v != "managed" && v != "dockerfile" && v != "image" && v != "compose") {
+				return fmt.Errorf("%w: invalid deployment_driver", ErrInvalidInput)
 			}
 		case "runtime", "runtime_version", "compose_service", "restart_policy":
 			v, ok := value.(string)

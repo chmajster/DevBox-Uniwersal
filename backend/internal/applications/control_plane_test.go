@@ -188,7 +188,7 @@ func (f *fixture) deploy(t *testing.T, id string) (Deployment, domain.Job) {
 }
 
 func TestConfigurationStrictValidation(t *testing.T) {
-	for _, raw := range []string{`{"host_port":1.5}`, `{"container_port":65536}`, `{"container_port":-1}`, `{"protocol":"udp"}`, `{"health_path":"https://evil.example/"}`, `{"environment":{"DB_PASSWORD":"private"}}`, `{"environment":{"DSN":"mysql://user:pass@db/one"}}`, `{"environment":{"nest":{"token":"private"}}}`, `{"unknown":true}`, `{"command":[1]}`} {
+	for _, raw := range []string{`{"host_port":1.5}`, `{"container_port":65536}`, `{"container_port":-1}`, `{"protocol":"udp"}`, `{"health_path":"https://evil.example/"}`, `{"root_dir":"/etc"}`, `{"root_dir":"../outside"}`, `{"environment":{"DB_PASSWORD":"private"}}`, `{"environment":{"DSN":"mysql://user:pass@db/one"}}`, `{"environment":{"nest":{"token":"private"}}}`, `{"unknown":true}`, `{"command":[1]}`} {
 		var input map[string]any
 		if err := json.Unmarshal([]byte(raw), &input); err != nil {
 			t.Fatal(err)
@@ -199,6 +199,9 @@ func TestConfigurationStrictValidation(t *testing.T) {
 	}
 	if err := validateConfiguration(map[string]any{"container_port": 8080, "host_port": 0, "environment": map[string]string{"APP_ENV": "test"}, "modules": []string{"gd", "zip"}}); err != nil {
 		t.Fatal(err)
+	}
+	if err := validateConfiguration(map[string]any{"root_dir": "apps/portal"}); err != nil {
+		t.Fatalf("valid relative root_dir rejected: %v", err)
 	}
 }
 func TestConfigurationWaitRecoveryAndStableResourceIdentity(t *testing.T) {

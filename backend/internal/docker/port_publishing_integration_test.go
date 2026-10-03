@@ -120,6 +120,69 @@ func TestPublishedPortsDockerIntegration(t *testing.T) {
 	}
 }
 
+func TestManagedPHPWritableBindMountDockerIntegration(t *testing.T) {
+	if os.Getenv("DEVBOX_TEST_DOCKER_PORTS") != "1" {
+		t.Skip("set DEVBOX_TEST_DOCKER_PORTS=1 to run real Docker bind-mount checks")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	provider := NewCLIProvider()
+	if err := provider.Available(ctx); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "host.txt"), []byte("host-write"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("<?php file_put_contents(__DIR__ . '/container.txt', 'container-write'); echo file_get_contents(__DIR__ . '/host.txt');"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	host, _, _ := freePublishingPorts(t)
+	id := fmt.Sprintf("php-write-ci-%x", time.Now().UnixNano())
+	spec, err := containerspec.GenerateManaged(id, dir, "php", "8.3", nil, "", host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.User == "" {
+		t.Skip("source directory has no non-root writable owner to map into the container")
+	}
+	t.Setenv("DEVBOX_COMPOSE_PORTS_DIR", t.TempDir())
+	t.Cleanup(func() {
+		cleanup, done := context.WithTimeout(context.Background(), 30*time.Second)
+		defer done()
+		_ = provider.RemoveManaged(cleanup, spec.ContainerName)
+		_, _, _ = provider.runner.Run(cleanup, "image", "rm", "-f", spec.Image)
+	})
+	if err := provider.BuildManaged(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.ReplaceManagedPorts(ctx, spec, nil); err != nil {
+		t.Fatal(err)
+	}
+	response, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://127.0.0.1:" + strconv.Itoa(host) + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, 1024))
+	_ = response.Body.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if response.StatusCode != http.StatusOK || string(body) != "host-write" {
+		t.Fatalf("host file was not visible in container: status=%d body=%q", response.StatusCode, body)
+	}
+	created, err := os.ReadFile(filepath.Join(dir, "container.txt"))
+	if err != nil {
+		t.Fatalf("container-created file is not visible on host: %v", err)
+	}
+	if string(created) != "container-write" {
+		t.Fatalf("unexpected host copy of container file: %q", created)
+	}
+}
+
 func freePublishingPorts(t *testing.T) (int, int, int) {
 	t.Helper()
 	listeners := make([]net.Listener, 0, 3)

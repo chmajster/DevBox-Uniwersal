@@ -45,15 +45,20 @@ func (d *Driver) Detect(ctx context.Context, request applications.DetectRequest)
 	if request.WorkDir == "" {
 		return applications.DetectionResult{}, applications.ErrConfigurationRequired
 	}
-	bestRuntime, bestVersion, bestConfidence := "", "", -1
 	if name := driverutil.ConfigString(request.Configuration, "runtime"); name != "" {
 		name = containerspec.NormalizeRuntime(name)
 		version := driverutil.ConfigString(request.Configuration, "runtime_version")
 		if err := containerspec.Validate(name, version, driverutil.Modules(request.Configuration)); err != nil {
 			return applications.DetectionResult{}, fmt.Errorf("%w: %v", applications.ErrInvalidInput, err)
 		}
-		return applications.DetectionResult{Driver: d.Name(), Runtime: name, Version: version, Confidence: "high", Reasons: []string{"runtime configured explicitly"}}, nil
+		return applications.DetectionResult{
+			Driver: d.Name(), Runtime: name, Version: version, Confidence: "high",
+			Services:  []applications.ServiceDetection{{Name: "web", SuggestedRole: "web", Primary: true, Confidence: "high", Reason: "single managed runtime workload"}},
+			Endpoints: []applications.EndpointDetection{{Service: "web", Protocol: "http", ContainerPort: 8080, Primary: true, Confidence: "medium", Reason: "managed runtime default; final port is derived from generated container specification"}},
+			Reasons:   []string{"runtime configured explicitly"},
+		}, nil
 	}
+	bestRuntime, bestVersion, bestConfidence := "", "", -1
 	for _, name := range d.runtimes.List() {
 		runtime, ok := d.runtimes.Get(name)
 		if !ok {
@@ -195,7 +200,7 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 	if !exists {
 		if err := d.engine.BuildManaged(ctx, spec); err != nil {
 			driverutil.RollbackPort(d.ports, request, endpoint, lease.Port)
-			return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageBuildOrPull, Driver: d.Name(), Workload: workloadPlan.Name, Operation: "build_image", Reason: err.Error(), Action: "inspect build logs and runtime dependencies"}
+			return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageBuildOrPull, Driver: d.Name(), Workload: workloadPlan.Name, Operation: "build_image", Reason: err.Error(), Action: "inspect build logs and runtime dependencies", BuildLog: applications.BuildLogFromError(err), Cause: err}
 		}
 	}
 	if err := d.engine.ReplaceManagedPorts(ctx, spec, nil); err != nil {

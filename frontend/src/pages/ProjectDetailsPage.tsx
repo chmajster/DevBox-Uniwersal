@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, useNavigate, useParams } from 'react-router-dom'
 import { getProject, getProjectTool, runProjectAction } from '../api/operations'
 import { request } from '../api/client'
-import type { Job, LogEntry, Project } from '../api/types'
+import type { Job, LogEntry, Project, ProjectRuntimeInfo } from '../api/types'
 import { ErrorState } from '../components/ErrorState'
 import { StatusBadge } from '../components/StatusBadge'
 import { PROJECT_TABS, type ProjectTab } from '../routes'
@@ -13,6 +13,7 @@ const tabLabels: Record<ProjectTab, string> = {
   overview: 'Overview',
   configuration: 'Configuration',
   runtime: 'Runtime',
+  'php-modules': 'Moduły PHP',
   git: 'Git',
   deployments: 'Deployments',
   logs: 'Logs',
@@ -108,7 +109,6 @@ function TabContent({ project, tab }: { project: Project; tab: ProjectTab }) {
           {field('Start command', project.start_command)}
           {field('Healthcheck', project.healthcheck)}
         </div>
-        <ProjectPHPModulesSection projectId={project.id} runtimeHint={project.runtime} />
       </div>
     case 'git':
       return <div className="detail-grid">
@@ -124,6 +124,8 @@ function TabContent({ project, tab }: { project: Project; tab: ProjectTab }) {
       return <EnvironmentPanel environment={project.environment} />
     case 'database':
       return <ProjectDatabaseSection projectId={project.id} />
+    case 'php-modules':
+      return <ProjectPHPModulesSection projectId={project.id} runtimeHint={project.runtime} />
     case 'networking':
       return <ResourcePanel path={`/networking/ports?project_id=${encodeURIComponent(project.id)}`} />
     case 'backups':
@@ -138,6 +140,7 @@ export function ProjectDetailsPage() {
   const requestedTab = (params.tab ?? 'overview') as ProjectTab
   const tab = PROJECT_TABS.includes(requestedTab) ? requestedTab : 'overview'
   const [project, setProject] = useState<Project | null>(null)
+  const [detectedRuntime, setDetectedRuntime] = useState('')
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
   const [activeAction, setActiveAction] = useState('')
@@ -145,8 +148,15 @@ export function ProjectDetailsPage() {
 
   useEffect(() => {
     let cancelled = false
-    getProject(projectID)
-      .then((value) => { if (!cancelled) setProject(value) })
+    Promise.all([
+      getProject(projectID),
+      request<ProjectRuntimeInfo>(`/projects/${encodeURIComponent(projectID)}/runtime`).catch(() => null),
+    ])
+      .then(([value, runtimeInfo]) => {
+        if (cancelled) return
+        setProject(value)
+        setDetectedRuntime(runtimeInfo?.runtime ?? '')
+      })
       .catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason)) })
     return () => { cancelled = true }
   }, [projectID])
@@ -198,7 +208,7 @@ export function ProjectDetailsPage() {
     {job && <div className="operation-state">Job {job.id}: {job.status}</div>}
 
     <nav className="tabs" aria-label="Project details">
-      {PROJECT_TABS.map((tabName) => (
+      {PROJECT_TABS.filter((tabName) => tabName !== 'php-modules' || [project.runtime, detectedRuntime].some((value) => value.trim().toLowerCase() === 'php')).map((tabName) => (
         <NavLink key={tabName} to={`/projects/${encodeURIComponent(projectID)}/${tabName}`}>
           {tabLabels[tabName]}
         </NavLink>

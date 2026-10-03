@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -96,6 +97,13 @@ func TestGenerateManagedAddsLiveSourceMounts(t *testing.T) {
 	if got := spec.BindMounts[dir]; got != "/app" {
 		t.Fatalf("expected live source bind %s -> /app, got %q", dir, got)
 	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := sourceContainerUser(info, "php"); spec.User != want {
+		t.Fatalf("managed PHP user = %q, want source owner %q", spec.User, want)
+	}
 	foundVendor := false
 	for _, target := range spec.AnonymousVolumes {
 		if target == "/app/vendor" {
@@ -108,6 +116,32 @@ func TestGenerateManagedAddsLiveSourceMounts(t *testing.T) {
 	}
 	if spec.Labels["io.devbox.live-source"] != "true" {
 		t.Fatalf("expected live-source label, got %#v", spec.Labels)
+	}
+}
+
+func TestGenerateManagedDoesNotMapOwnerWithoutOwnerWriteAccess(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("<?php echo 'ok';"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o570); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || owner.Uid == 0 {
+		t.Skip("requires a non-root-owned source directory")
+	}
+	spec, err := GenerateManaged("project-group-write", dir, "php", "8.3", nil, "", 18080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.User != "" {
+		t.Fatalf("owner UID/GID should not be selected without owner write and execute permissions: %q", spec.User)
 	}
 }
 

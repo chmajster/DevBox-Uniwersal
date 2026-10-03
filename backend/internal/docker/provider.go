@@ -368,6 +368,30 @@ func (p *CLIProvider) Exec(ctx context.Context, id string, command ExecCommand) 
 	return string(out), nil
 }
 
+func (p *CLIProvider) PHPModules(ctx context.Context, id string) ([]string, error) {
+	if err := validateContainerRef(id); err != nil {
+		return nil, err
+	}
+	out, _, err := p.runner.Run(ctx, "container", "exec", id, "php", "-m")
+	if err != nil {
+		return nil, err
+	}
+	modules := make([]string, 0)
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "[") {
+			continue
+		}
+		name := strings.ToLower(line)
+		if name == "zend opcache" {
+			name = "opcache"
+		}
+		modules = append(modules, name)
+	}
+	sort.Strings(modules)
+	return modules, nil
+}
+
 func execDefinition(command ExecCommand) (string, []string, bool) {
 	switch command {
 	case ExecEnv:

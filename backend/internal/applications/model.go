@@ -85,6 +85,12 @@ type Runtime struct {
 	Metadata      map[string]any `json:"metadata,omitempty"`
 }
 
+type PHPModuleInventory struct {
+	Available bool     `json:"available"`
+	Modules   []string `json:"modules"`
+	Message   string   `json:"message,omitempty"`
+}
+
 type Workload struct {
 	ID               string         `json:"id"`
 	ApplicationID    string         `json:"application_id"`

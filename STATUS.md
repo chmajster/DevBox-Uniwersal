@@ -4,7 +4,8 @@ DevBox Universal is an integrated local development control plane.
 
 ## Application control plane (PR #140)
 
-- Managed runtime source directories use explicit read-write Docker bind mounts; DevBox-generated Compose includes the same live source mount and preserves dependency volumes. Container-created files in the source tree remain visible on the host. DevBox does not use `chmod 777` as a default permission fix.
+- Failed managed-runtime and Dockerfile builds now retain complete Docker output in the deployment job log, with configured secret values redacted. Job details show it in an expandable log block; the top-level error remains concise.
+- Managed runtime source directories use explicit read-write Docker bind mounts; DevBox-generated Compose includes the same live source mount and preserves dependency volumes. Writable PHP, Node.js and Python containers use the existing non-root source UID/GID where available. Container-created files in the source tree remain visible on the host. DevBox does not use `chmod 777` as a default permission fix.
 
 - Application form radio options use compact controls aligned with their labels, including the Compose onboarding choice.
 
@@ -112,6 +113,9 @@ DevBox Universal is an integrated local development control plane.
 - Aggregate `all` log stream, search/level/project/time filters and text export.
 
 ## Windows / WSL / installer
+
+- Running `./install.sh` without arguments in a terminal opens a numbered menu for status, install, reinstall, uninstall, update and repair; command-line flags remain supported.
+- Bash installer scripts use LF line endings; `install.sh -h` and `install.sh --help` both display help successfully.
 
 - Git/systemd updates expose persistent 0–100% progress and concrete stages from source download through backend/frontend builds, artifact installation, service update, healthcheck and final restart; the Updates page resumes polling after the expected DevBox service restart and, after a tracked successful update, performs a one-time cache-busting page reload before removing the temporary refresh marker from the URL.
 - Windows PowerShell bootstrap with WSL distribution detection and Linux handoff.

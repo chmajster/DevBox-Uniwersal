@@ -97,6 +97,9 @@ func generatedComposeYAML(project Project, spec containerspec.DeploymentSpec, ho
 		"      io.devbox.managed: " + strconv.Quote("true") + "\n" +
 		"      io.devbox.project: " + strconv.Quote(project.ID) + "\n" +
 		"      io.devbox.runtime: " + strconv.Quote(spec.Runtime) + "\n"
+	if spec.User != "" {
+		compose += "    user: " + strconv.Quote(spec.User) + "\n"
+	}
 	if len(spec.BindMounts) > 0 {
 		compose += "    volumes:\n"
 		sources := make([]string, 0, len(spec.BindMounts))

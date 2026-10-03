@@ -17,6 +17,17 @@ parse_args --uninstall --purge
 [[ "$MODE" == '--uninstall' ]]
 [[ "$PURGE" -eq 1 ]]
 
+for choice in '1 --status' '2 --install' '3 --reinstall' '4 --uninstall' '5 --update' '6 --repair'; do
+  read -r number expected <<<"$choice"
+  MODE=""
+  select_interactive_mode <<<"$number" >/dev/null
+  [[ "$MODE" == "$expected" ]]
+done
+if select_interactive_mode <<<"0" >/dev/null; then
+  echo "menu accepted exit as an action" >&2
+  exit 1
+fi
+
 if parse_args --install --status; then
   echo "parser accepted conflicting modes" >&2
   exit 1

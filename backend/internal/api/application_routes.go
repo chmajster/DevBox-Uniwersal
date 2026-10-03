@@ -8,6 +8,7 @@ func init() {
 		documentedRoute{"POST", "/api/v1/applications", "Create application", "operator"},
 		documentedRoute{"POST", "/api/v1/applications/detect", "Analyze application source", "operator"},
 		documentedRoute{"GET", "/api/v1/applications/{id}", "Application detail", "viewer"},
+		documentedRoute{"GET", "/api/v1/applications/{id}/php-modules", "Read PHP modules installed in the primary application container", "viewer"},
 		documentedRoute{"PATCH", "/api/v1/applications/{id}", "Update public application configuration", "operator"},
 		documentedRoute{"DELETE", "/api/v1/applications/{id}", "Queue safe application removal", "admin"},
 		documentedRoute{"GET", "/api/v1/applications/{id}/secrets", "List secret names, never values", "viewer"},

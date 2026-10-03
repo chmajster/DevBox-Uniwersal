@@ -17,6 +17,8 @@ type OperationError struct {
 	Operation string `json:"operation,omitempty"`
 	Reason    string `json:"reason"`
 	Action    string `json:"actionable_message,omitempty"`
+	BuildLog  string `json:"-"`
+	Cause     error  `json:"-"`
 }
 
 func (e *OperationError) Error() string {
@@ -24,4 +26,14 @@ func (e *OperationError) Error() string {
 		return e.Reason + ": " + e.Action
 	}
 	return e.Reason
+}
+
+func (e *OperationError) Unwrap() error { return e.Cause }
+
+func BuildLogFromError(err error) string {
+	var output interface{ BuildLogOutput() string }
+	if errors.As(err, &output) {
+		return output.BuildLogOutput()
+	}
+	return ""
 }

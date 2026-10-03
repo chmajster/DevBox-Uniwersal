@@ -164,6 +164,11 @@ func (r *Repository) SaveRuntime(ctx context.Context, runtime Runtime) error {
 	return err
 }
 
+func (r *Repository) DeleteRuntime(ctx context.Context, applicationID string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM application_runtime WHERE application_id=?`, applicationID)
+	return err
+}
+
 func (r *Repository) Runtime(ctx context.Context, id string) (*Runtime, error) {
 	var item Runtime
 	var metadata string

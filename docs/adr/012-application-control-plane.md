@@ -12,6 +12,8 @@ Persist application ownership on jobs and enforce one active mutation per applic
 
 Stage new topology without dropping previous runtime identities before successful execution. Preserve observed host ports separately from requested plan ports. Reconciliation derives status from workloads and invalidates stale observations on provider failure, never from the outcome of the last deployment alone.
 
+Applications with provisioned workloads may save a different deployment driver. The saved driver remains pending while the current driver continues to own live resources and lifecycle actions. Driver switches stop the previous workloads to release conflicting published ports; if the new deployment fails, DevBox attempts to restart them. A successful deployment activates the new driver, stores its runtime, and asks the previous driver to remove only superseded resource identities. Cleanup failures are reported as deployment warnings; Compose remains nontransactional and may require operator recovery.
+
 ## Consequences
 
 The workspace/API switches to `/applications`. Released Project records remain untouched; this refactor does not promise automatic backfill or feature-for-feature compatibility with project-specific extension modules. Migration is additive, but operators must explicitly onboard application sources.

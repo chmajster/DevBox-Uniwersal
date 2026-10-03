@@ -19,6 +19,7 @@ export const PROJECT_TABS = [
   'overview',
   'configuration',
   'runtime',
+  'php-modules',
   'git',
   'deployments',
   'logs',

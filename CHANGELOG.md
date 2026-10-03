@@ -1,10 +1,28 @@
 # Changelog
 
+## 2026-10-02 — Installer shell compatibility
+
+- Converted Bash installer scripts to LF line endings so Bash accepts `set -Eeuo pipefail` under WSL/Linux.
+- Added `-h` as an alias for `--help` in `install.sh`.
+- Verified Bash syntax for the shell scripts and both help options.
+
+## 2026-10-02 — Interactive installer menu
+
+- Running `./install.sh` in a terminal presents numbered status, install, reinstall, uninstall, update and repair actions, plus an exit choice. Existing command-line flags remain available.
+- Added coverage for mapping menu selections to installer actions.
+
 ## 2026-10-02 — Writable live application mounts
 
 - Managed Docker containers now request source bind mounts explicitly as read-write. DevBox-generated Compose also binds the source directory live with `read_only: false` and keeps anonymous dependency volumes.
+- Writable PHP, Node.js and Python containers use the source directory's existing non-root UID/GID when available, so host permissions can allow writes without broadening permissions.
 - Files created by an application inside its mounted source tree are reflected on the host. No default `chmod 777` behavior was added.
 - Added regressions for explicit Docker CLI `rw`, paths containing spaces, and generated Compose mount/dependency volume configuration.
+
+## 2026-10-02 — Full failed image build logs
+
+- Preserve the complete Docker build output separately from the bounded job error summary and include it in application deployment logs for failed managed-runtime and Dockerfile builds.
+- Show the output in an expandable block in job details and redact configured secret values before storing it.
+- Added backend and frontend regression coverage for retaining and displaying long build output.
 
 ## 2026-10-02 — Application onboarding radio layout
 

@@ -44,6 +44,10 @@ type ContainerLogProvider interface {
 	Logs(context.Context, string, int, bool) (io.ReadCloser, error)
 }
 
+type PHPModuleInspector interface {
+	PHPModules(context.Context, string) ([]string, error)
+}
+
 type CredentialResolver interface {
 	SecretRef(context.Context, string) (kind, scope, name string, err error)
 }
@@ -57,6 +61,7 @@ type Service struct {
 	jobs         jobs.JobRunner
 	git          GitSourceProvider
 	logs         ContainerLogProvider
+	phpModules   PHPModuleInspector
 	credentials  CredentialResolver
 	projectsRoot string
 	allowedRoots []string
@@ -67,7 +72,9 @@ func NewService(repo *Repository, drivers *DriverRegistry, runner jobs.JobRunner
 		drivers = NewDriverRegistry()
 	}
 	roots := append([]string{projectsRoot}, allowedRoots...)
-	return &Service{repo: repo, drivers: drivers, selector: NewSelector(drivers), jobs: runner, git: git, logs: logs, credentials: credentials, projectsRoot: projectsRoot, allowedRoots: normalizeRoots(roots)}
+	service := &Service{repo: repo, drivers: drivers, selector: NewSelector(drivers), jobs: runner, git: git, logs: logs, credentials: credentials, projectsRoot: projectsRoot, allowedRoots: normalizeRoots(roots)}
+	service.phpModules, _ = logs.(PHPModuleInspector)
+	return service
 }
 
 type Summary struct {
@@ -199,6 +206,40 @@ func (s *Service) Get(ctx context.Context, id string) (Detail, error) {
 	return Detail{ActiveOperation: operation, Application: app, Source: source, Runtime: runtime, Workloads: workloads, Endpoints: endpoints, Deployments: deployments, Status: AggregateStatus(app.DesiredState, workloads)}, nil
 }
 
+func (s *Service) PHPModuleInventory(ctx context.Context, id string) (PHPModuleInventory, error) {
+	detail, err := s.Get(ctx, id)
+	if err != nil {
+		return PHPModuleInventory{}, err
+	}
+	if detail.Runtime == nil || strings.ToLower(strings.TrimSpace(detail.Runtime.Name)) != "php" {
+		return PHPModuleInventory{Modules: []string{}, Message: "Aplikacja nie ma wykrytego runtime PHP."}, nil
+	}
+	if detail.Driver != "managed" {
+		return PHPModuleInventory{Modules: []string{}, Message: "Automatyczny odczyt modułów jest dostępny dla kontenerów Managed."}, nil
+	}
+	if s.phpModules == nil {
+		return PHPModuleInventory{Modules: []string{}, Message: "Odczyt modułów PHP z kontenera jest niedostępny."}, nil
+	}
+	var target *Workload
+	for i := range detail.Workloads {
+		if detail.Workloads[i].Primary && detail.Workloads[i].DriverResourceID != "" {
+			target = &detail.Workloads[i]
+			break
+		}
+	}
+	if target == nil && len(detail.Workloads) == 1 && detail.Workloads[0].DriverResourceID != "" {
+		target = &detail.Workloads[0]
+	}
+	if target == nil {
+		return PHPModuleInventory{Modules: []string{}, Message: "Wdróż i uruchom kontener PHP, aby odczytać jego moduły."}, nil
+	}
+	modules, err := s.phpModules.PHPModules(ctx, target.DriverResourceID)
+	if err != nil {
+		return PHPModuleInventory{Modules: []string{}, Message: "Nie udało się odczytać modułów z kontenera PHP."}, nil
+	}
+	return PHPModuleInventory{Available: true, Modules: modules}, nil
+}
+
 func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) (Detail, error) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
@@ -293,6 +334,7 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Det
 	if input.Description != nil {
 		app.Description = strings.TrimSpace(*input.Description)
 	}
+	var requestedDriver *string
 	if input.Driver != nil {
 		driver := strings.TrimSpace(*input.Driver)
 		if driver != "" {
@@ -300,16 +342,7 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Det
 				return Detail{}, fmt.Errorf("%w: driver %q", ErrInvalidInput, driver)
 			}
 		}
-		if driver != app.Driver {
-			workloads, err := s.repo.Workloads(ctx, id)
-			if err != nil {
-				return Detail{}, err
-			}
-			if len(workloads) > 0 {
-				return Detail{}, fmt.Errorf("%w: deployment driver cannot change after provisioning", ErrConflict)
-			}
-		}
-		app.Driver = driver
+		requestedDriver = &driver
 	}
 	if input.DesiredState != nil {
 		if *input.DesiredState != DesiredRunning && *input.DesiredState != DesiredStopped {
@@ -322,6 +355,31 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Det
 			return Detail{}, err
 		}
 		raw, err := json.Marshal(*input.Configuration)
+		if err != nil {
+			return Detail{}, fmt.Errorf("%w: configuration", ErrInvalidInput)
+		}
+		app.SourceConfig = raw
+	}
+	if requestedDriver != nil {
+		workloads, err := s.repo.Workloads(ctx, id)
+		if err != nil {
+			return Detail{}, err
+		}
+		config := decodeConfiguration(app.SourceConfig)
+		if len(workloads) > 0 {
+			// Keep the currently deployed driver active until the replacement
+			// deployment succeeds. This lets lifecycle actions and reconciliation
+			// continue using the owner of the running resources.
+			if *requestedDriver == app.Driver {
+				delete(config, "deployment_driver")
+			} else {
+				config["deployment_driver"] = *requestedDriver
+			}
+		} else {
+			app.Driver = *requestedDriver
+			delete(config, "deployment_driver")
+		}
+		raw, err := json.Marshal(config)
 		if err != nil {
 			return Detail{}, fmt.Errorf("%w: configuration", ErrInvalidInput)
 		}

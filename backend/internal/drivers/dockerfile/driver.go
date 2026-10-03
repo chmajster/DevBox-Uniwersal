@@ -149,7 +149,7 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 	if !exists {
 		if err := d.engine.BuildManaged(ctx, spec); err != nil {
 			release(d, request, endpoint, lease.Port)
-			return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageBuildOrPull, Driver: d.Name(), Workload: workloadPlan.Name, Operation: "docker_build", Reason: err.Error(), Action: "fix the Dockerfile/build context"}
+			return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageBuildOrPull, Driver: d.Name(), Workload: workloadPlan.Name, Operation: "docker_build", Reason: err.Error(), Action: "fix the Dockerfile/build context", BuildLog: applications.BuildLogFromError(err), Cause: err}
 		}
 	}
 	if err := d.engine.ReplaceManagedPorts(ctx, spec, nil); err != nil {

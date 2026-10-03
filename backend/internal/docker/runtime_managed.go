@@ -83,12 +83,30 @@ func (p *CLIProvider) BuildManaged(ctx context.Context, spec containerspec.Deplo
 		args = append(args, "--label", key+"="+value)
 	}
 	args = append(args, contextDir)
-	_, _, err := p.runner.Run(ctx, args...)
+	stdout, stderr, err := p.runner.Run(ctx, args...)
 	if err != nil {
-		return fmt.Errorf("build managed image: %w", err)
+		output := strings.TrimSpace(string(stderr))
+		if stdoutText := strings.TrimSpace(string(stdout)); stdoutText != "" {
+			if output != "" {
+				output += "\n"
+			}
+			output += stdoutText
+		}
+		return &BuildError{Cause: err, Output: output}
 	}
 	return nil
 }
+
+// BuildError keeps the complete Docker output for the deployment job log while
+// Error() retains the bounded summary used in the job's top-level error field.
+type BuildError struct {
+	Cause  error
+	Output string
+}
+
+func (e *BuildError) Error() string          { return fmt.Sprintf("build managed image: %v", e.Cause) }
+func (e *BuildError) Unwrap() error          { return e.Cause }
+func (e *BuildError) BuildLogOutput() string { return e.Output }
 
 func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspec.DeploymentSpec, additional []providers.PublishedPort) error {
 	if err := p.Available(ctx); err != nil {
@@ -132,6 +150,13 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 		"--restart", "unless-stopped",
 		"--security-opt", "no-new-privileges:true",
 		"--cap-drop", "ALL",
+	}
+	if spec.User != "" {
+		if err := validateManagedUser(spec.User); err != nil {
+			rollback()
+			return err
+		}
+		args = append(args, "--user", spec.User)
 	}
 	for i, network := range spec.Networks {
 		if err := validateNetworkRef(network); err != nil {
@@ -228,6 +253,19 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 	return nil
 }
 
+func validateManagedUser(value string) error {
+	parts := strings.Split(value, ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("%w: invalid managed container user", ErrInvalidInput)
+	}
+	for _, part := range parts {
+		if _, err := strconv.ParseUint(part, 10, 32); err != nil {
+			return fmt.Errorf("%w: invalid managed container user", ErrInvalidInput)
+		}
+	}
+	return nil
+}
+
 func managedExtraHostArgs(spec containerspec.DeploymentSpec) ([]string, error) {
 	keys := make([]string, 0, len(spec.ExtraHosts))
 	for host := range spec.ExtraHosts {
@@ -270,7 +308,9 @@ func managedMountArgs(spec containerspec.DeploymentSpec) ([]string, error) {
 		if !info.IsDir() {
 			return nil, fmt.Errorf("%w: bind mount source must be a directory", ErrInvalidInput)
 		}
-		args = append(args, "--mount", "type=bind,source="+source+",target="+target+",rw")
+		// Bind mounts are writable by default. Docker's --mount syntax accepts
+		// readonly=true for read-only mounts, but not a standalone rw field.
+		args = append(args, "--mount", "type=bind,source="+source+",target="+target)
 	}
 
 	volumes := append([]string(nil), spec.AnonymousVolumes...)

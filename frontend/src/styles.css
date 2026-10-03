@@ -159,6 +159,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .job-progress .job-log-line time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .job-progress .job-log-line strong { color: var(--text); font-size: 11px; }
 .job-progress .job-log-line span { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.job-progress .job-build-output { grid-column: 1 / -1; min-width: 0; max-height: min(65vh, 720px); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .centered { min-height: 100vh; display: grid; place-items: center; }
 
@@ -1388,6 +1389,43 @@ a.secondary-button:hover { background: var(--panel-alt); text-decoration: none; 
   gap: 14px;
   min-width: 0;
 }
+.php-module-status {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--panel-alt);
+}
+.php-module-status h4 {
+  margin: 0;
+  font-size: 12px;
+}
+.php-module-status-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+}
+.php-module-status-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 11px;
+}
+.php-module-status-row code { color: var(--text); }
+.php-module-status-row span { color: var(--muted); }
+.php-module-status-row strong {
+  min-width: 48px;
+  text-align: right;
+  font-size: 10px;
+}
+.php-module-status-row strong[data-state="ok"] { color: #73d9a1; }
+.php-module-status-row strong[data-state="error"] { color: #ff8585; }
 .php-module-toolbar {
   display: grid;
   grid-template-columns: minmax(240px, 1fr) auto;
@@ -1630,6 +1668,7 @@ a.secondary-button:hover { background: var(--panel-alt); text-decoration: none; 
 
 @media (max-width: 980px) {
   .runtime-module-groups { grid-template-columns: 1fr; }
+  .php-module-status-list { grid-template-columns: 1fr; }
   .php-module-toolbar { grid-template-columns: 1fr; }
   .php-module-filters { justify-content: flex-start; }
   .php-module-quick-actions { grid-column: auto; }

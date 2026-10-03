@@ -6,7 +6,7 @@ The `/apps` workspace uses `/api/v1/applications`. An **Application** owns its s
 
 1. Add Git, an allowlisted local directory, a Docker/OCI image, or an empty source. Git URLs accept saved credential IDs, not embedded passwords. Local paths refer to the DevBox host/WSL filesystem.
 2. Optionally analyze the source. Git analysis is a durable background job using a temporary clone, removed afterward. It does not deploy containers.
-3. Save the application, add required encrypted secrets, then deploy. An ambiguous port/driver becomes `waiting_for_configuration`, not a successful deployment or a generic infrastructure failure. Edit configuration and deploy again.
+3. Save the application, add required encrypted secrets, then deploy. The driver can be selected in application configuration before the first deployment; choose automatic detection, a generated runtime container, Dockerfile, image or the source-owned Docker Compose stack. An ambiguous port/driver becomes `waiting_for_configuration`, not a successful deployment or a generic infrastructure failure. Edit configuration and deploy again.
 4. Inspect services, endpoints, deployment history, logs, secrets and events. Visible detail/list views poll every five seconds; the reconciler also runs every five seconds. Provider failures invalidate green observations.
 5. Start/stop/restart run as owned jobs. An active job locks configuration, secret changes and competing lifecycle operations. Job details expose cancellation and retry from the beginning. Cancellation of a running job retains the application lock until its handler finishes cleanup.
 
@@ -29,7 +29,9 @@ Readiness uses container state plus HTTP checks for generated/custom single cont
 
 ## Configuration and secrets
 
-`PATCH /api/v1/applications/{id}` accepts name, description, auto_start, desired_state, driver (before provisioning only) and configuration. `configuration` replaces the stored public configuration; omitted configuration leaves it unchanged.
+`PATCH /api/v1/applications/{id}` accepts name, description, auto_start, desired_state, driver and configuration. `configuration` replaces the stored public configuration; omitted configuration leaves it unchanged. For an application with workloads, a new driver choice is stored as pending while the current driver remains responsible for the running services. The next deployment stops the old workloads to release published ports, then activates the selected driver after a successful deploy. If deployment fails, DevBox attempts to restart the old workloads. Superseded resources are removed through the previous driver; cleanup failures are surfaced as deployment warnings. Compose updates remain nontransactional as described above.
+
+`GET /api/v1/applications/{id}/php-modules` reads `php -m` from the primary running Managed PHP container. The configuration screen compares that inventory with the PHP module catalog and marks each module available (`OK`) or missing (`ERROR`). The endpoint does not execute commands in source-owned Dockerfile, image or Compose containers.
 
 ```json
 {

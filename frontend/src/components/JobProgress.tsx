@@ -56,7 +56,9 @@ export function JobProgress({ job, logs, now }: { job: Job; logs: LogEntry[]; no
               <div className="log-line job-log-line" key={entry.id}>
                 <time>{new Date(entry.created_at).toLocaleTimeString()}</time>
                 <strong>{entry.level.toUpperCase()}</strong>
-                <span>{entry.message}{typeof entry.fields?.stage === 'string' ? ` · ${entry.fields.stage}` : ''}</span>
+                {entry.message === 'application.build.output' && typeof entry.fields?.output === 'string'
+                  ? <details open={job.status === 'failed'}><summary>Pełny log budowania obrazu</summary><pre className="job-build-output">{entry.fields.output}</pre></details>
+                  : <span>{entry.message}{typeof entry.fields?.stage === 'string' ? ` · ${entry.fields.stage}` : ''}</span>}
               </div>
             ))}
       </div>

@@ -13,6 +13,9 @@ function ConfigForm({ app, disabled, onSaved }: { app: ApplicationDetail; disabl
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [driver, setDriver] = useState(() => Object.prototype.hasOwnProperty.call(app.source_config ?? {}, 'deployment_driver') ? String(app.source_config?.deployment_driver ?? '') : app.driver)
+  const phpRuntime = app.runtime?.name.toLowerCase() === 'php' || app.source_config?.runtime === 'php'
+  const moduleContainerID = app.workloads.find((workload) => workload.primary)?.driver_resource_id
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setSaved(false)
     const fields = new FormData(event.currentTarget)
@@ -22,14 +25,14 @@ function ConfigForm({ app, disabled, onSaved }: { app: ApplicationDetail; disabl
       for (const key of ['container_port', 'host_port', 'runtime', 'runtime_version', 'compose_service', 'protocol', 'health_path', 'environment', 'modules']) delete config[key]
       Object.assign(config, readConfiguration(fields))
       setSaving(true)
-      await request(`/applications/${encodeURIComponent(app.id)}`, { method: 'PATCH', body: JSON.stringify({ name: fields.get('name'), description: fields.get('description'), auto_start: fields.has('auto_start'), configuration: config }) })
+      await request(`/applications/${encodeURIComponent(app.id)}`, { method: 'PATCH', body: JSON.stringify({ name: fields.get('name'), description: fields.get('description'), auto_start: fields.has('auto_start'), driver, configuration: config }) })
       setSaved(true); onSaved()
     } catch (error) { setError(message(error)) } finally { setSaving(false) }
   }
   return <form onSubmit={(event) => void submit(event)}><fieldset className="acp-card" disabled={disabled || saving}><legend>Konfiguracja aplikacji</legend>
     <div className="acp-fields"><label>Nazwa<input name="name" required defaultValue={app.name} /></label><label>Opis<input name="description" defaultValue={app.description} /></label></div>
-    <ConfigurationFields value={app.source_config} /><label className="acp-check"><input type="checkbox" name="auto_start" defaultChecked={app.auto_start} />Przywracanie stanu docelowego po restarcie DevBox</label>
-    <p>Zmiany parametrów kontenera i sekretów wymagają kolejnego wdrożenia. Zapis nie restartuje działających usług.</p>
+    <ConfigurationFields value={{ ...app.source_config, ...(phpRuntime && !app.source_config?.runtime ? { runtime: 'php' } : {}) }} driver={driver} hasProvisionedWorkloads={app.workloads.length > 0} applicationId={app.id} moduleContainerID={moduleContainerID} phpRuntime={phpRuntime} onDriverChange={setDriver} /><label className="acp-check"><input type="checkbox" name="auto_start" defaultChecked={app.auto_start} />Przywracanie stanu docelowego po restarcie DevBox</label>
+    <p>Zmiany parametrów kontenera, modułów, sterownika i sekretów wymagają kolejnego wdrożenia. Zapis nie restartuje działających usług.</p>
     {error && <p role="alert" className="error-banner">{error}</p>}{saved && <p role="status">Konfiguracja zapisana. Uruchom „Deploy”, aby ją zastosować.</p>}
     <button type="submit">{saving ? 'Zapisywanie…' : 'Zapisz konfigurację'}</button>
   </fieldset></form>
@@ -120,7 +123,7 @@ export function ApplicationDetailPage() {
     {tab === 'Przegląd' && <><section className="acp-card"><h2>Stan i źródło</h2><dl className="acp-facts"><div><dt>Stan docelowy</dt><dd>{app.desired_state}</dd></div><div><dt>Stan zaobserwowany</dt><dd>{detail.data?.stateError ? 'unknown' : app.observed_state}</dd></div><div><dt>Health</dt><dd><ApplicationStatus value={detail.data?.stateError ? 'unknown' : app.health_state} /></dd></div><div><dt>Sterownik</dt><dd>{app.driver || 'Automatycznie'}</dd></div><div><dt>Runtime</dt><dd>{app.runtime ? `${app.runtime.name} ${app.runtime.version ?? ''}` : '—'}</dd></div><div><dt>Źródło</dt><dd>{app.source.repository_url || app.source.local_path || app.source.docker_image || app.slug}</dd></div></dl></section>
       <section className="acp-card"><h2>Usługi ({app.workloads.length})</h2><div className="acp-table"><table><thead><tr><th>Nazwa</th><th>Rola</th><th>Stan</th><th>Health</th><th>Obraz / kontener</th></tr></thead><tbody>{app.workloads.map((workload) => <tr key={workload.id}><td>{workload.name}{workload.primary && <small className="acp-line">Główna</small>}</td><td>{workload.role}</td><td><ApplicationStatus value={detail.data?.stateError ? 'unknown' : workload.observed_state} /></td><td><ApplicationStatus value={detail.data?.stateError ? 'unknown' : workload.health_state} /></td><td>{workload.image || '—'}<small className="acp-line">{workload.driver_resource_id || 'Brak kontenera'}</small></td></tr>)}{!app.workloads.length && <tr><td colSpan={5}>Brak usług. Uruchom pierwsze wdrożenie.</td></tr>}</tbody></table></div></section>
       <section className="acp-card"><h2>Endpointy</h2><p>Linki wykorzystują host panelu i rzeczywiście opublikowany port. DNS, certyfikat oraz routing domeny nie są tworzone automatycznie.</p><div className="acp-table"><table><thead><tr><th>Nazwa</th><th>Protokół</th><th>Port wewnętrzny</th><th>Port hosta</th><th>Adres</th></tr></thead><tbody>{app.endpoints.map((endpoint) => { const link = endpointURL(endpoint, window.location.hostname); return <tr key={endpoint.id}><td>{endpoint.name}{endpoint.primary ? ' · główny' : ''}</td><td>{endpoint.protocol}</td><td>{endpoint.container_port}</td><td>{endpoint.host_port ?? '—'}</td><td>{link ? <a href={link} target="_blank" rel="noreferrer">{link}</a> : 'Brak adresu HTTP'}</td></tr> })}{!app.endpoints.length && <tr><td colSpan={5}>Brak endpointów.</td></tr>}</tbody></table></div></section></>}
-    {tab === 'Konfiguracja' && <ConfigForm key={app.id} app={app} disabled={!editable || locked} onSaved={detail.refresh} />}
+    {tab === 'Konfiguracja' && <ConfigForm key={`${app.id}:${app.driver}:${Object.prototype.hasOwnProperty.call(app.source_config ?? {}, 'deployment_driver') ? String(app.source_config?.deployment_driver ?? '') : 'active'}`} app={app} disabled={!editable || locked} onSaved={detail.refresh} />}
     {tab === 'Wdrożenia' && <section className="acp-card"><h2>Historia wdrożeń</h2><div className="acp-table"><table><thead><tr><th>Utworzono</th><th>Wynik</th><th>Etap</th><th>Rewizja / zadanie</th><th>Błąd</th></tr></thead><tbody>{app.deployments.map((deployment) => <tr key={deployment.id}><td>{date(deployment.created_at)}</td><td><ApplicationStatus value={deployment.status} /></td><td>{deployment.stage}</td><td><code>{deployment.source_revision?.slice(0, 12) || '—'}</code>{deployment.job_id && <Link className="acp-line" to={`/jobs?job=${encodeURIComponent(deployment.job_id)}`}>Zadanie, logi i retry</Link>}</td><td>{deployment.error || '—'}</td></tr>)}{!app.deployments.length && <tr><td colSpan={5}>Brak wdrożeń.</td></tr>}</tbody></table></div></section>}
     {tab === 'Logi' && <ApplicationLogs id={app.id} workloads={app.workloads} />}
     {tab === 'Sekrety' && <Secrets id={app.id} disabled={!editable || locked} />}

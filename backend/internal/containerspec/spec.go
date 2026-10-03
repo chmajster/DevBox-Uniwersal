@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 type Module struct {
@@ -39,6 +40,7 @@ type DeploymentSpec struct {
 	HealthPath           string
 	HostPort             int
 	ContainerPort        int
+	User                 string
 	Environment          map[string]string
 	SensitiveEnvironment map[string]string
 	Networks             []string
@@ -68,6 +70,13 @@ var catalogs = map[string][]moduleDef{
 		{option: ModuleOption{Name: "pgsql", Label: "PostgreSQL", Description: "Sterowniki PostgreSQL oraz PDO PostgreSQL."}, aptPackages: []string{"libpq-dev"}, phpExtension: "pgsql pdo_pgsql"},
 		{option: ModuleOption{Name: "sqlite3", Label: "SQLite3", Description: "SQLite3 oraz PDO SQLite; dostępne w bazowym obrazie PHP."}},
 		{option: ModuleOption{Name: "mbstring", Label: "mbstring", Description: "Obsługa wielobajtowych ciągów znaków; dostępna w bazowym obrazie PHP."}},
+		{option: ModuleOption{Name: "json", Label: "JSON", Description: "Obsługa JSON; dostępna w bazowym obrazie PHP."}},
+		{option: ModuleOption{Name: "session", Label: "Session", Description: "Obsługa sesji PHP; dostępna w bazowym obrazie PHP."}},
+		{option: ModuleOption{Name: "ctype", Label: "Ctype", Description: "Sprawdzanie typów znaków; dostępne w bazowym obrazie PHP."}},
+		{option: ModuleOption{Name: "dom", Label: "DOM", Description: "Document Object Model dla XML; dostępny w bazowym obrazie PHP."}},
+		{option: ModuleOption{Name: "fileinfo", Label: "Fileinfo", Description: "Rozpoznawanie typów i kodowań plików; dostępne w bazowym obrazie PHP."}},
+		{option: ModuleOption{Name: "filter", Label: "Filter", Description: "Walidacja i filtrowanie danych; dostępne w bazowym obrazie PHP."}},
+		{option: ModuleOption{Name: "iconv", Label: "Iconv", Description: "Konwersja kodowań znaków; dostępna w bazowym obrazie PHP."}},
 		{option: ModuleOption{Name: "intl", Label: "intl", Description: "Internationalization / ICU."}, aptPackages: []string{"libicu-dev"}, phpExtension: "intl"},
 		{option: ModuleOption{Name: "gd", Label: "GD", Description: "Przetwarzanie obrazów JPEG/PNG/FreeType."}, aptPackages: []string{"libpng-dev", "libjpeg62-turbo-dev", "libfreetype6-dev"}, phpExtension: "gd", phpConfigure: "docker-php-ext-configure gd --with-freetype --with-jpeg"},
 		{option: ModuleOption{Name: "imagick", Label: "Imagick", Description: "Zaawansowane przetwarzanie obrazów przez ImageMagick."}, aptPackages: []string{"libmagickwand-dev", "pkg-config"}, peclExtension: "imagick"},
@@ -231,6 +240,7 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 
 	bindMounts := map[string]string{}
 	anonymousVolumes := []string{}
+	containerUser := sourceContainerUser(info, runtime)
 	switch runtime {
 	case "php":
 		bindMounts[abs] = "/app"
@@ -259,16 +269,43 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 	}
 	return DeploymentSpec{
 		ProjectID: projectID, Runtime: runtime, Version: version, ContextDir: abs, Dockerfile: dockerfile,
-		Image: image, ContainerName: name, HostPort: hostPort, ContainerPort: port,
+		Image: image, ContainerName: name, HostPort: hostPort, ContainerPort: port, User: containerUser,
 		Environment: env, BindMounts: bindMounts, AnonymousVolumes: anonymousVolumes,
 		Labels:      labels,
 		Fingerprint: fingerprint, ReadOnly: readOnly,
 	}, nil
 }
 
+// sourceContainerUser maps writable managed runtimes to the source directory's
+// existing owner. This lets non-root PHP/Node/Python processes write through a
+// live bind mount without changing host permissions. Root-owned sources retain
+// the image's non-root default.
+func sourceContainerUser(info os.FileInfo, runtime string) string {
+	switch NormalizeRuntime(runtime) {
+	case "php", "node", "python":
+	default:
+		return ""
+	}
+	owner, ok := info.Sys().(*syscall.Stat_t)
+	permissions := info.Mode().Perm()
+	if !ok || owner.Uid == 0 || permissions&0o300 != 0o300 {
+		return ""
+	}
+	return strconv.FormatUint(uint64(owner.Uid), 10) + ":" + strconv.FormatUint(uint64(owner.Gid), 10)
+}
+
 type composerProjectManifest struct {
-	Require    map[string]string `json:"require"`
-	RequireDev map[string]string `json:"require-dev"`
+	Require    map[string]json.RawMessage `json:"require"`
+	RequireDev map[string]json.RawMessage `json:"require-dev"`
+}
+
+type composerLockPackage struct {
+	Require map[string]json.RawMessage `json:"require"`
+}
+
+type composerLockManifest struct {
+	Packages    []composerLockPackage `json:"packages"`
+	PackagesDev []composerLockPackage `json:"packages-dev"`
 }
 
 func resolveManagedModules(workDir, runtime string, configured []Module) ([]Module, error) {
@@ -312,7 +349,7 @@ func phpComposerModules(workDir string) ([]Module, error) {
 	}
 
 	found := map[string]struct{}{}
-	collect := func(requirements map[string]string) {
+	collect := func(requirements map[string]json.RawMessage) {
 		for requirement := range requirements {
 			if module, ok := composerExtensionModule(requirement); ok {
 				found[module] = struct{}{}
@@ -321,6 +358,21 @@ func phpComposerModules(workDir string) ([]Module, error) {
 	}
 	collect(manifest.Require)
 	collect(manifest.RequireDev)
+
+	lockPath := filepath.Join(workDir, "composer.lock")
+	lockContent, err := os.ReadFile(lockPath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read composer.lock: %w", err)
+	}
+	if err == nil {
+		var lock composerLockManifest
+		if err := json.Unmarshal(lockContent, &lock); err != nil {
+			return nil, fmt.Errorf("parse composer.lock for managed PHP runtime: %w", err)
+		}
+		for _, pkg := range append(lock.Packages, lock.PackagesDev...) {
+			collect(pkg.Require)
+		}
+	}
 
 	names := sortedSet(found)
 	modules := make([]Module, 0, len(names))

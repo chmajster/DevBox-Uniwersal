@@ -33,6 +33,7 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/applications", secure(domain.RoleOperator, m.create))
 	mux.Handle("POST /api/v1/applications/detect", secure(domain.RoleOperator, m.detect))
 	mux.Handle("GET /api/v1/applications/{id}", secure(domain.RoleViewer, m.get))
+	mux.Handle("GET /api/v1/applications/{id}/php-modules", secure(domain.RoleViewer, m.phpModules))
 	mux.Handle("PATCH /api/v1/applications/{id}", secure(domain.RoleOperator, m.update))
 	mux.Handle("DELETE /api/v1/applications/{id}", secure(domain.RoleAdmin, m.remove))
 	mux.Handle("POST /api/v1/applications/{id}/deploy", secure(domain.RoleOperator, m.deploy))
@@ -58,6 +59,14 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 }
 func (m *Module) get(w http.ResponseWriter, r *http.Request) {
 	item, err := m.service.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	writeApplicationData(w, http.StatusOK, item)
+}
+func (m *Module) phpModules(w http.ResponseWriter, r *http.Request) {
+	item, err := m.service.PHPModuleInventory(r.Context(), r.PathValue("id"))
 	if err != nil {
 		m.fail(w, err)
 		return

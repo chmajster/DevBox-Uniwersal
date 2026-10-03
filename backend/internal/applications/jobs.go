@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
@@ -51,6 +52,16 @@ func (h *detectJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 	}
 	if err := h.service.git.Clone(ctx, providers.GitSource{RepositoryURL: source.RepositoryURL, Reference: source.Reference, Destination: workDir, CredentialRef: credentialRef}); err != nil {
 		return nil, err
+	}
+	if relativeRoot, _ := input.Configuration["root_dir"].(string); strings.TrimSpace(relativeRoot) != "" {
+		base, baseErr := filepath.EvalSymlinks(workDir)
+		root, rootErr := filepath.EvalSymlinks(filepath.Join(workDir, filepath.FromSlash(relativeRoot)))
+		rel, relErr := filepath.Rel(base, root)
+		info, statErr := os.Stat(root)
+		if baseErr != nil || rootErr != nil || relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || statErr != nil || !info.IsDir() {
+			return nil, fmt.Errorf("%w: root_dir must name a directory inside the Git source", ErrInvalidInput)
+		}
+		workDir = root
 	}
 	result, detectErr := h.service.selector.Detect(ctx, DetectRequest{SourceType: SourceGit, Source: source, WorkDir: workDir, Configuration: input.Configuration}, input.Driver)
 	if detectErr != nil && !errors.Is(detectErr, ErrConfigurationRequired) {
@@ -104,10 +115,41 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 	if err != nil {
 		return nil, h.fail(ctx, deploymentID, StageSource, err)
 	}
+	config := decodeConfiguration(app.SourceConfig)
+	previousDriverName := strings.TrimSpace(app.Driver)
+	selectedDriver := app.Driver
+	if pending, ok := config["deployment_driver"].(string); ok {
+		selectedDriver = pending
+	}
+	previousWorkloads, err := h.service.repo.Workloads(ctx, appID)
+	if err != nil {
+		return nil, h.fail(ctx, deploymentID, StageSource, err)
+	}
+	previousEndpoints, err := h.service.repo.Endpoints(ctx, appID)
+	if err != nil {
+		return nil, h.fail(ctx, deploymentID, StageSource, err)
+	}
+	hasActiveResources := false
+	for _, workload := range previousWorkloads {
+		if workload.DriverResourceID != "" {
+			hasActiveResources = true
+			break
+		}
+	}
+	if relativeRoot, _ := config["root_dir"].(string); strings.TrimSpace(relativeRoot) != "" && (app.SourceType == SourceGit || app.SourceType == SourceEmpty) {
+		relativeRoot = strings.TrimSpace(relativeRoot)
+		base, baseErr := filepath.EvalSymlinks(workDir)
+		root, rootErr := filepath.EvalSymlinks(filepath.Join(workDir, filepath.FromSlash(relativeRoot)))
+		rel, relErr := filepath.Rel(base, root)
+		info, statErr := os.Stat(root)
+		if baseErr != nil || rootErr != nil || relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || statErr != nil || !info.IsDir() {
+			return nil, h.fail(ctx, deploymentID, StageSource, fmt.Errorf("%w: root_dir must name a directory inside the application source", ErrInvalidInput))
+		}
+		workDir = root
+	}
 	source.CurrentRevision = revision
 	_ = h.service.repo.UpdateSource(ctx, source)
 	setStage(StageDetect)
-	config := decodeConfiguration(app.SourceConfig)
 	manifest, manifestErr := LoadManifest(workDir)
 	if workDir == "" {
 		manifest = nil
@@ -131,13 +173,13 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 			return nil, h.fail(ctx, deploymentID, StageDetect, err)
 		}
 	}
-	detection, detectErr := h.service.selector.Detect(ctx, DetectRequest{SourceType: app.SourceType, Source: source, WorkDir: workDir, Configuration: config}, app.Driver)
+	detection, detectErr := h.service.selector.Detect(ctx, DetectRequest{SourceType: app.SourceType, Source: source, WorkDir: workDir, Configuration: config}, selectedDriver)
 	if detectErr != nil && !errors.Is(detectErr, ErrConfigurationRequired) {
 		return nil, h.fail(ctx, deploymentID, StageDetect, detectErr)
 	}
 	if detection.Driver == "" {
-		if app.Driver != "" {
-			detection.Driver = app.Driver
+		if selectedDriver != "" {
+			detection.Driver = selectedDriver
 		} else {
 			return h.waiting(ctx, appID, deploymentID, detection)
 		}
@@ -169,16 +211,13 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 	if err := h.service.repo.SaveDeploymentPlan(ctx, deploymentID, plan); err != nil {
 		return nil, h.fail(ctx, deploymentID, StagePlan, err)
 	}
-	app.Driver = plan.Driver
+	if !hasActiveResources {
+		app.Driver = plan.Driver
+	}
 	app.DesiredState = DesiredRunning
 	app.UpdatedAt = time.Now().UTC()
 	if err := h.service.repo.Update(ctx, app); err != nil {
 		return nil, h.fail(ctx, deploymentID, StagePlan, err)
-	}
-	if plan.Runtime != nil {
-		if err := h.service.repo.SaveRuntime(ctx, *plan.Runtime); err != nil {
-			return nil, h.fail(ctx, deploymentID, StagePlan, err)
-		}
 	}
 	workloads, endpoints := materializeTopology(app.ID, plan)
 	if err := h.service.repo.StageTopology(ctx, app.ID, workloads, endpoints); err != nil {
@@ -217,13 +256,44 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 	}
 	persistedEndpoints = selectedEndpoints
 	setStage(StagePrepare)
+	var previousDriver DeploymentDriver
+	var previousRequest InspectRequest
+	previousDriverStopped := false
+	if previousDriverName != "" && previousDriverName != plan.Driver && hasActiveResources {
+		previousDriver, ok = h.service.drivers.Get(previousDriverName)
+		if !ok {
+			return nil, h.fail(ctx, deploymentID, StagePrepare, fmt.Errorf("%w: previous driver %q is unavailable", ErrProviderUnavailable, previousDriverName))
+		}
+		previousRequest = InspectRequest{Application: app, Source: source, WorkDir: workDir, Workloads: previousWorkloads, Endpoints: previousEndpoints}
+		if err := previousDriver.Stop(ctx, previousRequest); err != nil {
+			startErr := restorePreviousDriver(previousDriver, previousRequest)
+			if startErr != nil {
+				err = fmt.Errorf("stop previous driver before switch: %v; restore previous services: %v", err, startErr)
+			} else {
+				err = fmt.Errorf("stop previous driver before switch: %w", err)
+			}
+			return nil, h.fail(ctx, deploymentID, StagePrepare, err)
+		}
+		previousDriverStopped = true
+	}
 	setStage(StageBuildOrPull)
 	result, err := driver.Deploy(ctx, ExecutionRequest{SensitiveEnvironment: secretValues, Application: app, Source: source, WorkDir: workDir, Deployment: deployment, Workloads: persistedWorkloads, Endpoints: persistedEndpoints}, plan)
 	if err != nil {
+		if previousDriverStopped {
+			if restoreErr := restorePreviousDriver(previousDriver, InspectRequest{Application: app, Source: source, WorkDir: workDir, Workloads: previousWorkloads, Endpoints: previousEndpoints}); restoreErr != nil {
+				err = fmt.Errorf("%v; previous driver restore failed: %v", err, restoreErr)
+			}
+		}
 		stage := StageFailed
 		var op *OperationError
 		if errors.As(err, &op) && op.Stage != "" {
 			stage = op.Stage
+		}
+		if errors.As(err, &op) && op.BuildLog != "" && h.logger != nil {
+			output := redactSecretValues(op.BuildLog, secretValues)
+			_ = h.logger.Log(ctx, job.ID, "info", "application.build.output", map[string]any{
+				"output": output, "application_id": appID, "deployment_id": deploymentID,
+			})
 		}
 		return nil, h.fail(ctx, deploymentID, stage, errors.New(redactSecretValues(err.Error(), secretValues)))
 	}
@@ -248,13 +318,42 @@ func (h *deployJobHandler) Run(ctx context.Context, job domain.Job) (map[string]
 			}
 		}
 	}
+	app.Driver = plan.Driver
+	app.DesiredState = DesiredRunning
+	app.UpdatedAt = time.Now().UTC()
+	storedConfig := decodeConfiguration(app.SourceConfig)
+	delete(storedConfig, "deployment_driver")
+	app.SourceConfig, err = json.Marshal(storedConfig)
+	if err != nil {
+		return nil, h.fail(ctx, deploymentID, StageFinalize, err)
+	}
+	if err := h.service.repo.Update(ctx, app); err != nil {
+		return nil, h.fail(ctx, deploymentID, StageFinalize, err)
+	}
+	if plan.Runtime != nil {
+		if err := h.service.repo.SaveRuntime(ctx, *plan.Runtime); err != nil {
+			return nil, h.fail(ctx, deploymentID, StageFinalize, err)
+		}
+	} else if err := h.service.repo.DeleteRuntime(ctx, appID); err != nil {
+		return nil, h.fail(ctx, deploymentID, StageFinalize, err)
+	}
+	warnings := []string{}
+	if previousDriverStopped {
+		previousWorkloads = workloadsNotReused(previousWorkloads, result.Resources)
+		if len(previousWorkloads) > 0 {
+			previousRequest.Workloads = previousWorkloads
+			if err := previousDriver.Remove(ctx, previousRequest); err != nil {
+				warnings = append(warnings, "previous driver resources could not be removed: "+err.Error())
+			}
+		}
+	}
 	state, err := h.service.reconcile(ctx, appID)
 	if err != nil {
 		return nil, h.fail(ctx, deploymentID, StageFinalize, err)
 	}
 	_ = h.service.repo.FinishDeployment(ctx, deploymentID, "success", StageSuccess, "")
-	_ = h.service.repo.Event(ctx, appID, deploymentID, "", "deployment.completed", StageSuccess, "", map[string]any{"status": state.Status})
-	return map[string]any{"deployment_id": deploymentID, "status": "success", "application_status": state.Status}, nil
+	_ = h.service.repo.Event(ctx, appID, deploymentID, "", "deployment.completed", StageSuccess, "", map[string]any{"status": state.Status, "warnings": warnings})
+	return map[string]any{"deployment_id": deploymentID, "status": "success", "application_status": state.Status, "warnings": warnings}, nil
 }
 func (h *deployJobHandler) waiting(ctx context.Context, appID, deploymentID string, detection DetectionResult) (map[string]any, error) {
 	if err := h.service.repo.FinishDeployment(ctx, deploymentID, "waiting_for_configuration", StageWaitingForConfiguration, ""); err != nil {
@@ -263,6 +362,27 @@ func (h *deployJobHandler) waiting(ctx context.Context, appID, deploymentID stri
 	_ = h.service.repo.Event(ctx, appID, deploymentID, "", "deployment.waiting_for_configuration", StageWaitingForConfiguration, "primary endpoint or deployment configuration is ambiguous", map[string]any{"candidates": detection.Endpoints, "warnings": detection.Warnings})
 	return map[string]any{"deployment_id": deploymentID, "status": "waiting_for_configuration", "detection": detection}, nil
 }
+
+func workloadsNotReused(previous []Workload, current map[string]ResourceState) []Workload {
+	out := make([]Workload, 0, len(previous))
+	for _, workload := range previous {
+		if workload.DriverResourceID == "" {
+			continue
+		}
+		if replacement, ok := current[workload.Name]; ok && replacement.ResourceID == workload.DriverResourceID {
+			continue
+		}
+		out = append(out, workload)
+	}
+	return out
+}
+
+func restorePreviousDriver(driver DeploymentDriver, request InspectRequest) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	return driver.Start(ctx, request)
+}
+
 func (h *deployJobHandler) fail(ctx context.Context, deploymentID, stage string, err error) error {
 	status := "failed"
 	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
