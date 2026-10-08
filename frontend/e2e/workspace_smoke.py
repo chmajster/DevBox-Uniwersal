@@ -36,7 +36,8 @@ def application(identifier, name, runtime, status, port):
                 status=status, source_type='git', driver='managed', runtime=dict(name=runtime),
                 desired_state=status, observed_state=status, health_state='unknown',
                 source=dict(repository_url='https://github.com/example/'+identifier, reference='main'),
-                source_config=dict(container_port=80), auto_start=False,
+                source_config=dict(container_port=80, deployment_mode='auto', runtime=runtime,
+                                   runtime_version={'php': '8.4', 'python': '3.13', 'node': '22', 'go': '1.26', 'static': '1.28'}[runtime]), auto_start=False,
                 workloads=[workload], endpoints=[endpoint], deployments=[],
                 workload_count=1, primary_endpoint=endpoint,
                 created_at='2026-09-28T08:00:00Z', updated_at='2026-09-28T08:00:00Z')
@@ -66,7 +67,14 @@ def install_api(context, role='admin', authenticated=True):
                      dict(id='helper-container', name='devbox-helper', image='helper:test', state='running', status='Up'),
                  ],
                  '/projects': [],
-                 '/databases': [dict(id='db1'), dict(id='db2')], '/ports': [dict(port=8080), dict(port=8081)],
+                 '/databases': [dict(id='db1', name='one', engine='mysql', status='ready'), dict(id='db2', name='two', engine='postgresql', status='ready')],
+                 '/database-users': [],
+                 '/database-servers': [dict(engine=engine, container='devbox-'+engine, running=True, installed=True) for engine in ('mysql','mariadb','postgresql')],
+                 '/runtimes/catalog': [dict(name=name, label=name, versions=[version], default_version=version, container_port=port) for name, version, port in [('php','8.4',8080),('python','3.13',8000),('node','22',3000),('go','1.26',8080),('static','1.28',8080)]],
+                 '/runtimes/php/modules': [dict(name='pdo_mysql', label='pdo_mysql', description='SQL')],
+                 '/runtimes/static/modules': [],
+                 '/jobs/job-test/logs': [],
+                 '/ports': [dict(port=8080), dict(port=8081)],
                  '/health': {'status': 'ok'}, '/docker/status': {'available': True, 'server_version': 'Docker Engine'},
                  '/mysql/status': {'running': True, 'version': 'MySQL'},
                  '/proxy/status': {'detected': True, 'config_valid': True, 'version': 'Nginx'},
@@ -121,7 +129,7 @@ def install_api(context, role='admin', authenticated=True):
         elif endpoint == '/applications/detect':
             assert method == 'POST'
             assert route.request.headers.get('x-csrf-token') == 'smoke-csrf'
-            data = dict(detection=dict(driver='image', confidence='high', requires_configuration=False,
+            data = dict(detection=dict(driver='managed', runtime='static', version='1.28', confidence='high', requires_configuration=False,
                                        services=[dict(name='app', suggested_role='web', primary=True)],
                                        endpoints=[dict(service='app', protocol='http', container_port=80, primary=True)]))
         elif endpoint == '/applications':
@@ -156,10 +164,18 @@ def install_api(context, role='admin', authenticated=True):
                 data = [dict(type='deployment.completed', stage='SUCCESS')]
             elif method == 'GET' and suffix == 'secrets':
                 data = state['secrets']
+            elif method == 'GET' and suffix == 'stats':
+                data = [dict(ID=app['id'], Name='devbox-app-'+app['id'], CPUPerc='1%', MemUsage='10 MiB / 1 GiB', MemPerc='1%', NetIO='1 KiB / 1 KiB')]
+            elif method == 'GET' and suffix == 'php-modules':
+                data = dict(available=True, modules=['pdo_mysql'])
+            elif method == 'GET' and suffix == 'database-binding':
+                data = dict(configured=False, binding=dict(application_id=app['id']))
+            elif method == 'GET' and suffix == 'jobs':
+                data = [app['active_operation']] if app.get('active_operation') else []
             elif method == 'PUT' and suffix.startswith('secrets/'):
                 state['secrets'].append(parts[4])
                 data = dict(name=parts[4])
-            elif method == 'POST' and suffix in ('deploy', 'start', 'stop', 'restart'):
+            elif method == 'POST' and suffix in ('deploy', 'start', 'stop', 'restart', 'reconcile'):
                 job = dict(id='job-test', status='queued', type='application.'+suffix,
                            application_id=app['id'], created_at='2026-09-28T08:00:00Z')
                 app['active_operation'] = job
@@ -261,9 +277,9 @@ def main():
             # Source wizard creates configuration, not a running deployment.
             page.get_by_role('link', name='Dodaj aplikację', exact=True).click()
             page.get_by_label('Nazwa', exact=True).fill('Nowa aplikacja')
-            source_select = page.get_by_label('Rodzaj źródła')
+            source_select = page.get_by_label('Źródło', exact=True)
             source_select.select_option('local')
-            local_path = page.get_by_label('Katalog na hoście DevBox')
+            local_path = page.get_by_label('Katalog z kodem', exact=True)
             local_path.fill('/opt/devbox/projects/aplikacja')
             page.get_by_role('button', name='Przeglądaj', exact=True).click()
             expect(page.get_by_role('dialog', name='Wybierz katalog')).to_be_visible()
@@ -275,19 +291,21 @@ def main():
             page.reload()
             expect(page.get_by_role('heading', name='Dodaj aplikację', exact=True)).to_be_visible()
             page.get_by_label('Nazwa', exact=True).fill('Nowa aplikacja')
-            page.get_by_label('Rodzaj źródła').select_option('docker_image')
-            expect(page.get_by_label('Obraz Docker / OCI', exact=True)).to_be_visible()
-            page.get_by_label('Obraz Docker / OCI', exact=True).fill('nginx:alpine')
+            page.get_by_label('Źródło', exact=True).select_option('docker_image')
+            expect(page.get_by_label('Obraz OCI', exact=True)).to_be_visible()
+            page.get_by_label('Obraz OCI', exact=True).fill('nginx:alpine')
             page.get_by_role('button', name='Dalej', exact=True).click()
+            expect(page.get_by_role('heading', name='Technologia', exact=True)).to_be_visible()
+            page.get_by_role('button', name='Dalej', exact=True).click()
+            expect(page.get_by_role('heading', name='Uruchamianie', exact=True)).to_be_visible()
             page.get_by_label('Port wewnętrzny', exact=True).fill('80')
             page.get_by_role('button', name='Dalej', exact=True).click()
-            analysis_button = page.get_by_role('button', name='Przeanalizuj źródło')
-            expect(analysis_button).to_be_visible()
-            expect(analysis_button).to_be_enabled()
-            analysis_button.dispatch_event('click')
-            expect(page.get_by_role('heading', name='Wynik analizy')).to_be_visible()
+            expect(page.get_by_role('heading', name='Baza danych', exact=True)).to_be_visible()
+            page.get_by_role('button', name='Dalej', exact=True).click()
+            expect(page.get_by_role('heading', name='Podsumowanie', exact=True)).to_be_visible()
+            expect(page.get_by_text('Bez katalogu źródłowego', exact=True)).to_be_visible()
             page.screenshot(path=str(OUT / 'application-wizard.png'), full_page=True)
-            page.get_by_role('button', name='Utwórz aplikację').click()
+            page.get_by_role('button', name='Zapisz', exact=True).click()
             expect(page.get_by_role('heading', name='Nowa aplikacja', exact=True)).to_be_visible()
             assert state['posts'] == ['/applications']
             state['applications'].pop()
@@ -300,23 +318,23 @@ def main():
             expect(dialog.get_by_role('button', name='Usuń aplikację')).to_be_disabled()
             dialog.get_by_role('button', name='Anuluj', exact=True).click()
             assert not state['posts']
-            page.get_by_role('button', name='Konfiguracja', exact=True).click()
+            page.get_by_role('button', name='Settings', exact=True).click()
             page.get_by_label('Port wewnętrzny', exact=True).fill('8080')
             page.get_by_role('button', name='Zapisz konfigurację').click()
             expect(page.get_by_text('Konfiguracja zapisana.', exact=False)).to_be_visible()
             assert state['applications'][0]['source_config']['container_port'] == 8080
-            page.get_by_role('button', name='Sekrety', exact=True).click()
+            page.get_by_role('button', name='Environment', exact=True).click()
             page.get_by_label('Nazwa', exact=True).fill('API_TOKEN')
             page.get_by_label('Nowa wartość', exact=True).fill('synthetic-secret')
             page.get_by_role('button', name='Zapisz sekret').click()
             expect(page.locator('.acp-secret-list code')).to_have_text('API_TOKEN')
             expect(page.get_by_label('Nowa wartość', exact=True)).to_have_value('')
-            page.get_by_role('button', name='Logi', exact=True).click()
+            page.get_by_role('button', name='Logs', exact=True).click()
             expect(page.get_by_label('Logi aplikacji')).to_contain_text('GET /health 200')
             page.get_by_role('button', name='Deploy', exact=True).click()
             expect(page.get_by_role('button', name='Deploy', exact=True)).to_be_disabled()
             expect(page.get_by_role('link', name='Postęp i anulowanie')).to_be_visible()
-            page.get_by_role('button', name='Wdrożenia', exact=True).click()
+            page.get_by_role('button', name='Jobs', exact=True).click()
             expect(page.get_by_role('heading', name='Historia wdrożeń')).to_be_visible()
             expect(page.get_by_role('cell', name='PREPARE', exact=True)).to_be_visible()
             assert state['posts'][-1] == '/applications/portal/deploy'
@@ -327,13 +345,13 @@ def main():
             portal.update(status='stopped', observed_state='stopped', desired_state='stopped')
             with page.expect_response(lambda response: '/applications/portal/state' in response.url):
                 page.clock.fast_forward(5100)
-            expect(page.locator('.acp-header .acp-status')).to_have_text('Zatrzymana')
+            expect(page.locator('.acp-header .acp-status')).to_have_text('STOPPED')
             expect(page.get_by_role('button', name='Deploy', exact=True)).to_be_enabled()
             page.screenshot(path=str(OUT / 'application-detail.png'), full_page=True)
             # Failed inspection must not retain a stale green runtime badge.
             state['failures'].add('/applications/portal/state')
             page.get_by_role('button', name='Odśwież stan', exact=True).click()
-            expect(page.locator('.acp-header .acp-status')).to_have_text('Brak odczytu')
+            expect(page.locator('.acp-header .acp-status')).to_have_text('UNKNOWN')
             state['failures'].clear()
             portal.update(status='running', observed_state='running', desired_state='running')
             for width in (900, 390, 320):
