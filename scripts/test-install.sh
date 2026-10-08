@@ -126,4 +126,13 @@ chmod +x "$fake_bin/dpkg-query" "$fake_bin/apt-cache"
 
 PATH="$original_path"
 
+# Reinstall replaces software without implicitly purging persistent data.
+(
+  PURGE=0
+  require_root() { :; }
+  run_uninstall() { [[ "$PURGE" -eq 0 ]] || exit 1; }
+  run_install() { [[ "$PURGE" -eq 0 ]] || exit 1; }
+  run_reinstall
+)
+
 echo "install.sh parser/idempotency tests: OK"
