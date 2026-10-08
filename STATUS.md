@@ -29,6 +29,7 @@ Environment: Windows host, Ubuntu-26.04 WSL, Go 1.26.0 and Node 22.22.1. Real co
 | ShellCheck 0.11.0 for installer/dev/updater/test scripts | PASS |
 | Windows PowerShell syntax and installer metadata/mode tests | PASS |
 | Python branding checks | 5 PASS |
+| Chromium branding and workspace smoke with production bundle / synthetic API | PASS in GitHub Actions; six branding cases, five-step wizard, configuration, secrets, logs, jobs, Viewer and mobile layouts |
 | Docker application lifecycle, all runtimes/WordPress/Compose variants | PASS, 874.02 seconds |
 | Docker PHP version isolation and failed replacement rollback | PASS after correction, 84.10 seconds |
 | Docker shared MySQL/PostgreSQL/MariaDB and Compose web/worker SQL | PASS, 291.36 seconds |
@@ -40,11 +41,13 @@ Environment: Windows host, Ubuntu-26.04 WSL, Go 1.26.0 and Node 22.22.1. Real co
 
 The first aggregate Docker run exposed premature readiness after rollback and restrictive empty-starter permissions. Both were corrected and their affected groups rerun successfully. A temporary port collision came from overlapping test processes with separate control-plane databases; the final source/recovery run passed after that overlap ended. All four application Docker test groups have passing executed results; these results combine the aggregate run and targeted reruns, rather than claiming an untouched aggregate run passed.
 
+GitHub Actions also confirmed backend/frontend/installer checks, the Runtime containers workflow and [Workspace UI](https://github.com/chmajster/DevBox-Uniwersal/actions/runs/37795894849). Existing browser fixtures were updated to the five-stage workflow, and the source selector received an explicit accessible name. The Dockerfile fixture uses its real source owner so the same RW assertion works on root WSL and non-root CI runners.
+
 Commands, API semantics and the CODEX_TASK A–G mapping are in [Application hosting](docs/application-control-plane.md). CI builds the probe and runs the full Docker application suite with a 50-minute timeout.
 
 ## Operational limits and unverified items
 
-- Visual wizard/browser interaction was not verified: this session exposes no browser surface. Frontend contracts, lint/typecheck/build and the actual HTTP API passed.
+- Browser regressions used synthetic API fixtures. The real backend/SQL path was checked separately through HTTP and Docker. No interactive local browser was exposed in this session.
 - No installed production service was reinstalled or purged. Reinstall preservation was checked through installer tests; real application/SQL persistence was checked with Docker. Repository validation does not replace a host installation trial.
 - Domain/TLS routing was covered by backend tests, not a live public DNS/certificate deployment. Nginx/client DNS and existing certificates require operator configuration. ACME remains disabled.
 - Compose recovery is best effort for retained images and the previous plan. Source Compose changes, external services and data writes cannot be rolled back atomically; same-port replacement can briefly interrupt service.
