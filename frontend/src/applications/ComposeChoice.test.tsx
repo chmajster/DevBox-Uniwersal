@@ -3,21 +3,22 @@ import { describe, expect, it } from 'vitest'
 import { ComposeChoice } from './ComposeChoice'
 
 describe('ComposeChoice', () => {
-  it('asks explicitly without selecting an answer', () => {
+  it('offers all three source deployment modes', () => {
     const markup = renderToStaticMarkup(<ComposeChoice value="" onChange={() => {}} />)
-    expect(markup).toContain('Czy chcesz go użyć?')
+    expect(markup).toContain('Existing Docker Compose')
+    expect(markup).toContain('DevBox Managed Runtime')
     expect(markup).not.toContain('checked=""')
-    expect(markup).not.toContain('<select')
+    expect(markup).toContain('Dockerfile aplikacji')
+    expect(markup.match(/type="radio"/g)).toHaveLength(3)
   })
-  it('confirms Compose without offering a conflicting alternative', () => {
+  it('selects Compose without hiding Auto Container', () => {
     const markup = renderToStaticMarkup(<ComposeChoice value="compose" onChange={() => {}} />)
     expect(markup.match(/checked=""/g)).toHaveLength(1)
-    expect(markup).not.toContain('<select')
+    expect(markup.match(/type="radio"/g)).toHaveLength(3)
   })
-  it.each(['managed', 'dockerfile'])('offers an explicit alternative after declining: %s', (driver) => {
-    const markup = renderToStaticMarkup(<ComposeChoice value={driver} onChange={() => {}} />)
+  it('selects Auto Container', () => {
+    const markup = renderToStaticMarkup(<ComposeChoice value="auto" onChange={() => {}} />)
     expect(markup.match(/checked=""/g)).toHaveLength(1)
-    expect(markup).toContain('<select')
-    expect(markup).toContain('value="' + driver + '" selected=""')
+    expect(markup).toContain('DevBox Managed Runtime')
   })
 })

@@ -24,7 +24,6 @@ import { ROUTES } from './routes'
 import { RuntimeManagerPage } from './pages/RuntimeManagerPage'
 import { UpdatesPage } from './pages/UpdatesPage'
 import { UsersPage } from './pages/UsersPage'
-import { ScriptAppsPage } from './pages/ScriptAppsPage'
 
 export function App() {
   return <BrowserRouter><Routes>
@@ -35,11 +34,9 @@ export function App() {
         <Route path={ROUTES.applications} element={<ApplicationsPage />} />
         <Route path={ROUTES.credentials} element={<CredentialsPage />} />
         <Route path={ROUTES.users} element={<UsersPage />} />
-        <Route path={ROUTES.scriptApps} element={<ScriptAppsPage />} />
         <Route path="/applications" element={<Navigate to={ROUTES.applications} replace />} />
         <Route path="apps/new" element={<ApplicationWizardPage />} />
         <Route path="apps/:id" element={<ApplicationDetailPage />} />
-        <Route path={ROUTES.project} element={<Navigate to="/apps" replace />} />
         <Route path={ROUTES.logs} element={<LogsPage />} />
         <Route path={ROUTES.health} element={<HealthPage />} />
         <Route path={ROUTES.backups} element={<BackupsPage />} />

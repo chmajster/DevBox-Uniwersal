@@ -1,11 +1,10 @@
 export const ROUTES = {
   dashboard: '/',
   applications: '/apps',
-  scriptApps: '/script-apps',
   credentials: '/credentials',
   users: '/users',
   databaseUsers: '/database-users',
-  project: '/projects/:projectId/:tab?',
+  application: '/apps/:id',
   logs: '/logs',
   health: '/health',
   backups: '/backups',
@@ -15,18 +14,4 @@ export const ROUTES = {
   audit: '/audit'
 } as const
 
-export const PROJECT_TABS = [
-  'overview',
-  'configuration',
-  'runtime',
-  'php-modules',
-  'git',
-  'deployments',
-  'logs',
-  'environment',
-  'database',
-  'networking',
-  'backups'
-] as const
-
-export type ProjectTab = typeof PROJECT_TABS[number]
+export const APPLICATION_TABS = ['Overview', 'Runtime', 'Environment', 'Ports', 'Domains', 'Logs', 'Jobs', 'Docker', 'Settings', 'Services'] as const

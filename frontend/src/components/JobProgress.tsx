@@ -36,19 +36,26 @@ export function formatDuration(seconds: number) {
 }
 
 export function JobProgress({ job, logs, now }: { job: Job; logs: LogEntry[]; now?: Date }) {
-  const progress = jobProgress(job)
+  const latestProgress = [...logs].reverse().find((entry) => typeof entry.fields?.progress === 'number')?.fields?.progress
+  const progress = job.status === 'succeeded' ? 100 : typeof latestProgress === 'number' ? latestProgress : jobProgress(job)
   const lastStage = [...logs].reverse().find((entry) => typeof entry.fields?.stage === 'string')?.fields?.stage
   const stage = typeof lastStage === 'string' ? lastStage : jobStage(job)
-  const indeterminate = ['running', 'queued'].includes(job.status) && numberValue(job.result?.progress) === undefined && numberValue(job.payload?.progress) === undefined
+  const indeterminate = typeof latestProgress !== 'number' && ['running', 'queued'].includes(job.status) && numberValue(job.result?.progress) === undefined && numberValue(job.payload?.progress) === undefined
   return (
     <div className="job-progress">
       <div className="job-progress-grid">
         <div><span>Stage</span><strong>{stage}</strong></div>
         <div><span>Progress</span><strong>{indeterminate ? 'W toku' : `${Math.round(progress)}%`}</strong></div>
+        <div><span>Start</span><strong>{job.started_at ? new Date(job.started_at).toLocaleString('pl-PL') : 'Oczekuje'}</strong></div>
+        <div><span>Koniec</span><strong>{job.finished_at ? new Date(job.finished_at).toLocaleString('pl-PL') : '—'}</strong></div>
         <div><span>Elapsed</span><strong>{formatDuration(elapsedSeconds(job, now))}</strong></div>
       </div>
       <progress max={100} value={indeterminate ? undefined : progress}>{Math.round(progress)}%</progress>
-      {job.error && <div className="error-banner" role="alert">{job.error}</div>}
+      {job.error && <details className="job-error-details">
+        <summary>Błąd zadania — pokaż szczegóły</summary>
+        <div className="error-banner" role="alert">{job.error}</div>
+        <p className="muted small">Etap: {stage}</p>
+      </details>}
       <div className="log-console" aria-label="Job logs">
         {logs.length === 0
           ? <div className="muted">Brak wpisów w logu zadania.</div>
@@ -56,8 +63,8 @@ export function JobProgress({ job, logs, now }: { job: Job; logs: LogEntry[]; no
               <div className="log-line job-log-line" key={entry.id}>
                 <time>{new Date(entry.created_at).toLocaleTimeString()}</time>
                 <strong>{entry.level.toUpperCase()}</strong>
-                {entry.message === 'application.build.output' && typeof entry.fields?.output === 'string'
-                  ? <details open={job.status === 'failed'}><summary>Pełny log budowania obrazu</summary><pre className="job-build-output">{entry.fields.output}</pre></details>
+                {['application.build.output', 'application.process.output'].includes(entry.message) && typeof entry.fields?.output === 'string'
+                  ? <details open={job.status === 'failed'}><summary>{entry.message === 'application.build.output' ? 'Pełny log budowania obrazu' : `Wyjście procesu (${String(entry.fields?.stream ?? '')})`}</summary><pre className="job-build-output">{entry.fields.output}</pre></details>
                   : <span>{entry.message}{typeof entry.fields?.stage === 'string' ? ` · ${entry.fields.stage}` : ''}</span>}
               </div>
             ))}

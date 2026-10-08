@@ -1,126 +1,104 @@
-import { useCallback, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { request } from '../api/client'
 import type { Job } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
-import { usePolling } from '../control-room/usePolling'
 import { ConfigurationFields, DetectionResult } from '../applications/components'
 import { DirectoryPicker } from '../components/DirectoryPicker'
-import { message, readConfiguration, sourceNames, type ApplicationDetail, type Configuration, type CreateApplication, type Detection } from '../applications/model'
+import { message, readConfiguration, validateManagedConfiguration, sourceNames, type ApplicationDetail, type Detection } from '../applications/model'
+import { applyDatabaseChoice, DatabaseConfiguration, emptyDatabaseChoice, waitForJob } from '../applications/databaseConfiguration'
 
+const stages = ['Źródło', 'Technologia', 'Uruchamianie', 'Baza danych', 'Podsumowanie']
 export function ApplicationWizardPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const form = useRef<HTMLFormElement>(null)
   const [step, setStep] = useState(0)
-  const [source, setSource] = useState('git')
-  const [localPath, setLocalPath] = useState('')
+  const [sourceType, setSourceType] = useState('local')
+  const [path, setPath] = useState('')
   const [directoryOpen, setDirectoryOpen] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [driver, setDriver] = useState('')
-  const [runtime, setRuntime] = useState('')
-  const [phpModules, setPHPModules] = useState<string[]>([])
-  const [detected, setDetected] = useState<Detection | null>(null)
-  const [analysisID, setAnalysisID] = useState('')
-  const form = useRef<HTMLFormElement>(null)
-  const loadAnalysis = useCallback((signal: AbortSignal) => request<Job>(`/jobs/${encodeURIComponent(analysisID)}`, { signal }), [analysisID])
-  const analysis = usePolling(loadAnalysis, 2000, !!analysisID)
-  const analysisJob = analysis.data?.id === analysisID ? analysis.data : null
-  const analysisBusy = !!analysisID && (!analysisJob || ['queued', 'running'].includes(analysisJob.status)) && !analysis.error
-  const analysisResult = (analysisID ? analysisJob?.result?.detection : undefined) as Detection | undefined
-  const rawDetection = analysisResult ?? detected
-  const detection = rawDetection ? { ...rawDetection, driver: driver || rawDetection.driver, ...(runtime ? { runtime } : {}) } : null
-  const needsAnalysis = ['git', 'local'].includes(source) && !detection
-  function payload(): CreateApplication {
-    if (!form.current) throw new Error('Formularz niedostępny.')
+  const [progress, setProgress] = useState('')
+  const [detecting, setDetecting] = useState(false)
+  const [mode, setMode] = useState('auto')
+  const [detection, setDetection] = useState<Detection | null>(null)
+  const [createdID, setCreatedID] = useState('')
+  const [databaseApplied, setDatabaseApplied] = useState(false)
+  const [database, setDatabase] = useState(emptyDatabaseChoice)
+  const [summary, setSummary] = useState<Record<string, unknown>>({})
+  useEffect(() => {
+    if (sourceType !== 'local' || !path.trim()) return
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setDetecting(true)
+      request<{ detection: Detection }>('/applications/detect', { method: 'POST', signal: controller.signal, body: JSON.stringify({ source_type: 'local', source: { local_path: path }, configuration: {} }) })
+        .then(({ detection }) => { setDetection(detection); setMode(detection.compose_found ? 'compose' : detection.dockerfile_found ? 'dockerfile' : 'auto'); setError('') })
+        .catch((error) => { if (!controller.signal.aborted) setError(message(error)) })
+        .finally(() => { if (!controller.signal.aborted) setDetecting(false) })
+    }, 500)
+    return () => { window.clearTimeout(timer); controller.abort() }
+  }, [path, sourceType])
+  const source = (fields: FormData) => sourceType === 'local' ? { local_path: path } : sourceType === 'git' ? { repository_url: String(fields.get('repository_url') ?? ''), reference: String(fields.get('reference') ?? ''), ...(fields.get('credential_id') ? { credential_id: String(fields.get('credential_id')) } : {}) } : sourceType === 'docker_image' ? { docker_image: String(fields.get('docker_image') ?? '') } : {}
+  function captureSummary() {
+    if (!form.current) return
     const fields = new FormData(form.current)
-    const text = (key: string) => String(fields.get(key) ?? '').trim()
-    const src: CreateApplication['source'] = {}
-    if (source === 'git') { src.repository_url = text('repository_url'); src.reference = text('reference'); if (text('credential_id')) src.credential_id = text('credential_id') }
-    if (source === 'local') src.local_path = text('local_path')
-    if (source === 'docker_image') src.docker_image = text('docker_image')
-    const useCompose = driver === 'compose'
-    const configuration: Configuration = { ...readConfiguration(fields), ...(text('root_dir') && text('root_dir') !== '.' ? { root_dir: text('root_dir') } : {}), ...(!useCompose && runtime ? { runtime } : {}) }
-    if (useCompose) { delete configuration.runtime; delete configuration.runtime_version; delete configuration.modules }
-    else if (runtime === 'php' && phpModules.length) configuration.modules = phpModules
-    return { name: text('name'), description: text('description'), source_type: source, source: src, driver, auto_start: fields.has('auto_start'), configuration }
+    setSummary({ ...readConfiguration(fields), source_description: path || String(fields.get('repository_url') || fields.get('docker_image') || 'Katalog nowej aplikacji'), runtime_image: String(fields.get('runtime_image') || fields.get('docker_image') || '') })
+  }
+  async function analyzeGit() {
+    if (!form.current) return
+    setDetecting(true); setError('')
+    try {
+      const response = await request<{ job: Job }>('/applications/detect', { method: 'POST', body: JSON.stringify({ source_type: 'git', source: source(new FormData(form.current)), configuration: {} }) })
+      const job = await waitForJob(response.job.id, setProgress)
+      const detected = (job.result as { detection?: Detection } | undefined)?.detection
+      if (detected) { setDetection(detected); setMode(detected.compose_found ? 'compose' : detected.dockerfile_found ? 'dockerfile' : 'auto') }
+    } catch (cause) { setError(message(cause)) } finally { setDetecting(false); setProgress('') }
   }
   function next() {
-    setError('')
-    const fields = form.current?.querySelectorAll<HTMLInputElement>('fieldset:not([hidden]) input')
-    if (fields && Array.from(fields).some((input) => !input.reportValidity())) return
-    try { payload(); if (step === 1) void detect(); setStep((value) => Math.min(value + 1, 2)) } catch (error) { setError(message(error)) }
+    if (!form.current) return
+    const invalid = form.current.querySelector(`[data-step="${step}"]`)?.querySelector<HTMLInputElement | HTMLSelectElement>('input:invalid, select:invalid')
+    if (invalid) { invalid.reportValidity(); return }
+    try { captureSummary(); setError(''); setStep(Math.min(stages.length - 1, step + 1)) } catch (cause) { setError(message(cause)) }
   }
-  async function detect() {
-    setBusy(true); setError(''); setDetected(null); setAnalysisID('')
+  async function submit(event: FormEvent<HTMLFormElement>, deploy: boolean) {
+    event.preventDefault()
+    if (busy || detecting || !form.current) return
+    const invalid = form.current.querySelector<HTMLInputElement | HTMLSelectElement>('input:invalid, select:invalid')
+    if (invalid) { setStep(Number(invalid.closest('[data-step]')?.getAttribute('data-step') ?? 0)); window.setTimeout(() => invalid.reportValidity(), 0); return }
+    setBusy(true); setError('')
     try {
-      const detectPayload = payload()
-      if (driver) detectPayload.driver = driver
-      const result = await request<{ detection?: Detection; job?: Job }>('/applications/detect', { method: 'POST', body: JSON.stringify(detectPayload) })
-      setDetected(result.detection ?? null)
-      setAnalysisID(result.job?.id ?? '')
-    }
-    catch (error) { setError(message(error)) } finally { setBusy(false) }
-  }
-  async function submit(event: FormEvent) {
-    event.preventDefault(); if (step < 2) { next(); return }
-    if (busy || analysisBusy) return
-    if (needsAnalysis) { setError('Przeanalizuj źródło przed zapisaniem aplikacji.'); return }
-    setError(''); setBusy(true)
-    try { const app = await request<ApplicationDetail>('/applications', { method: 'POST', body: JSON.stringify(payload()) }); navigate(`/apps/${encodeURIComponent(app.id)}`) }
-    catch (error) { setError(message(error)) } finally { setBusy(false) }
+      const fields = new FormData(form.current)
+      const configuration = { ...readConfiguration(fields), deployment_mode: sourceType === 'docker_image' ? 'image' : mode }
+      validateManagedConfiguration(configuration)
+      const app = createdID ? { id: createdID } : await request<ApplicationDetail>('/applications', { method: 'POST', body: JSON.stringify({ name: fields.get('name'), source_type: sourceType, source: source(fields), auto_start: fields.has('auto_start'), configuration }) })
+      setCreatedID(app.id)
+      if (createdID) await request(`/applications/${encodeURIComponent(app.id)}`, { method: 'PATCH', body: JSON.stringify({ name: fields.get('name'), configuration }) })
+      const secrets = JSON.parse(String(fields.get('secret_environment') || '{}')) as Record<string, string>
+      for (const [name, value] of Object.entries(secrets)) await request(`/applications/${encodeURIComponent(app.id)}/secrets/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify({ value }) })
+      if (!databaseApplied) { setProgress('Przygotowywanie bazy danych'); await applyDatabaseChoice(app.id, database, setProgress); setDatabaseApplied(true) }
+      if (deploy) await request(`/applications/${encodeURIComponent(app.id)}/deploy`, { method: 'POST' })
+      navigate(`/apps/${encodeURIComponent(app.id)}`)
+    } catch (cause) { setError(message(cause)) } finally { setBusy(false); setProgress('') }
   }
   if (user?.role === 'viewer') return <p role="alert">Tworzenie aplikacji wymaga roli Operator lub Administrator.</p>
-  return <div className="acp"><header className="acp-header"><div><Link to="/apps">Aplikacje</Link><h1>Dodaj aplikację</h1></div><span>Krok {step + 1} z 3</span></header>
-    <nav className="acp-steps" aria-label="Kroki formularza">{['Źródło', 'Konfiguracja', 'Analiza i zapis'].map((label, index) => <span key={label} aria-current={index === step ? 'step' : undefined}>{index + 1}. {label}</span>)}</nav>
-    {error && <p className="error-banner" role="alert">{error}</p>}
-    <form ref={form} onSubmit={(event) => void submit(event)} noValidate>
-      <fieldset className="acp-card" hidden={step !== 0} disabled={busy || analysisBusy} onChange={() => { setDetected(null); setAnalysisID('') }}><legend>Źródło aplikacji</legend><div className="acp-fields">
-        <label>Nazwa<input name="name" required maxLength={120} autoComplete="off" /></label>
-        <label>Rodzaj źródła<select value={source} onChange={(event) => { setSource(event.target.value); setDirectoryOpen(false); setDetected(null); setAnalysisID('') }}>{Object.entries(sourceNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="acp-wide">Opis<input name="description" maxLength={500} /></label>
-        {source === 'git' && <><label className="acp-wide">Adres repozytorium<input name="repository_url" required placeholder="https://github.com/owner/repository.git" /></label><label>Gałąź lub tag<input name="reference" placeholder="Domyślna gałąź repozytorium" /></label><label>ID zapisanych poświadczeń Git<input name="credential_id" placeholder="Opcjonalnie" /><small>Identyfikator z modułu Poświadczenia. Nie wpisuj tokenu.</small></label></>}
-        {source === 'git' && <label className="acp-wide">Root dir aplikacji w repozytorium<input name="root_dir" defaultValue="." placeholder=". lub apps/portal" /><small>Katalog względem checkoutu, który zawiera kod tej aplikacji. Dla katalogu lokalnego podaj bezpośrednio ścieżkę root dir.</small></label>}
-        {source === 'local' && <>
-          <div className="acp-wide application-directory-field">
-            <label htmlFor="application-local-path">Root dir aplikacji — katalog źródłowy</label>
-            <div className="application-directory-row">
-              <input
-                id="application-local-path"
-                name="local_path"
-                required
-                value={localPath}
-                onChange={(event) => setLocalPath(event.target.value)}
-                placeholder="/opt/devbox/projects/aplikacja"
-                autoComplete="off"
-              />
-              <button type="button" className="secondary-button" onClick={() => setDirectoryOpen(true)}>Przeglądaj</button>
-            </div>
-            <small>Ten katalog jest root dir aplikacji i zostanie udostępniony kontenerowi. To ścieżka serwera / WSL, nie komputera przeglądarki.</small>
-          </div>
-          {directoryOpen && <DirectoryPicker
-            value={localPath}
-            onSelect={setLocalPath}
-            onClose={() => setDirectoryOpen(false)}
-          />}
-        </>}
-        {source === 'docker_image' && <label className="acp-wide">Obraz Docker / OCI<input name="docker_image" required placeholder="nginx:alpine" /></label>}
-        {source === 'empty' && <p>Pusty katalog powstanie przy wdrożeniu. Przed deployem dodaj kod albo wybierz runtime static dla pustej strony.</p>}
-      </div></fieldset>
-      <fieldset className="acp-card" hidden={step !== 1} disabled={busy || analysisBusy} onChange={() => { setDetected(null); setAnalysisID('') }}><legend>Ustawienia wdrożenia</legend>
-        <p className="muted">Aplikacja działa w kontenerze. Jeśli w katalogu źródłowym znajduje się Docker Compose, możesz zdecydować o jego użyciu po analizie.</p>
-        <ConfigurationFields value={{ runtime, modules: phpModules }} driver={driver} onDriverChange={(value) => { setDriver(value); setDetected(null); setAnalysisID('') }} onRuntimeChange={(value) => { setRuntime(value); setPHPModules([]); setDetected(null); setAnalysisID('') }} onModulesChange={setPHPModules} /><label className="acp-check"><input type="checkbox" name="auto_start" />Przywróć uruchomienie po restarcie DevBox, gdy stan docelowy to „uruchomiona”.</label>
-      </fieldset>
-      <fieldset className="acp-card" hidden={step !== 2} disabled={busy}><legend>Analiza i zapis</legend>
-        <p>Analiza nie uruchamia aplikacji. Zapis utworzy konfigurację; wdrożenie uruchomisz na ekranie szczegółów. Tam można najpierw dodać sekrety.</p>
-        <button type="button" className="secondary-button" disabled={analysisBusy} onClick={() => void detect()}>{analysisBusy ? 'Analizowanie…' : 'Przeanalizuj źródło'}</button>
-        {analysisID && <p><Link to={`/jobs?job=${encodeURIComponent(analysisID)}`}>Zadanie analizy</Link> · {analysisJob?.status ?? 'odczytywanie'}</p>}
-        {analysis.error && <p role="alert">{analysis.error}</p>}
-        {analysisJob?.error && <p role="alert">{analysisJob.error}</p>}
-        {detection && <DetectionResult value={detection} />}
-        {detection?.driver === 'compose' && <p className="acp-notice">W źródle wykryto Docker Compose. Możesz wybrać Docker Compose albo sterownik Managed w ustawieniach wdrożenia przed pierwszym wdrożeniem.</p>}
-      </fieldset>
-      <div className="acp-actions"><button type="button" className="secondary-button" disabled={step === 0 || busy || analysisBusy} onClick={() => setStep((value) => value - 1)}>Wstecz</button>{step < 2 ? <button type="button" onClick={next}>Dalej</button> : <button type="submit" disabled={busy || analysisBusy || needsAnalysis}>{busy ? 'Zapisywanie…' : 'Utwórz aplikację'}</button>}</div>
-    </form>
+  return <div className="acp"><header className="acp-header"><div><Link to="/apps">Aplikacje</Link><h1>Dodaj aplikację</h1><p>Wybierz źródło, runtime i bazę. DevBox uruchomi aplikację w Dockerze.</p></div></header>
+    <nav className="acp-tabs" aria-label="Etapy kreatora">{stages.map((stage, index) => <button key={stage} type="button" className="secondary-button" disabled={busy} aria-current={step === index ? 'step' : undefined} onClick={() => { if (form.current) { try { captureSummary() } catch (cause) { setError(message(cause)); return } }; setStep(index) }}>{index + 1}. {stage}</button>)}</nav>
+    {error && <p className="error-banner" role="alert">{error}{createdID && <> <Link to={`/apps/${encodeURIComponent(createdID)}`}>Otwórz zapisaną aplikację</Link></>}</p>}
+    {(busy || progress) && <p role="status">{progress || 'Zapisywanie aplikacji…'}</p>}
+    <form ref={form} noValidate onSubmit={(event) => void submit(event, (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'deploy')}><fieldset className="acp-card" disabled={busy}>
+      <section data-step="0" hidden={step !== 0}><h2>Źródło</h2><div className="acp-fields"><label>Nazwa<input name="name" required maxLength={120} autoComplete="off" /></label><label>Źródło<select disabled={!!createdID} value={sourceType} onChange={(event) => { setSourceType(event.target.value); setDetection(null); setMode(event.target.value === 'docker_image' ? 'image' : 'auto') }}>{Object.entries(sourceNames).map(([type, label]) => <option key={type} value={type}>{label}</option>)}</select></label>
+        {sourceType === 'local' && <div className="application-directory-field"><label htmlFor="application-local-path">Katalog z kodem</label><div className="application-directory-row"><input id="application-local-path" required disabled={!!createdID} value={path} onChange={(event) => { setPath(event.target.value); setDetection(null) }} placeholder="/home/chris/apps/example lub /mnt/c/Projects/example" autoComplete="off" /><button type="button" className="secondary-button" onClick={() => setDirectoryOpen(true)}>Przeglądaj</button></div></div>}
+        {sourceType === 'git' && <><label>Repozytorium Git<input name="repository_url" required placeholder="https://github.com/org/app.git" disabled={!!createdID} /></label><label>Gałąź / tag<input name="reference" placeholder="Domyślna gałąź" /></label><label>Zapisane dane Git<input name="credential_id" placeholder="Opcjonalny identyfikator poświadczeń" /></label><button type="button" disabled={detecting} onClick={() => void analyzeGit()}>Analizuj repozytorium</button></>}
+        {sourceType === 'docker_image' && <label>Obraz OCI<input name="docker_image" required disabled={!!createdID} placeholder="nginx:1.28-alpine" /></label>}
+        {sourceType === 'empty' && <p>DevBox utworzy katalog z działającą aplikacją startową dla wybranego runtime.</p>}
+      </div>{directoryOpen && <DirectoryPicker value={path} onSelect={setPath} onClose={() => setDirectoryOpen(false)} />}{detecting && <p role="status">Analizowanie źródła…</p>}{detection && <DetectionResult value={detection} />}</section>
+      <section hidden={step !== 1 && step !== 2}><h2>{step === 1 ? 'Technologia' : 'Uruchamianie'}</h2><ConfigurationFields key={`${sourceType}:${path}:${detection?.driver ?? ''}:${detection?.runtime ?? ''}`} value={{ runtime: ['dockerfile', 'image'].includes(detection?.runtime ?? '') ? '' : detection?.runtime ?? '', runtime_version: detection?.version ?? '', start_command: detection?.start_command ?? '', container_port: detection?.endpoints?.find((item) => item.primary)?.container_port ?? '', compose_service: detection?.services?.find((item) => item.primary)?.name ?? '' }} deploymentMode={mode} onDeploymentModeChange={setMode} wizardStep={step} />
+        {step === 2 && mode === 'compose' && detection?.endpoints && <label>Główny endpoint HTTP<select defaultValue="" onChange={(event) => { const [service, port] = event.target.value.split(':'); const serviceInput = form.current?.elements.namedItem('compose_service') as HTMLInputElement | null; const portInput = form.current?.elements.namedItem('container_port') as HTMLInputElement | null; if (serviceInput) serviceInput.value = service; if (portInput) portInput.value = port }}><option value="">Wybierz usługę HTTP</option>{detection.endpoints.map((endpoint) => <option key={`${endpoint.service}:${endpoint.container_port}`} value={`${endpoint.service}:${endpoint.container_port}`}>{endpoint.service}:{endpoint.container_port}</option>)}</select></label>}
+        <div data-step="2" hidden={step !== 2}><label className="acp-check"><input name="auto_start" type="checkbox" />Przywróć uruchomienie po restarcie DevBox</label></div></section>
+      <section data-step="3" hidden={step !== 3}><h2>Baza danych</h2><DatabaseConfiguration value={database} onChange={(choice) => { setDatabase(choice); setDatabaseApplied(false) }} /></section>
+      <section data-step="4" hidden={step !== 4}><h2>Podsumowanie</h2><dl className="acp-facts"><div><dt>Źródło</dt><dd>{sourceNames[sourceType]} {String(summary.source_description ?? path)}</dd></div><div><dt>Tryb</dt><dd>{mode}</dd></div><div><dt>Runtime</dt><dd>{String(summary.runtime ?? detection?.runtime ?? 'Własny obraz')} {String(summary.runtime_version ?? '')}</dd></div><div><dt>Obraz bazowy</dt><dd>{String(summary.runtime_image || 'Obrazy wskazane w Dockerfile / Compose')}</dd></div><div><dt>Kontenery</dt><dd>{detection?.services?.map((service) => service.name).join(', ') || 'web'}</dd></div><div><dt>Mount</dt><dd>{sourceType === 'docker_image' ? 'Bez katalogu źródłowego' : `${path || 'Katalog zarządzany DevBox'} → ${String(summary.mount_target || (mode === 'auto' ? detection?.profile === 'wordpress' ? '/var/www/html' : summary.runtime === 'static' ? '/usr/share/nginx/html' : '/app' : 'WORKDIR'))} (RW)`}</dd></div><div><dt>Porty</dt><dd>{String(summary.container_port ?? 'wykryty')} → {String(summary.host_port ?? 'automatycznie od 8080')}</dd></div><div><dt>Baza</dt><dd>{database.mode === 'none' ? 'Bez bazy' : database.mode === 'create' ? `${database.engine}: ${database.name}` : database.database_id}</dd></div><div><dt>Sieci</dt><dd>Sieć prywatna aplikacji + devbox-apps</dd></div></dl><p>Hasła trafią do SecretStore. Postęp wdrożenia pojawi się w zakładce Zadania.</p><div className="acp-actions"><button type="submit" value="save">Zapisz</button><button type="submit" value="deploy" disabled={detecting}>Utwórz i uruchom</button></div></section>
+      <div className="acp-actions">{step > 0 && <button type="button" className="secondary-button" onClick={() => setStep(step - 1)}>Wstecz</button>}{step < stages.length - 1 && <button type="button" disabled={detecting} onClick={next}>Dalej</button>}</div>
+    </fieldset></form>
   </div>
 }

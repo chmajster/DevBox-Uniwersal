@@ -23,7 +23,7 @@ function localDirectoryName(path: string) {
 
 function composeBelongsToProject(composeProject: string, project: Project) {
   const normalized = normalizeProjectName(composeProject)
-  return project.slug === composeProject ||
+  return composeProject === 'devbox-' + project.id || project.slug === composeProject ||
     normalizeProjectName(project.slug) === normalized ||
     normalizeProjectName(project.name) === normalized ||
     normalizeProjectName(localDirectoryName(project.local_path)) === normalized
