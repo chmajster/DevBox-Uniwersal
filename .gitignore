@@ -16,3 +16,6 @@ frontend/.vite/
 .DS_Store
 .vscode/
 .idea/
+.build/task-*
+.build/devbox-dbcheck
+.build/wsl-mount-tests/

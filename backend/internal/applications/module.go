@@ -33,14 +33,33 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("POST /api/v1/applications", secure(domain.RoleOperator, m.create))
 	mux.Handle("POST /api/v1/applications/detect", secure(domain.RoleOperator, m.detect))
 	mux.Handle("GET /api/v1/applications/{id}", secure(domain.RoleViewer, m.get))
+	mux.Handle("GET /api/v1/applications/{id}/php-modules", secure(domain.RoleViewer, m.phpModules))
+	mux.Handle("GET /api/v1/applications/{id}/export", secure(domain.RoleOperator, m.exportRuntime))
+	mux.Handle("GET /api/v1/applications/{id}/stats", secure(domain.RoleViewer, m.stats))
 	mux.Handle("PATCH /api/v1/applications/{id}", secure(domain.RoleOperator, m.update))
 	mux.Handle("DELETE /api/v1/applications/{id}", secure(domain.RoleAdmin, m.remove))
+	for _, action := range []string{"build", "rebuild", "recreate"} {
+		action := action
+		mux.Handle("POST /api/v1/applications/{id}/"+action, secure(domain.RoleOperator, func(w http.ResponseWriter, r *http.Request) {
+			deployment, job, err := m.service.EnqueueDeploymentAction(r.Context(), r.PathValue("id"), applicationActor(r), "application."+action)
+			if err != nil {
+				m.fail(w, err)
+				return
+			}
+			writeApplicationData(w, http.StatusAccepted, map[string]any{"deployment": deployment, "job": job})
+		}))
+	}
+	for _, action := range []string{"pull", "down"} {
+		action := action
+		mux.Handle("POST /api/v1/applications/{id}/"+action, secure(domain.RoleOperator, func(w http.ResponseWriter, r *http.Request) { m.lifecycle(w, r, action, nil) }))
+	}
 	mux.Handle("POST /api/v1/applications/{id}/deploy", secure(domain.RoleOperator, m.deploy))
 	mux.Handle("POST /api/v1/applications/{id}/start", secure(domain.RoleOperator, m.start))
 	mux.Handle("POST /api/v1/applications/{id}/stop", secure(domain.RoleOperator, m.stop))
 	mux.Handle("POST /api/v1/applications/{id}/restart", secure(domain.RoleOperator, m.restart))
 	mux.Handle("POST /api/v1/applications/{id}/reconcile", secure(domain.RoleOperator, m.reconcile))
 	mux.Handle("GET /api/v1/applications/{id}/state", secure(domain.RoleViewer, m.state))
+	mux.Handle("GET /api/v1/applications/{id}/jobs", secure(domain.RoleViewer, m.applicationJobs))
 	mux.Handle("GET /api/v1/applications/{id}/workloads", secure(domain.RoleViewer, m.workloads))
 	mux.Handle("GET /api/v1/applications/{id}/endpoints", secure(domain.RoleViewer, m.endpoints))
 	mux.Handle("GET /api/v1/applications/{id}/deployments", secure(domain.RoleViewer, m.deployments))
@@ -58,6 +77,14 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 }
 func (m *Module) get(w http.ResponseWriter, r *http.Request) {
 	item, err := m.service.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	writeApplicationData(w, http.StatusOK, item)
+}
+func (m *Module) phpModules(w http.ResponseWriter, r *http.Request) {
+	item, err := m.service.PHPModuleInventory(r.Context(), r.PathValue("id"))
 	if err != nil {
 		m.fail(w, err)
 		return
@@ -106,12 +133,27 @@ func (m *Module) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	previous, err := m.service.Get(r.Context(), id)
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
 	item, err := m.service.Update(r.Context(), id, input)
 	if err != nil {
 		m.fail(w, err)
 		return
 	}
 	actor := applicationActor(r)
+	if len(previous.Workloads) > 0 && input.Configuration != nil {
+		old, new := decodeConfiguration(previous.SourceConfig), *input.Configuration
+		if configString(old, "runtime") != configString(new, "runtime") || configString(old, "runtime_version") != configString(new, "runtime_version") {
+			if _, _, err := m.service.EnqueueDeploymentAction(r.Context(), id, actor, JobRebuild); err != nil {
+				m.fail(w, err)
+				return
+			}
+			item, _ = m.service.Get(r.Context(), id)
+		}
+	}
 	if m.audit != nil {
 		_ = m.audit.Record(r.Context(), actor, "application.update", "application", &id, nil, remoteAddress(r))
 	}

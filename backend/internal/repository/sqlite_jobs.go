@@ -87,3 +87,20 @@ func scanJob(scan scanner) (domain.Job, error) {
 	}
 	return j, nil
 }
+
+func (r *SQLiteJobs) ListApplication(ctx context.Context, applicationID string) ([]domain.Job, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id,type,status,project_id,application_id,requested_by,payload_json,result_json,error,created_at,started_at,finished_at FROM jobs WHERE application_id=? ORDER BY created_at DESC LIMIT 100`, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.Job{}
+	for rows.Next() {
+		job, err := scanJob(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, job)
+	}
+	return out, rows.Err()
+}

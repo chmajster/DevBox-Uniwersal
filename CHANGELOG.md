@@ -1,10 +1,66 @@
 # Changelog
 
+## 2026-10-08 — Docker hosting task
+
+- Added local/Git/empty/OCI sources, existing Dockerfile support and a five-step application wizard with Save and Create/start actions.
+- Generated PHP now uses Apache, editable document roots and per-app extensions; Go downloads modules, builds a binary and runs from a RW source mount, including cmd/ entrypoints. Runtime/version changes enqueue a rebuild.
+- Added application-native MySQL/MariaDB/PostgreSQL provisioning and exact SQL account bindings, encrypted password generation, shared workload networking and SELECT 1 inside app containers through the installed static probe.
+- Added persistent SQL server operations, PostgreSQL account isolation, Docker NAT port conflict detection, HTTP readiness distinct from container state, CPU/RAM and Dockerfile/Compose export.
+- Added previous-plan recovery for failed Compose command/port updates, ownership checks and validation against unsafe Compose host mounts/privileges.
+- Reinstall replaces software while preserving SQLite, keys, sources, configuration and database volumes; Windows exposes Reinstall and doctor checks Docker/Compose/shared networking.
+- Added real Docker tests for runtimes, sources, dependencies, SQL account isolation, persistent data, Compose web/worker/infrastructure, failures/recovery and Windows/WSL live mounts.
+
+## 2026-10-04 — Hosting runtime architecture
+
+- Consolidated user applications into Existing Compose and DevBox Managed; removed native host runtimes, script-installed apps and separate image/Dockerfile drivers.
+- Added a central version catalog, argv start commands, private ID-based resources, generated runtime artifacts outside sources, RW mounts/UID handling and WordPress environment-based config initialization.
+- Integrated durable lifecycle/build/rebuild/recreate/pull/down jobs, progress and streams, two-second filtered logs, actual publication/reconciliation, central domains/ports and validated existing-certificate TLS.
+- Rebuilt onboarding, hosting tabs and list actions. Added .env import, masked secrets and separate public environment storage (migration 017); removed the obsolete image source column (018).
+- Extended service/driver/proxy/security tests and the opt-in Docker suite for all requested runtime/lifecycle/source-preservation scenarios. Updated hosting/architecture/installer documentation.
+
+## 2026-10-04 — Generic runtime profile deployment fix
+
+- Fixed Auto Container deployment failing with `unsupported managed runtime profile "generic_php"` after a successful plan. Matching persisted `generic_*` names normalize to the default profile for all five supported runtimes, preserving the planned image fingerprint.
+- Added specification equivalence, invalid-profile and detection/plan/regeneration regressions. No API, provider contract or migration changes.
+
+## 2026-10-04 — Explicit Auto Container configuration
+
+- Require language/software and version selection in Auto Container onboarding and configuration, with version suggestions and custom exact versions. Preserve the existing runtime/version/module API fields and image generator.
+- Make runtime/module controls editable in application details and expose allowlisted build dependencies for Node.js, Python and Go alongside PHP extensions. Reset version and modules when changing language.
+- Move the existing read-only runtime module catalog route from the retired Projects lifecycle module to the active Runtimes module, retaining Viewer RBAC and the API envelope. No schema or provider contract changes.
+- Verified backend formatting, vet, full tests and build; frontend clean install, lint, TypeScript, 94 tests and production build.
+
+## 2026-10-04 — Two application deployment modes
+
+- Replaced the four-driver user selection with Docker Compose from the application and DevBox Auto Container. Persisted `deployment_mode` in application configuration; no migration was needed, and records without that key retain their existing driver behavior.
+- Compose mode validates a supported Compose file at the application root. Auto mode selects the managed runtime path even when a Compose file or Dockerfile exists. Compose services without a clear HTTP endpoint now wait for service/port configuration.
+- Added WordPress detection without requiring `wp-config.php`, and generated a PHP + Apache profile with a read/write source mount at `/var/www/html`, container port 80 and the MySQLi extension.
+- Runtime images use a dependency-oriented fingerprint, so local source edits are served from the live bind mount without rebuilding. Node and PHP dependency directories remain in their own anonymous volumes. Go now runs from the live source mount.
+- Added frontend mode-choice coverage and backend selector, Compose, WordPress and runtime fingerprint regressions. No database migration was added.
+
+## 2026-10-02 — Installer shell compatibility
+
+- Converted Bash installer scripts to LF line endings so Bash accepts `set -Eeuo pipefail` under WSL/Linux.
+- Added `-h` as an alias for `--help` in `install.sh`.
+- Verified Bash syntax for the shell scripts and both help options.
+
+## 2026-10-02 — Interactive installer menu
+
+- Running `./install.sh` in a terminal presents numbered status, install, reinstall, uninstall, update and repair actions, plus an exit choice. Existing command-line flags remain available.
+- Added coverage for mapping menu selections to installer actions.
+
 ## 2026-10-02 — Writable live application mounts
 
 - Managed Docker containers now request source bind mounts explicitly as read-write. DevBox-generated Compose also binds the source directory live with `read_only: false` and keeps anonymous dependency volumes.
+- Writable PHP, Node.js and Python containers use the source directory's existing non-root UID/GID when available, so host permissions can allow writes without broadening permissions.
 - Files created by an application inside its mounted source tree are reflected on the host. No default `chmod 777` behavior was added.
 - Added regressions for explicit Docker CLI `rw`, paths containing spaces, and generated Compose mount/dependency volume configuration.
+
+## 2026-10-02 — Full failed image build logs
+
+- Preserve the complete Docker build output separately from the bounded job error summary and include it in application deployment logs for failed managed-runtime and Dockerfile builds.
+- Show the output in an expandable block in job details and redact configured secret values before storing it.
+- Added backend and frontend regression coverage for retaining and displaying long build output.
 
 ## 2026-10-02 — Application onboarding radio layout
 
@@ -42,6 +98,13 @@
 - added regression coverage for legacy project IDs, custom Dockerfile empty identifiers, Docker reference grammar and persisted deployment stage on managed-image inspection failure.
 
 ## Unreleased
+
+- Added PHP image-version choices through 8.5 and 8.4 plus custom exact tags. Saved Composer constraints such as `^8.2` are shown as concrete, editable runtime selections.
+
+- Applications expose runtime profile, source/container paths, generated-image fingerprint, network, port and live volume inventory.
+- WordPress can bind an existing managed MySQL/MariaDB database; deployment passes its SecretStore-backed credentials to the container.
+- Migration `016_application_database_bindings.sql` adds app-owned database links without changing legacy Project bindings.
+- WordPress Auto Container images include mysqli, pdo_mysql, gd, zip, intl, opcache and exif by default.
 
 ### Live workspace application status
 

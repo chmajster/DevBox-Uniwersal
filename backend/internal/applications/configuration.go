@@ -3,8 +3,12 @@ package applications
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/containerspec"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/proxy"
 	"math"
 	"net/url"
+	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -19,6 +23,36 @@ func validateConfiguration(config map[string]any) error {
 	}
 	for key, value := range config {
 		switch key {
+		case "start_command":
+			text, ok := value.(string)
+			if !ok {
+				return fmt.Errorf("%w: start_command must be a string", ErrInvalidInput)
+			}
+			if _, err := containerspec.ParseStartCommand(text); err != nil {
+				return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			}
+		case "domain":
+			text, ok := value.(string)
+			if !ok {
+				return fmt.Errorf("%w: domain must be a hostname", ErrInvalidInput)
+			}
+			if text != "" {
+				normalized, err := proxy.NormalizeHostname(text)
+				if err != nil {
+					return fmt.Errorf("%w: invalid domain", ErrInvalidInput)
+				}
+				config[key] = normalized
+			}
+		case "tls_mode":
+			text, ok := value.(string)
+			if !ok || (text != "none" && text != "existing") {
+				return fmt.Errorf("%w: TLS mode must be none or existing; ACME is not configured on this host", ErrInvalidInput)
+			}
+		case "deployment_mode":
+			mode, ok := value.(string)
+			if !ok || (mode != "compose" && mode != "auto" && mode != "dockerfile" && mode != "image") {
+				return fmt.Errorf("%w: deployment_mode must be compose, dockerfile, auto or image", ErrInvalidInput)
+			}
 		case "container_port", "host_port":
 			var number float64
 			switch n := value.(type) {
@@ -47,6 +81,39 @@ func validateConfiguration(config map[string]any) error {
 			v, ok := value.(string)
 			if !ok || (v != "" && (!strings.HasPrefix(v, "/") || strings.HasPrefix(v, "//") || strings.ContainsAny(v, "\r\n"))) {
 				return fmt.Errorf("%w: health_path must be an absolute URL path", ErrInvalidInput)
+			}
+		case "root_dir":
+			v, ok := value.(string)
+			if !ok || strings.ContainsAny(v, "\\\x00\r\n") || path.IsAbs(v) || filepath.IsAbs(v) {
+				return fmt.Errorf("%w: root_dir must be a relative application path", ErrInvalidInput)
+			}
+			for _, part := range strings.Split(v, "/") {
+				if part == ".." {
+					return fmt.Errorf("%w: root_dir must stay inside the source", ErrInvalidInput)
+				}
+			}
+		case "working_directory", "mount_target":
+			v, ok := value.(string)
+			if !ok || (v != "" && (!path.IsAbs(v) || path.Clean(v) != v || v == "/" || strings.ContainsAny(v, "\\\x00\r\n,:"))) {
+				return fmt.Errorf("%w: %s must be an absolute container application directory", ErrInvalidInput, key)
+			}
+		case "document_root":
+			v, ok := value.(string)
+			if !ok || path.IsAbs(v) || strings.ContainsAny(v, "\\\x00\r\n") || v == ".." || strings.HasPrefix(path.Clean(v), "../") {
+				return fmt.Errorf("%w: document_root must stay inside the source directory", ErrInvalidInput)
+			}
+			if v != "" && !regexp.MustCompile(`^[A-Za-z0-9_./-]+$`).MatchString(v) {
+				return fmt.Errorf("%w: invalid document_root", ErrInvalidInput)
+			}
+			for _, part := range strings.Split(strings.ReplaceAll(v, "\\", "/"), "/") {
+				if part == ".." {
+					return fmt.Errorf("%w: root_dir must stay inside the source", ErrInvalidInput)
+				}
+			}
+		case "deployment_driver":
+			v, ok := value.(string)
+			if !ok || (v != "" && v != "managed" && v != "compose") {
+				return fmt.Errorf("%w: invalid deployment_driver", ErrInvalidInput)
 			}
 		case "runtime", "runtime_version", "compose_service", "restart_policy":
 			v, ok := value.(string)
@@ -87,6 +154,22 @@ func validateConfiguration(config map[string]any) error {
 		default:
 			return fmt.Errorf("%w: unsupported configuration field %q", ErrInvalidInput, key)
 		}
+	}
+	if configString(config, "tls_mode") == "existing" && configString(config, "domain") == "" {
+		return fmt.Errorf("%w: SSL requires a domain", ErrInvalidInput)
+	}
+	return nil
+}
+
+func validateAutoContainerSelection(sourceType string, config map[string]any) error {
+	if configString(config, "deployment_mode") != "auto" {
+		return nil
+	}
+	if strings.TrimSpace(configString(config, "runtime")) == "" {
+		return fmt.Errorf("%w: choose a language/software for DevBox Auto Container", ErrInvalidInput)
+	}
+	if strings.TrimSpace(configString(config, "runtime_version")) == "" {
+		return fmt.Errorf("%w: choose a concrete runtime version for DevBox Auto Container", ErrInvalidInput)
 	}
 	return nil
 }

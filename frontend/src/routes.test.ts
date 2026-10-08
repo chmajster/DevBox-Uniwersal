@@ -1,30 +1,8 @@
 import { matchPath } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
-import { PROJECT_TABS, ROUTES } from './routes'
-
-describe('routing contract', () => {
-  it('matches project detail tab routes', () => {
-    const match = matchPath({ path: ROUTES.project, end: true }, '/projects/project-1/logs')
-    expect(match?.params.projectId).toBe('project-1')
-    expect(match?.params.tab).toBe('logs')
-  })
-
-  it('uses /apps as the canonical applications route', () => {
-    expect(ROUTES.applications).toBe('/apps')
-  })
-
-  it('contains every required project details tab', () => {
-    expect(PROJECT_TABS).toEqual([
-      'overview',
-      'configuration',
-      'runtime',
-      'git',
-      'deployments',
-      'logs',
-      'environment',
-      'database',
-      'networking',
-      'backups'
-    ])
-  })
+import { APPLICATION_TABS, ROUTES } from './routes'
+describe('application routing contract', () => {
+ it('matches application details by ID', () => { expect(matchPath(ROUTES.application, '/apps/application-1')?.params.id).toBe('application-1') })
+ it('uses the canonical /apps route', () => { expect(ROUTES.applications).toBe('/apps') })
+ it('exposes every hosting section', () => { expect(APPLICATION_TABS).toEqual(['Overview','Runtime','Environment','Ports','Domains','Logs','Jobs','Docker','Settings','Services']) })
 })

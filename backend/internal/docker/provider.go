@@ -13,8 +13,15 @@ import (
 )
 
 type CLIProvider struct {
+	sharedAppNetwork    string
+	runtimeRoot         string
 	runner              commandRunner
 	legacyComposeRunner commandRunner
+}
+
+func (p *CLIProvider) WithSharedAppNetwork(name string) *CLIProvider {
+	p.sharedAppNetwork = name
+	return p
 }
 
 func NewCLIProvider() *CLIProvider {
@@ -31,6 +38,8 @@ func newCLIProviderWithRunner(r commandRunner) *CLIProvider {
 func newCLIProviderWithComposeRunners(dockerRunner, legacyComposeRunner commandRunner) *CLIProvider {
 	return &CLIProvider{runner: dockerRunner, legacyComposeRunner: legacyComposeRunner}
 }
+
+func (p *CLIProvider) WithRuntimeRoot(root string) *CLIProvider { p.runtimeRoot = root; return p }
 
 var _ providers.DockerProvider = (*CLIProvider)(nil)
 
@@ -161,8 +170,14 @@ func (p *CLIProvider) InspectContainer(ctx context.Context, id string) (Containe
 		return ContainerDetail{}, err
 	}
 	var raw []struct {
-		ID     string `json:"Id"`
-		Name   string `json:"Name"`
+		ID              string `json:"Id"`
+		Name            string `json:"Name"`
+		NetworkSettings struct {
+			Ports map[string][]struct {
+				HostIP   string `json:"HostIp"`
+				HostPort string `json:"HostPort"`
+			} `json:"Ports"`
+		} `json:"NetworkSettings"`
 		Config struct {
 			Image  string            `json:"Image"`
 			Labels map[string]string `json:"Labels"`
@@ -184,7 +199,18 @@ func (p *CLIProvider) InspectContainer(ctx context.Context, id string) (Containe
 		return ContainerDetail{}, fmt.Errorf("decode docker container inspect: %w", err)
 	}
 	item := raw[0]
-	return ContainerDetail{
+	bindings := []providers.ContainerPortBinding{}
+	for target, values := range item.NetworkSettings.Ports {
+		port, _ := strconv.Atoi(strings.TrimSuffix(target, "/tcp"))
+		if !strings.HasSuffix(target, "/tcp") {
+			continue
+		}
+		for _, value := range values {
+			host, _ := strconv.Atoi(value.HostPort)
+			bindings = append(bindings, providers.ContainerPortBinding{HostIP: value.HostIP, HostPort: host, ContainerPort: port})
+		}
+	}
+	return ContainerDetail{PortBindings: bindings,
 		Container: Container{
 			ID: item.ID, Name: strings.TrimPrefix(item.Name, "/"), Image: item.Config.Image, State: item.State.Status, Status: item.State.Status,
 			ComposeProject: item.Config.Labels["com.docker.compose.project"],
@@ -330,7 +356,7 @@ func (p *CLIProvider) Inspect(ctx context.Context, id string) (providers.Contain
 	if err != nil {
 		return providers.ContainerInfo{}, err
 	}
-	return providers.ContainerInfo{ID: item.ID, Name: item.Name, Image: item.Image, State: item.State, Health: item.Health}, nil
+	return providers.ContainerInfo{ID: item.ID, Name: item.Name, Image: item.Image, State: item.State, Health: item.Health, PortBindings: item.PortBindings}, nil
 }
 
 func (p *CLIProvider) Logs(ctx context.Context, id string, tail int, follow bool) (io.ReadCloser, error) {
@@ -366,6 +392,30 @@ func (p *CLIProvider) Exec(ctx context.Context, id string, command ExecCommand) 
 		return "", err
 	}
 	return string(out), nil
+}
+
+func (p *CLIProvider) PHPModules(ctx context.Context, id string) ([]string, error) {
+	if err := validateContainerRef(id); err != nil {
+		return nil, err
+	}
+	out, _, err := p.runner.Run(ctx, "container", "exec", id, "php", "-m")
+	if err != nil {
+		return nil, err
+	}
+	modules := make([]string, 0)
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "[") {
+			continue
+		}
+		name := strings.ToLower(line)
+		if name == "zend opcache" {
+			name = "opcache"
+		}
+		modules = append(modules, name)
+	}
+	sort.Strings(modules)
+	return modules, nil
 }
 
 func execDefinition(command ExecCommand) (string, []string, bool) {

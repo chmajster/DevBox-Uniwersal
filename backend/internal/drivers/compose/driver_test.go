@@ -72,3 +72,14 @@ func TestManifestAliasOverridesOnlyReferencedComposeService(t *testing.T) {
 		}
 	}
 }
+
+func TestComposeWithoutHTTPPortRequiresConfiguration(t *testing.T) {
+	engine := &testEngine{services: []dockerapi.ComposeApplicationService{{Name: "worker", Role: "internal"}}}
+	result, err := New(engine, nil, nil, "").Detect(context.Background(), applications.DetectRequest{WorkDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.RequiresConfiguration || len(result.Endpoints) != 0 || len(result.Warnings) == 0 {
+		t.Fatalf("detection should clearly request a web service/port: %+v", result)
+	}
+}

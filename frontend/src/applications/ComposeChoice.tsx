@@ -1,10 +1,11 @@
 export function ComposeChoice({ value, onChange }: { value: string; onChange(value: string): void }) {
-  const declined = value === 'managed' || value === 'dockerfile'
-  return <div className="acp-notice" role="group" aria-labelledby="compose-choice-title">
-    <h2 id="compose-choice-title">Wykryto Docker Compose. Czy chcesz go użyć?</h2>
-    <p>Wybierz sposób wdrożenia przed zapisaniem aplikacji.</p>
-    <label className="acp-check"><input type="radio" name="compose_choice" checked={value === 'compose'} onChange={() => onChange('compose')} />Tak — użyj Docker Compose</label>
-    <label className="acp-check"><input type="radio" name="compose_choice" checked={declined} onChange={() => onChange('managed')} />Nie — wybierz inny sposób wdrożenia</label>
-    {declined && <label>Sposób wdrożenia<select value={value} onChange={(event) => onChange(event.target.value)}><option value="managed">Generowany kontener runtime</option><option value="dockerfile">Dockerfile</option></select></label>}
+  return <div className="acp-card" role="group" aria-labelledby="compose-choice-title">
+    <h2 id="compose-choice-title">Sposób uruchomienia</h2>
+    {value !== 'image' && <>
+    <label className="acp-check"><input type="radio" name="deployment_mode" value="compose" checked={value === 'compose'} onChange={() => onChange('compose')} />Existing Docker Compose</label>
+    <label className="acp-check"><input type="radio" name="deployment_mode" value="auto" checked={value === 'auto'} onChange={() => onChange('auto')} />DevBox Managed Runtime</label>
+    <label className="acp-check"><input type="radio" name="deployment_mode" value="dockerfile" checked={value === 'dockerfile'} onChange={() => onChange('dockerfile')} />Dockerfile aplikacji</label>
+    </>}
+    {value === 'image' && <label className="acp-check"><input type="radio" name="deployment_mode" value="image" checked onChange={() => onChange('image')} />Obraz OCI</label>}
   </div>
 }

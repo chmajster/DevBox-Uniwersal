@@ -26,6 +26,10 @@ type PlanRequest struct {
 }
 
 type ExecutionRequest struct {
+	Restore              bool
+	ForceBuild           bool
+	Recreate             bool
+	Progress             func(string, int)
 	SensitiveEnvironment map[string]string
 	Application          Application
 	Source               Source
@@ -57,11 +61,12 @@ type ResourceState struct {
 }
 
 type ObservedWorkload struct {
-	Name          string `json:"name"`
-	ResourceID    string `json:"resource_id,omitempty"`
-	Image         string `json:"image,omitempty"`
-	ObservedState string `json:"observed_state"`
-	HealthState   string `json:"health_state"`
+	PortBindings  []providers.ContainerPortBinding `json:"port_bindings,omitempty"`
+	Name          string                           `json:"name"`
+	ResourceID    string                           `json:"resource_id,omitempty"`
+	Image         string                           `json:"image,omitempty"`
+	ObservedState string                           `json:"observed_state"`
+	HealthState   string                           `json:"health_state"`
 }
 
 type DeploymentDriver interface {

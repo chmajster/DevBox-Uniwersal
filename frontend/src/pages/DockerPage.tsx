@@ -38,7 +38,7 @@ export function DockerPage() {
     }
     const [nextContainers, nextProjects, nextImages, nextVolumes, nextNetworks, nextCompose] = await Promise.all([
       request<DockerContainer[]>('/docker/containers'),
-      request<Project[]>('/projects').catch(() => []),
+      request<import('../applications/model').Application[]>('/applications').then((items) => items.map((app) => ({ ...app, local_path: app.source.local_path } as unknown as Project))).catch(() => []),
       request<DockerImage[]>('/docker/images'),
       request<DockerVolume[]>('/docker/volumes'),
       request<DockerNetwork[]>('/docker/networks'),

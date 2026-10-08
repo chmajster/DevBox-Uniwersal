@@ -10,8 +10,14 @@ import (
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
 )
+
+func (s *Service) WithDatabaseResolver(resolver providers.ApplicationDatabaseResolver) *Service {
+	s.databaseResolver = resolver
+	return s
+}
 
 func (s *Service) WithSecretStore(store secrets.SecretStore) *Service {
 	s.secretStore = store

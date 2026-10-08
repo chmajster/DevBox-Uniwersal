@@ -4,7 +4,9 @@ DevBox Universal is a local control plane for installing, running and managing h
 
 ## Application workspace
 
-The active workspace manages Applications, Workloads and Endpoints through four deployment drivers: managed runtime, Dockerfile, OCI image and Docker Compose. See [Application control plane](docs/application-control-plane.md) for source onboarding, configuration, encrypted secrets, lifecycle operations and verification.
+The `/apps` workspace runs applications from a local directory, Git repository, editable starter or OCI image. A five-step wizard selects **existing Compose**, **existing Dockerfile** or **generated Docker**, runtime/version, startup settings and an optional SQL database. Generated PHP uses Apache; Python, Go, Node.js and static sites have dedicated container profiles. Source applications use live RW mounts and retain their dependencies. OCI images run without a source mount.
+
+MySQL, MariaDB and PostgreSQL run as independent shared servers with persistent volumes. Applications use Docker DNS on `devbox-apps`, separate SQL accounts and encrypted credentials. The panel supports lifecycle jobs, HTTP readiness, logs, CPU/RAM, configuration export and per-application SQL tests that authenticate and execute `SELECT 1` inside the actual workload. See [Application hosting](docs/application-control-plane.md) for setup, examples and real Docker tests.
 
 This refactor preserves existing Project records but does not automatically adopt them or migrate project-specific database/domain bindings. New application IDs are independent of legacy Project IDs.
 

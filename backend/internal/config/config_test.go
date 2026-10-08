@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("DEVBOX_SESSION_TTL", "24h")
@@ -10,6 +13,13 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("DEVBOX_MIGRATIONS_DIR", "./migrations")
 	t.Setenv("DEVBOX_BOOTSTRAP_ADMIN_USERNAME", "")
 	t.Setenv("DEVBOX_BOOTSTRAP_ADMIN_PASSWORD", "")
+	previousPort, hadPort := os.LookupEnv("DEVBOX_PORT_RANGE_START")
+	_ = os.Unsetenv("DEVBOX_PORT_RANGE_START")
+	t.Cleanup(func() {
+		if hadPort {
+			_ = os.Setenv("DEVBOX_PORT_RANGE_START", previousPort)
+		}
+	})
 
 	cfg, err := Load()
 	if err != nil {
@@ -17,6 +27,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.HTTPAddr != "127.0.0.1:8787" {
 		t.Fatalf("unexpected HTTPAddr: %s", cfg.HTTPAddr)
+	}
+	if cfg.PortRangeStart != 8080 {
+		t.Fatalf("automatic application ports must start at 8080, got %d", cfg.PortRangeStart)
 	}
 	if cfg.ManagedMySQLAdminPort != 13306 {
 		t.Fatalf("unexpected managed MySQL admin port: %d", cfg.ManagedMySQLAdminPort)

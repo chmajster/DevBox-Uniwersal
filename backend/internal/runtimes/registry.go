@@ -17,14 +17,12 @@ func NewRegistry() *MemoryRegistry {
 
 func NewDefaultRegistry() *MemoryRegistry {
 	registry := NewRegistry()
-	processes := NewLocalProcessManager()
-	runner := ExecRunner{}
 	defaults := []Runtime{
 		NewStaticRuntime(),
-		NewPHPRuntime(processes, runner),
-		NewPythonRuntime(processes, runner),
-		NewGoRuntime(processes, runner),
-		NewNodeRuntime(processes, runner),
+		NewPHPRuntime(),
+		NewPythonRuntime(),
+		NewGoRuntime(),
+		NewNodeRuntime(),
 	}
 	for _, runtime := range defaults {
 		if err := registry.Register(runtime); err != nil {

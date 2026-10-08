@@ -5,12 +5,10 @@ import type {
   DockerContainer,
   DockerStatus,
   HealthHistoryEntry,
-  Job,
   LogEntry,
   MonitoringSnapshot,
   MySQLStatus,
   PortResource,
-  Project,
   ProxyStatus,
   ServiceProbe,
   SystemBackup,
@@ -31,29 +29,6 @@ function asCollection<T>(payload: CollectionPayload<T> | null | undefined): T[] 
   if (!payload) return []
   if (Array.isArray(payload)) return payload
   return payload.items ?? payload.projects ?? payload.containers ?? payload.databases ?? payload.ports ?? []
-}
-
-export async function listProjects(includeArchived = false) {
-  const suffix = includeArchived ? '?archived=true' : ''
-  return asCollection(await request<CollectionPayload<Project>>('/projects' + suffix))
-}
-
-export function getProject(projectID: string) {
-  return request<Project>(`/projects/${encodeURIComponent(projectID)}`)
-}
-
-export function runProjectAction(projectID: string, action: 'start' | 'stop' | 'restart' | 'deploy') {
-  return request<Job>(`/projects/${encodeURIComponent(projectID)}/actions/${action}`, {
-    method: 'POST',
-    body: JSON.stringify({})
-  })
-}
-
-export function getProjectTool(projectID: string, tool: 'open' | 'terminal') {
-  return request<{ url: string }>(`/projects/${encodeURIComponent(projectID)}/${tool}`, {
-    method: tool === 'terminal' ? 'POST' : 'GET',
-    body: tool === 'terminal' ? JSON.stringify({}) : undefined
-  })
 }
 
 export async function listDockerContainers() {

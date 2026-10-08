@@ -1,6 +1,6 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
-    [ValidateSet('Install', 'Status', 'Repair', 'Update', 'Uninstall')]
+    [ValidateSet('Install', 'Status', 'Repair', 'Update', 'Reinstall', 'Uninstall')]
     [string]$Mode = 'Install',
     [string]$Distribution,
     [switch]$InstallUbuntu,
@@ -117,6 +117,7 @@ function Get-LinuxInstallerMode {
         'Status' { return '--status' }
         'Repair' { return '--repair' }
         'Update' { return '--update' }
+        'Reinstall' { return '--reinstall' }
         'Uninstall' { return '--uninstall' }
         default { throw "Nieobsługiwany tryb: $RequestedMode" }
     }
@@ -154,7 +155,7 @@ function Invoke-Main {
 
     Write-Status -Level 'INFO' -Message '[3/8] Sprawdzanie systemd'
     if (-not (Test-WSLSystemd -Name $selected)) {
-        if ($Mode -in @('Install', 'Repair', 'Update')) {
+        if ($Mode -in @('Install', 'Repair', 'Update', 'Reinstall')) {
             Enable-WSLSystemd -Name $selected
         }
     }
@@ -190,7 +191,7 @@ function Invoke-Main {
     }
 
     Write-Status -Level 'INFO' -Message '[6/8] Weryfikacja usługi'
-    if ($Mode -in @('Install', 'Repair', 'Update', 'Status')) {
+    if ($Mode -in @('Install', 'Repair', 'Update', 'Reinstall', 'Status')) {
         & wsl.exe -d $selected -- sh -lc 'systemctl is-active devbox.service >/dev/null 2>&1' 2>$null
         if ($LASTEXITCODE -eq 0) {
             Write-Status -Level ' OK ' -Message 'devbox.service active.'
@@ -205,7 +206,7 @@ function Invoke-Main {
 
     Write-Status -Level 'INFO' -Message '[7/8] Sprawdzanie GUI/API'
     $gui = 'http://localhost:8787/'
-    if ($Mode -in @('Install', 'Repair', 'Update', 'Status')) {
+    if ($Mode -in @('Install', 'Repair', 'Update', 'Reinstall', 'Status')) {
         try {
             $response = Invoke-WebRequest -UseBasicParsing -Uri ($gui + 'api/v1/health') -TimeoutSec 3
             if ($response.StatusCode -eq 200) {

@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -83,14 +84,32 @@ func (p *CLIProvider) BuildManaged(ctx context.Context, spec containerspec.Deplo
 		args = append(args, "--label", key+"="+value)
 	}
 	args = append(args, contextDir)
-	_, _, err := p.runner.Run(ctx, args...)
+	stdout, stderr, err := p.runner.Run(ctx, args...)
 	if err != nil {
-		return fmt.Errorf("build managed image: %w", err)
+		output := strings.TrimSpace(string(stderr))
+		if stdoutText := strings.TrimSpace(string(stdout)); stdoutText != "" {
+			if output != "" {
+				output += "\n"
+			}
+			output += stdoutText
+		}
+		return &BuildError{Cause: err, Output: output}
 	}
 	return nil
 }
 
-func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspec.DeploymentSpec, additional []providers.PublishedPort) error {
+// BuildError keeps the complete Docker output for the deployment job log while
+// Error() retains the bounded summary used in the job's top-level error field.
+type BuildError struct {
+	Cause  error
+	Output string
+}
+
+func (e *BuildError) Error() string          { return fmt.Sprintf("build managed image: %v", e.Cause) }
+func (e *BuildError) Unwrap() error          { return e.Cause }
+func (e *BuildError) BuildLogOutput() string { return e.Output }
+
+func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspec.DeploymentSpec, additional []providers.PublishedPort) (resultErr error) {
 	if err := p.Available(ctx); err != nil {
 		return err
 	}
@@ -108,30 +127,84 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 		return err
 	}
 	backupName := spec.ContainerName + "-previous"
+	if applicationID := spec.Labels["io.devbox.application.id"]; applicationID != "" {
+		for _, name := range []string{spec.ContainerName, backupName} {
+			if err := p.VerifyApplicationContainer(ctx, name, applicationID); err != nil && !errors.Is(err, ErrNotFound) {
+				return err
+			}
+		}
+	}
 	_, _, _ = p.runner.Run(ctx, "container", "rm", "-f", "-v", backupName)
 
 	hadPrevious := false
+	previousPort, previousHealthPath := spec.HostPort, "/"
 	if _, _, err := p.runner.Run(ctx, "container", "rename", spec.ContainerName, backupName); err == nil {
 		hadPrevious = true
+		if previous, err := p.InspectContainer(ctx, backupName); err == nil {
+			for _, binding := range previous.PortBindings {
+				if binding.HostPort > 0 {
+					previousPort = binding.HostPort
+					break
+				}
+			}
+			if path := previous.Labels["io.devbox.health_path"]; path != "" {
+				previousHealthPath = path
+			}
+		}
 		_, _, _ = p.runner.Run(ctx, "container", "stop", "--time", "10", backupName)
 	} else if !errors.Is(err, ErrNotFound) {
 		return fmt.Errorf("prepare managed container replacement: %w", err)
 	}
 
+	var restoreErr error
+	defer func() {
+		if restoreErr != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("restore previous application: %w", restoreErr))
+		}
+	}()
 	rollback := func() {
-		_, _, _ = p.runner.Run(context.Background(), "container", "rm", "-f", "-v", spec.ContainerName)
+		restoreCtx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+		defer cancel()
+		_, _, _ = p.runner.Run(restoreCtx, "container", "rm", "-f", "-v", spec.ContainerName)
 		if hadPrevious {
-			_, _, _ = p.runner.Run(context.Background(), "container", "rename", backupName, spec.ContainerName)
-			_, _, _ = p.runner.Run(context.Background(), "container", "start", spec.ContainerName)
+			if _, _, err := p.runner.Run(restoreCtx, "container", "rename", backupName, spec.ContainerName); err != nil {
+				restoreErr = err
+				return
+			}
+			if _, _, err := p.runner.Run(restoreCtx, "container", "start", spec.ContainerName); err != nil {
+				restoreErr = err
+				return
+			}
+			restoreErr = p.waitManagedHealthy(restoreCtx, spec.ContainerName, previousPort, previousHealthPath)
 		}
 	}
 
 	args := []string{
 		"container", "create",
 		"--name", spec.ContainerName,
-		"--restart", "unless-stopped",
+		"--restart", restartPolicy(spec.RestartPolicy),
 		"--security-opt", "no-new-privileges:true",
 		"--cap-drop", "ALL",
+	}
+	if spec.HealthPath != "" {
+		args = append(args, "--label", "io.devbox.health_path="+spec.HealthPath)
+	}
+	if spec.WorkingDirectory != "" {
+		args = append(args, "--workdir", spec.WorkingDirectory)
+	}
+	for _, capability := range spec.Capabilities {
+		if capability != "NET_BIND_SERVICE" && capability != "SETUID" && capability != "SETGID" && capability != "CHOWN" {
+			rollback()
+			return fmt.Errorf("%w: invalid capability", ErrInvalidInput)
+		}
+		args = append(args, "--cap-add", capability)
+	}
+	if spec.User != "" {
+		if err := validateManagedUser(spec.User); err != nil {
+			rollback()
+			return err
+		}
+		args = append(args, "--user", spec.User)
 	}
 	for i, network := range spec.Networks {
 		if err := validateNetworkRef(network); err != nil {
@@ -201,6 +274,7 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 		args = append(args, "--env-file", envFile)
 	}
 	args = append(args, spec.Image)
+	args = append(args, spec.Command...)
 	if _, _, err := p.runner.Run(ctx, args...); err != nil {
 		rollback()
 		return fmt.Errorf("create managed container: %w", err)
@@ -224,6 +298,19 @@ func (p *CLIProvider) ReplaceManagedPorts(ctx context.Context, spec containerspe
 	}
 	if hadPrevious {
 		_, _, _ = p.runner.Run(ctx, "container", "rm", "-f", "-v", backupName)
+	}
+	return nil
+}
+
+func validateManagedUser(value string) error {
+	parts := strings.Split(value, ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("%w: invalid managed container user", ErrInvalidInput)
+	}
+	for _, part := range parts {
+		if _, err := strconv.ParseUint(part, 10, 32); err != nil {
+			return fmt.Errorf("%w: invalid managed container user", ErrInvalidInput)
+		}
 	}
 	return nil
 }
@@ -270,7 +357,9 @@ func managedMountArgs(spec containerspec.DeploymentSpec) ([]string, error) {
 		if !info.IsDir() {
 			return nil, fmt.Errorf("%w: bind mount source must be a directory", ErrInvalidInput)
 		}
-		args = append(args, "--mount", "type=bind,source="+source+",target="+target+",rw")
+		// Bind mounts are writable by default. Docker's --mount syntax accepts
+		// readonly=true for read-only mounts, but not a standalone rw field.
+		args = append(args, "--mount", "type=bind,source="+source+",target="+target+",readonly=false")
 	}
 
 	volumes := append([]string(nil), spec.AnonymousVolumes...)
@@ -305,7 +394,7 @@ func (p *CLIProvider) RemoveManaged(ctx context.Context, containerName string) e
 }
 
 func (p *CLIProvider) waitManagedHealthy(ctx context.Context, containerName string, hostPort int, paths ...string) error {
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(120 * time.Second)
 	client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	path := "/"
 	if len(paths) > 0 && paths[0] != "" {
@@ -316,6 +405,7 @@ func (p *CLIProvider) waitManagedHealthy(ctx context.Context, containerName stri
 	}
 	target := "http://127.0.0.1:" + strconv.Itoa(hostPort) + path
 	var lastErr error
+	firstReady := time.Time{}
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -324,27 +414,50 @@ func (p *CLIProvider) waitManagedHealthy(ctx context.Context, containerName stri
 			if lastErr == nil {
 				lastErr = errors.New("container did not become healthy")
 			}
-			return fmt.Errorf("managed container healthcheck failed: %w", lastErr)
+			stdout, stderr, _ := p.runner.Run(ctx, "container", "logs", "--tail", "30", containerName)
+			return fmt.Errorf("managed container healthcheck failed: %w; container logs: %s %s", lastErr, stdout, stderr)
 		}
-		out, _, err := p.runner.Run(ctx, "container", "inspect", "--format", "{{.State.Running}}", containerName)
-		if err == nil && strings.TrimSpace(string(out)) == "true" {
+		out, _, err := p.runner.Run(ctx, "container", "inspect", "--format", "{{json .State}}", containerName)
+		var state struct {
+			Running  bool
+			Status   string
+			ExitCode int
+			Error    string
+			Health   *struct{ Status string }
+		}
+		if err == nil {
+			err = json.Unmarshal(out, &state)
+		}
+		if err == nil && (state.Status == "exited" || state.Status == "dead" || state.Status == "restarting" || (state.Health != nil && state.Health.Status == "unhealthy")) {
+			stdout, stderr, _ := p.runner.Run(ctx, "container", "logs", "--tail", "50", containerName)
+			return fmt.Errorf("application process is not ready (state=%s, exit=%d): %s\n%s\n%s", state.Status, state.ExitCode, state.Error, stdout, stderr)
+		}
+		if err == nil && state.Running && (state.Health == nil || state.Health.Status == "healthy") {
 			req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 			if reqErr == nil {
 				resp, httpErr := client.Do(req)
 				if httpErr == nil {
 					_ = resp.Body.Close()
 					if resp.StatusCode < 500 {
-						return nil
+						if firstReady.IsZero() {
+							firstReady = time.Now()
+						} else if time.Since(firstReady) >= time.Second {
+							return nil
+						}
+					} else {
+						firstReady = time.Time{}
 					}
 					lastErr = fmt.Errorf("HTTP status %d", resp.StatusCode)
 				} else {
+					firstReady = time.Time{}
 					lastErr = httpErr
 				}
 			}
 		} else if err != nil {
 			lastErr = err
 		} else {
-			lastErr = errors.New("container is not running")
+			firstReady = time.Time{}
+			lastErr = errors.New("container is not running or its declared healthcheck is not ready")
 		}
 		timer := time.NewTimer(500 * time.Millisecond)
 		select {

@@ -125,7 +125,9 @@ usage() {
 DevBox Universal installer
 
 Usage:
+  ./install.sh
   ./install.sh --install
+  ./install.sh --install-current
   curl -fsSL https://raw.githubusercontent.com/chmajster/DevBox-Uniwersal/main/install.sh | sudo bash -s -- --install
   ./install.sh --status
   ./install.sh --repair
@@ -133,9 +135,12 @@ Usage:
   ./install.sh --reinstall
   curl -fsSL https://raw.githubusercontent.com/chmajster/DevBox-Uniwersal/main/install.sh | sudo bash -s -- --reinstall
   ./install.sh --uninstall [--purge]
-  ./install.sh --help
+  ./install.sh --help | -h
 
 Options:
+  Running ./install.sh without arguments in a terminal opens a numbered menu:
+  1) status  2) install  3) reinstall  4) uninstall  5) update  6) repair  7) install current checkout
+
   --reinstall
             Completely remove the current DevBox installation and all DevBox
             data, then perform a clean installation from scratch.
@@ -143,6 +148,9 @@ Options:
 
   --purge   With --uninstall, also remove /var/lib/devbox and the devbox user.
             Data is preserved by default.
+
+  --install-current
+            Install from the source tree containing this script without cloning.
 USAGE
 }
 
@@ -151,9 +159,9 @@ parse_args() {
   PURGE=0
   while (($#)); do
     case "$1" in
-      --install|--status|--repair|--update|--reinstall|--uninstall|--help)
+      --install|--install-current|--status|--repair|--update|--reinstall|--uninstall|--help|-h)
         [[ -z "$MODE" ]] || return 2
-        MODE="$1"
+        if [[ "$1" == "-h" ]]; then MODE="--help"; else MODE="$1"; fi
         ;;
       --purge)
         PURGE=1
@@ -168,6 +176,38 @@ parse_args() {
   if (( PURGE == 1 )) && [[ "$MODE" != "--uninstall" ]]; then
     return 2
   fi
+}
+
+select_interactive_mode() {
+  local choice
+  while true; do
+    printf '\nDevBox Universal — wybierz akcję:\n'
+    printf '  1) Status\n'
+    printf '  2) Instalacja\n'
+    printf '  3) Reinstalacja\n'
+    printf '  4) Odinstalowanie\n'
+    printf '  5) Aktualizacja\n'
+    printf '  6) Naprawa instalacji\n'
+    printf '  7) Instalacja z bieżącego katalogu (bez klonowania)\n'
+    printf '  0) Wyjście\n'
+    printf 'Wybór [0-7]: '
+    if ! IFS= read -r choice; then
+      emit WARN "Nie udało się odczytać wyboru."
+      return 1
+    fi
+
+    case "$choice" in
+      1) MODE=--status; return 0 ;;
+      2) MODE=--install; return 0 ;;
+      3) MODE=--reinstall; return 0 ;;
+      4) MODE=--uninstall; return 0 ;;
+      5) MODE=--update; return 0 ;;
+      6) MODE=--repair; return 0 ;;
+      7) MODE=--install-current; return 0 ;;
+      0) return 1 ;;
+      *) emit WARN "Nieprawidłowy wybór: $choice" ;;
+    esac
+  done
 }
 
 require_root() {
@@ -549,7 +589,8 @@ install_packages() {
   mysql_client_pkg="$(select_mysql_client_package || true)"
   [[ -n "$mysql_client_pkg" ]] || fail "Nie znaleziono klienta MySQL/MariaDB (default-mysql-client, mysql-client, mariadb-client)."
 
-  local packages=(ca-certificates curl sudo build-essential git nginx "$mysql_client_pkg" php-cli composer python3 python3-pip golang-go nodejs npm)
+  # Go and Node build DevBox itself; user runtimes/dependencies run only in Docker.
+  local packages=(ca-certificates curl sudo build-essential git nginx "$mysql_client_pkg" golang-go nodejs npm)
   if ! mysql_managed_mode; then
     packages+=("$(select_mysql_server_package)")
   fi
@@ -580,6 +621,12 @@ ensure_source_tree() {
   # reason already-fixed backend code could remain active after an update.
   # The dedicated updater sets DEVBOX_USE_CURRENT_SOURCE=1 after it has cloned
   # the requested ref into a fresh temporary directory.
+  if [[ "$MODE" == "--install-current" ]]; then
+    (( has_local_source == 1 )) || fail "Bieżący katalog nie zawiera źródeł DevBox (brak backend/go.mod lub frontend/package-lock.json): $ROOT_DIR"
+    emit " OK " "Używam źródeł z bieżącego katalogu: $ROOT_DIR (bez klonowania)."
+    return 0
+  fi
+
   if (( has_local_source == 1 )) && { [[ "$MODE" != "--update" ]] || [[ "${DEVBOX_USE_CURRENT_SOURCE:-0}" == "1" ]]; }; then
     return 0
   fi
@@ -615,8 +662,9 @@ build_backend() {
   [[ -f "$ROOT_DIR/backend/go.mod" ]] || fail "Brak backend/go.mod. Uruchom installer z katalogu repozytorium."
   command -v go >/dev/null 2>&1 || fail "Brak Go po instalacji pakietów."
   mkdir -p "$ROOT_DIR/.build"
-  (cd "$ROOT_DIR/backend" && go build -trimpath -o "$ROOT_DIR/.build/devbox" ./cmd/devbox)
-  (cd "$ROOT_DIR/backend" && go build -trimpath -o "$ROOT_DIR/.build/devbox-helper" ./cmd/devbox-helper)
+  (cd "$ROOT_DIR/backend" && go build -buildvcs=false -trimpath -o "$ROOT_DIR/.build/devbox" ./cmd/devbox)
+  (cd "$ROOT_DIR/backend" && go build -buildvcs=false -trimpath -o "$ROOT_DIR/.build/devbox-helper" ./cmd/devbox-helper)
+  (cd "$ROOT_DIR/backend" && CGO_ENABLED=0 go build -buildvcs=false -trimpath -o "$ROOT_DIR/.build/devbox-dbcheck" ./cmd/devbox-dbcheck)
   emit " OK " "Backend i privileged helper zbudowane."
 }
 
@@ -644,6 +692,7 @@ install_artifacts() {
   ensure_user_and_dirs
   install -m 0755 -o root -g root "$ROOT_DIR/.build/devbox" "$LIBEXEC_DIR/devbox"
   install -m 0755 -o root -g root "$ROOT_DIR/.build/devbox-helper" "$LIBEXEC_DIR/devbox-helper"
+  install -m 0755 -o root -g root "$ROOT_DIR/.build/devbox-dbcheck" "$LIBEXEC_DIR/devbox-dbcheck"
   [[ -f "$ROOT_DIR/scripts/devbox-updater.sh" ]] || fail "Brak scripts/devbox-updater.sh."
   install -m 0755 -o root -g root "$ROOT_DIR/scripts/devbox-updater.sh" "$UPDATER_SCRIPT"
   ln -sfn "$LIBEXEC_DIR/devbox" "$BIN_LINK"
@@ -686,25 +735,6 @@ devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper validate-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper reload-nginx
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper start-update
 devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package docker-compose
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-fpm
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-curl
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-mbstring
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-xml
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-zip
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-gd
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-intl
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-mysql
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-pgsql
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-sqlite3
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-bcmath
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-soap
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-ldap
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-gmp
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-imagick
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-redis
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-memcached
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-opcache
-devbox ALL=(root) NOPASSWD: $LIBEXEC_DIR/devbox-helper install-package php-ext-xdebug
 EOF_SUDOERS
   chmod 0440 "$sudoers_tmp"
   if ! visudo -cf "$sudoers_tmp" >>"$LOG_FILE" 2>&1; then
@@ -877,6 +907,9 @@ run_doctor() {
 
 run_install() {
   require_root
+  if [[ "$MODE" == "--install-current" ]]; then
+    [[ -f "$ROOT_DIR/backend/go.mod" && -f "$ROOT_DIR/frontend/package-lock.json" ]] || fail "Bieżący katalog nie zawiera pełnych źródeł DevBox: $ROOT_DIR"
+  fi
   stage 1 "Detekcja systemu i WSL"
   ensure_supported_linux
   local pretty wsl
@@ -917,11 +950,11 @@ run_install() {
 
 run_reinstall() {
   require_root
-  emit WARN "Tryb --reinstall usunie cala konfiguracje i wszystkie dane DevBox przed ponowna instalacja."
-  PURGE=1
+  PURGE=0
+  emit INFO "Reinstalacja programu zachowuje konfiguracje, SecretStore, zrodla i wolumeny baz danych."
   run_uninstall
   PURGE=0
-  emit INFO "Czyszczenie zakonczone. Rozpoczynam czysta instalacje DevBox Universal."
+  emit INFO "Rozpoczynam ponowna instalacje programu z zachowaniem danych."
   run_install
 }
 
@@ -967,7 +1000,7 @@ run_uninstall() {
   fi
   emit " OK " "Unit file usunięty."
   stage 3 "Usunięcie binarek"
-  rm -f "$BIN_LINK" "$LIBEXEC_DIR/devbox" "$LIBEXEC_DIR/devbox-helper"
+  rm -f "$BIN_LINK" "$LIBEXEC_DIR/devbox" "$LIBEXEC_DIR/devbox-helper" "$LIBEXEC_DIR/devbox-dbcheck"
   rmdir "$LIBEXEC_DIR" 2>/dev/null || true
   emit " OK " "Binarki usunięte."
   stage 4 "Usunięcie aplikacji"
@@ -1001,12 +1034,18 @@ run_uninstall() {
 main() {
   init_log
   trap cleanup_source_tree EXIT
+  if (($# == 0)) && [[ -t 0 && -t 1 ]]; then
+    if ! select_interactive_mode; then
+      return 0
+    fi
+    set -- "$MODE"
+  fi
   if ! parse_args "$@"; then
     usage >&2
     exit 2
   fi
   case "$MODE" in
-    --install|--repair|--update) run_install ;;
+    --install|--install-current|--repair|--update) run_install ;;
     --reinstall) run_reinstall ;;
     --status) run_status ;;
     --uninstall) run_uninstall ;;
