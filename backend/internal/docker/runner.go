@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
 	"io"
 	"os"
 	"os/exec"
@@ -39,6 +40,17 @@ func (r execRunner) run(ctx context.Context, environment map[string]string, args
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	// Introspection may contain plaintext environment values. Only lifecycle
+	// output is forwarded to a job, whose sink masks resolved secret values.
+	loggable := lifecycleOutputAllowed(args)
+	if loggable {
+		outSink := &jobOutputWriter{ctx: ctx, stream: "stdout"}
+		errSink := &jobOutputWriter{ctx: ctx, stream: "stderr"}
+		cmd.Stdout = io.MultiWriter(&stdout, outSink)
+		cmd.Stderr = io.MultiWriter(&stderr, errSink)
+		defer outSink.Flush()
+		defer errSink.Flush()
+	}
 	err := cmd.Run()
 	if err != nil {
 		return stdout.Bytes(), stderr.Bytes(), commandError(r.binary, stderr.String(), err)
@@ -164,6 +176,63 @@ func dockerResourceNotFound(message string) bool {
 		if strings.Contains(message, resource) {
 			return true
 		}
+	}
+	return false
+}
+
+type jobOutputWriter struct {
+	ctx     context.Context
+	stream  string
+	pending string
+}
+
+func (w *jobOutputWriter) Write(data []byte) (int, error) {
+	w.pending += string(data)
+	for {
+		line, rest, ok := strings.Cut(w.pending, "\n")
+		if !ok {
+			break
+		}
+		jobs.EmitOutput(w.ctx, w.stream, line)
+		w.pending = rest
+	}
+	if len(w.pending) > 16384 {
+		jobs.EmitOutput(w.ctx, w.stream, w.pending)
+		w.pending = ""
+	}
+	return len(data), nil
+}
+
+func (w *jobOutputWriter) Flush() {
+	if w.pending != "" {
+		jobs.EmitOutput(w.ctx, w.stream, w.pending)
+		w.pending = ""
+	}
+}
+
+func lifecycleOutputAllowed(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	if args[0] == "build" {
+		return true
+	}
+	if args[0] == "buildx" {
+		return len(args) > 1 && args[1] == "build"
+	}
+	if args[0] != "compose" {
+		return false
+	}
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		if arg == "-p" || arg == "-f" || arg == "--project-name" || arg == "--env-file" || arg == "--project-directory" {
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		return arg == "up" || arg == "build" || arg == "pull"
 	}
 	return false
 }

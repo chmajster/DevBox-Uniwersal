@@ -34,6 +34,8 @@ func WithContainerPort(spec DeploymentSpec, port int) (DeploymentSpec, error) {
 		"--port "+old, "--port "+next,
 		"PORT="+old, "PORT="+next,
 		"EXPOSE "+old+"\n", "EXPOSE "+next+"\n",
+		"Listen "+old, "Listen "+next,
+		"*:"+old, "*:"+next,
 	).Replace(spec.Dockerfile)
 	if spec.Runtime == "static" {
 		// EXPOSE alone does not change nginx's listener. The base image runs as

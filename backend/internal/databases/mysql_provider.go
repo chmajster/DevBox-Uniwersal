@@ -23,6 +23,9 @@ var (
 )
 
 type MySQLConfig struct {
+	DockerContainer         string
+	DockerBinary            string
+	ClientBinary            string
 	Host                    string
 	Port                    int
 	AdminUser               string
@@ -83,7 +86,18 @@ func NewMySQLProvider(cfg MySQLConfig, secretStore secrets.SecretStore) *MySQLPr
 	if cfg.DumpBinary == "" {
 		cfg.DumpBinary = "mysqldump"
 	}
-	return &MySQLProvider{cfg: cfg, secrets: secretStore, exec: &cliMySQLExecutor{cfg: cfg, secrets: secretStore}}
+	provider := &MySQLProvider{cfg: cfg, secrets: secretStore, exec: &cliMySQLExecutor{cfg: cfg, secrets: secretStore}}
+	if cfg.DockerContainer != "" {
+		if cfg.DockerBinary == "" {
+			cfg.DockerBinary = "docker"
+		}
+		if cfg.ClientBinary == "" {
+			cfg.ClientBinary = "mysql"
+		}
+		provider.cfg = cfg
+		provider.exec = &dockerSQLExecutor{cfg: cfg, secrets: secretStore}
+	}
+	return provider
 }
 
 func (p *MySQLProvider) AdminEndpoint() providers.DatabaseEndpoint {

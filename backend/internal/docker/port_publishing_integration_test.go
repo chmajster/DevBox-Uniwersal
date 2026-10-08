@@ -134,6 +134,11 @@ func TestManagedPHPWritableBindMountDockerIntegration(t *testing.T) {
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if os.Getuid() == 0 {
+		if err := os.Chown(dir, 10001, 10001); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := os.WriteFile(filepath.Join(dir, "host.txt"), []byte("host-write"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -146,8 +151,8 @@ func TestManagedPHPWritableBindMountDockerIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if spec.User == "" {
-		t.Skip("source directory has no non-root writable owner to map into the container")
+	if spec.Environment["APACHE_RUN_USER"] != "devbox-source" {
+		t.Fatal("Apache workers must map to the non-root source owner")
 	}
 	t.Setenv("DEVBOX_COMPOSE_PORTS_DIR", t.TempDir())
 	t.Cleanup(func() {

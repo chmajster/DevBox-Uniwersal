@@ -63,6 +63,17 @@ func (h *lifecycleJobHandler) remove(ctx context.Context, app Application, sourc
 		}
 	}
 	if options.DeleteConfiguration {
+		if err := h.service.removeRoutes(ctx, app.ID); err != nil {
+			return nil, err
+		}
+		if h.service.runtimeCleanup != nil {
+			if err := h.service.runtimeCleanup.RemoveRuntimeFiles(app.ID); err != nil {
+				return nil, err
+			}
+		}
+		if err := h.service.repo.ReleaseApplicationPorts(ctx, app.ID); err != nil {
+			return nil, err
+		}
 		names, err := h.service.SecretNames(ctx, app.ID)
 		if err != nil {
 			return nil, err

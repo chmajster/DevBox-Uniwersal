@@ -36,7 +36,7 @@ func (c *Client) Clone(ctx context.Context, source providers.GitSource) error {
 		}
 		args = append(args, "--branch", source.Reference, "--single-branch")
 	}
-	args = append(args, source.RepositoryURL, source.Destination)
+	args = append(args, "--", source.RepositoryURL, source.Destination)
 	_, err := c.run(ctx, "", source.CredentialRef, args...)
 	return err
 }
@@ -75,7 +75,7 @@ func (c *Client) run(ctx context.Context, workDir string, credentialRef *string,
 			absolute = resolved
 		}
 		commandDir = absolute
-		commandArgs = append([]string{"-c", "safe.directory=*"}, commandArgs...)
+		commandArgs = append([]string{"-c", "safe.directory=" + absolute}, commandArgs...)
 	}
 	cmd := exec.CommandContext(ctx, "git", commandArgs...)
 	if commandDir != "" {

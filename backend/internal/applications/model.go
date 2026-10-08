@@ -6,10 +6,10 @@ import (
 )
 
 const (
-	SourceGit         = "git"
-	SourceLocal       = "local"
-	SourceDockerImage = "docker_image"
-	SourceEmpty       = "empty"
+	SourceGit   = "git"
+	SourceLocal = "local"
+	SourceEmpty = "empty"
+	SourceImage = "docker_image"
 
 	DesiredRunning = "running"
 	DesiredStopped = "stopped"
@@ -70,10 +70,10 @@ type Application struct {
 
 type Source struct {
 	ApplicationID   string  `json:"application_id"`
+	DockerImage     string  `json:"docker_image,omitempty"`
 	RepositoryURL   string  `json:"repository_url,omitempty"`
 	Reference       string  `json:"reference,omitempty"`
 	LocalPath       string  `json:"local_path,omitempty"`
-	DockerImage     string  `json:"docker_image,omitempty"`
 	CredentialID    *string `json:"credential_id,omitempty"`
 	CurrentRevision string  `json:"current_revision,omitempty"`
 }
@@ -119,6 +119,7 @@ type Endpoint struct {
 	Public        bool      `json:"public"`
 	Primary       bool      `json:"primary"`
 	TLSMode       string    `json:"tls_mode"`
+	RouteActive   bool      `json:"route_active"`
 	HealthPath    string    `json:"health_path,omitempty"`
 	Status        string    `json:"status"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -217,9 +218,13 @@ type EndpointDetection struct {
 
 type DetectionResult struct {
 	Driver                string              `json:"driver"`
+	Profile               string              `json:"profile,omitempty"`
 	Confidence            string              `json:"confidence"`
 	Runtime               string              `json:"runtime,omitempty"`
 	Version               string              `json:"version,omitempty"`
+	StartCommand          string              `json:"start_command,omitempty"`
+	ComposeFound          bool                `json:"compose_found"`
+	DockerfileFound       bool                `json:"dockerfile_found"`
 	Services              []ServiceDetection  `json:"services,omitempty"`
 	Endpoints             []EndpointDetection `json:"endpoints,omitempty"`
 	Warnings              []string            `json:"warnings,omitempty"`
@@ -249,10 +254,10 @@ type CreateInput struct {
 }
 
 type SourceInput struct {
+	DockerImage   string  `json:"docker_image,omitempty"`
 	RepositoryURL string  `json:"repository_url,omitempty"`
 	Reference     string  `json:"reference,omitempty"`
 	LocalPath     string  `json:"local_path,omitempty"`
-	DockerImage   string  `json:"docker_image,omitempty"`
 	CredentialID  *string `json:"credential_id,omitempty"`
 }
 
@@ -264,3 +269,6 @@ type UpdateInput struct {
 	DesiredState  *string         `json:"desired_state,omitempty"`
 	AutoStart     *bool           `json:"auto_start,omitempty"`
 }
+
+// Docker identity is independent of user names and survives renames.
+func DockerProjectName(id string) string { return "devbox-" + id }

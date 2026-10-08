@@ -81,3 +81,17 @@ func (m *Module) jobAction(w http.ResponseWriter, r *http.Request) {
 	}
 	writeApplicationData(w, http.StatusAccepted, result)
 }
+
+func (m *Module) applicationJobs(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := m.service.repo.Get(r.Context(), id); err != nil {
+		m.fail(w, err)
+		return
+	}
+	items, err := core.NewSQLiteJobs(m.service.repo.db).ListApplication(r.Context(), id)
+	if err != nil {
+		m.fail(w, err)
+		return
+	}
+	writeApplicationData(w, http.StatusOK, items)
+}

@@ -43,7 +43,7 @@ func TestManagedMountArgsAddsLiveBindAndDependencyVolume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "--mount|type=bind,source=" + dir + ",target=/app|--mount|type=volume,target=/app/vendor"
+	want := "--mount|type=bind,source=" + dir + ",target=/app,readonly=false|--mount|type=volume,target=/app/vendor"
 	if got := strings.Join(args, "|"); got != want {
 		t.Fatalf("managedMountArgs() = %s, want %s", got, want)
 	}

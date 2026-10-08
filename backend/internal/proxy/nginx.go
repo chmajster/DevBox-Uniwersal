@@ -26,6 +26,7 @@ func (execCommandRunner) Run(ctx context.Context, name string, args ...string) (
 }
 
 type NginxOptions struct {
+	CertificateDir string
 	Binary         string
 	SitesAvailable string
 	SitesEnabled   string
@@ -104,7 +105,16 @@ func (n *NginxProvider) renderWithListen(route providers.ProxyRoute, listenDirec
 		return "", err
 	}
 	if route.TLS {
-		return "", fmt.Errorf("%w: TLS proxy sites require certificate integration and are not enabled by this module", ErrInvalidInput)
+		cert, key, err := n.certificatePaths(hostname)
+		if err != nil {
+			return "", fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		if strings.Contains(listenDirectives, "listen 80;") {
+			listenDirectives = "    listen 443 ssl;\n    listen [::]:443 ssl;"
+		} else {
+			listenDirectives = strings.TrimSuffix(listenDirectives, ";") + " ssl;"
+		}
+		listenDirectives += fmt.Sprintf("\n    ssl_certificate %q;\n    ssl_certificate_key %q;\n    ssl_protocols TLSv1.2 TLSv1.3;", cert, key)
 	}
 	if strings.TrimSpace(listenDirectives) == "" {
 		return "", fmt.Errorf("%w: nginx listen directive is required", ErrInvalidInput)

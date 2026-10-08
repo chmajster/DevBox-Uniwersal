@@ -25,6 +25,11 @@ import (
 const (
 	JobDetect    = "application.detect"
 	JobDeploy    = "application.deploy"
+	JobBuild     = "application.build"
+	JobRebuild   = "application.rebuild"
+	JobRecreate  = "application.recreate"
+	JobPull      = "application.pull"
+	JobDown      = "application.down"
 	JobStart     = "application.start"
 	JobStop      = "application.stop"
 	JobRestart   = "application.restart"
@@ -53,18 +58,21 @@ type CredentialResolver interface {
 }
 
 type Service struct {
-	secretStore  secrets.SecretStore
-	mutationMu   sync.Mutex
-	repo         *Repository
-	drivers      *DriverRegistry
-	selector     *Selector
-	jobs         jobs.JobRunner
-	git          GitSourceProvider
-	logs         ContainerLogProvider
-	phpModules   PHPModuleInspector
-	credentials  CredentialResolver
-	projectsRoot string
-	allowedRoots []string
+	routing          providers.ReverseProxyProvider
+	runtimeCleanup   RuntimeCleanup
+	secretStore      secrets.SecretStore
+	mutationMu       sync.Mutex
+	repo             *Repository
+	drivers          *DriverRegistry
+	selector         *Selector
+	jobs             jobs.JobRunner
+	git              GitSourceProvider
+	logs             ContainerLogProvider
+	phpModules       PHPModuleInspector
+	credentials      CredentialResolver
+	databaseResolver providers.ApplicationDatabaseResolver
+	projectsRoot     string
+	allowedRoots     []string
 }
 
 func NewService(repo *Repository, drivers *DriverRegistry, runner jobs.JobRunner, git GitSourceProvider, logs ContainerLogProvider, credentials CredentialResolver, projectsRoot string, allowedRoots ...string) *Service {
@@ -78,6 +86,7 @@ func NewService(repo *Repository, drivers *DriverRegistry, runner jobs.JobRunner
 }
 
 type Summary struct {
+	HostingFields
 	ActiveOperation *ActiveOperation `json:"active_operation,omitempty"`
 	Application
 	Source          Source      `json:"source"`
@@ -89,6 +98,7 @@ type Summary struct {
 }
 
 type Detail struct {
+	HostingFields
 	ActiveOperation *ActiveOperation `json:"active_operation,omitempty"`
 	Application
 	Source      Source       `json:"source"`
@@ -113,6 +123,7 @@ type DeleteOptions struct {
 }
 
 type ApplicationLog struct {
+	Stream   string `json:"stream,omitempty"`
 	Workload string `json:"workload"`
 	Line     string `json:"line"`
 }
@@ -171,7 +182,7 @@ func (s *Service) summary(ctx context.Context, app Application) (Summary, error)
 	if err != nil {
 		return Summary{}, err
 	}
-	return Summary{ActiveOperation: operation, Application: app, Source: source, Runtime: runtime, WorkloadCount: len(workloads), PrimaryEndpoint: primary, LastDeployment: last, Status: AggregateStatus(app.DesiredState, workloads)}, nil
+	return Summary{HostingFields: s.hostingFields(app, source, runtime, endpoints), ActiveOperation: operation, Application: app, Source: source, Runtime: runtime, WorkloadCount: len(workloads), PrimaryEndpoint: primary, LastDeployment: last, Status: visibleStatus(app, workloads, operation)}, nil
 }
 
 func (s *Service) Get(ctx context.Context, id string) (Detail, error) {
@@ -203,7 +214,7 @@ func (s *Service) Get(ctx context.Context, id string) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
-	return Detail{ActiveOperation: operation, Application: app, Source: source, Runtime: runtime, Workloads: workloads, Endpoints: endpoints, Deployments: deployments, Status: AggregateStatus(app.DesiredState, workloads)}, nil
+	return Detail{HostingFields: s.hostingFields(app, source, runtime, endpoints), ActiveOperation: operation, Application: app, Source: source, Runtime: runtime, Workloads: workloads, Endpoints: endpoints, Deployments: deployments, Status: visibleStatus(app, workloads, operation)}, nil
 }
 
 func (s *Service) PHPModuleInventory(ctx context.Context, id string) (PHPModuleInventory, error) {
@@ -247,11 +258,14 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 	}
 	sourceType := strings.ToLower(strings.TrimSpace(input.SourceType))
 	switch sourceType {
-	case SourceGit, SourceLocal, SourceDockerImage, SourceEmpty:
+	case SourceGit, SourceLocal, SourceEmpty, SourceImage:
 	default:
 		return Detail{}, fmt.Errorf("%w: unsupported source_type", ErrInvalidInput)
 	}
 	if err := validateConfiguration(input.Configuration); err != nil {
+		return Detail{}, err
+	}
+	if err := validateAutoContainerSelection(sourceType, input.Configuration); err != nil {
 		return Detail{}, err
 	}
 	if input.Driver != "" {
@@ -277,8 +291,13 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 	if desired != DesiredRunning && desired != DesiredStopped {
 		return Detail{}, fmt.Errorf("%w: desired_state", ErrInvalidInput)
 	}
-	source := Source{ApplicationID: id, RepositoryURL: strings.TrimSpace(input.Source.RepositoryURL), Reference: strings.TrimSpace(input.Source.Reference), LocalPath: strings.TrimSpace(input.Source.LocalPath), DockerImage: strings.TrimSpace(input.Source.DockerImage), CredentialID: input.Source.CredentialID}
+	source := Source{ApplicationID: id, RepositoryURL: strings.TrimSpace(input.Source.RepositoryURL), Reference: strings.TrimSpace(input.Source.Reference), LocalPath: strings.TrimSpace(input.Source.LocalPath), CredentialID: input.Source.CredentialID}
 	switch sourceType {
+	case SourceImage:
+		source.DockerImage = strings.TrimSpace(input.Source.DockerImage)
+		if source.DockerImage == "" || strings.HasPrefix(source.DockerImage, "-") || strings.ContainsAny(source.DockerImage, " \t\r\n\x00") {
+			return Detail{}, fmt.Errorf("%w: docker_image is required and must be a valid OCI reference", ErrInvalidInput)
+		}
 	case SourceGit:
 		if source.RepositoryURL == "" {
 			return Detail{}, fmt.Errorf("%w: repository_url is required", ErrInvalidInput)
@@ -292,10 +311,6 @@ func (s *Service) Create(ctx context.Context, input CreateInput, actor *string) 
 			return Detail{}, err
 		}
 		source.LocalPath = path
-	case SourceDockerImage:
-		if source.DockerImage == "" {
-			return Detail{}, fmt.Errorf("%w: docker_image is required", ErrInvalidInput)
-		}
 	}
 	configJSON, _ := json.Marshal(input.Configuration)
 	app := Application{ID: id, Name: name, Slug: slug, Description: strings.TrimSpace(input.Description), SourceType: sourceType, SourceConfig: configJSON, Driver: strings.TrimSpace(input.Driver), DesiredState: desired, ObservedState: ObservedUnknown, HealthState: HealthUnknown, AutoStart: input.AutoStart, CreatedBy: actor, CreatedAt: now, UpdatedAt: now}
@@ -354,6 +369,9 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Det
 		if err := validateConfiguration(*input.Configuration); err != nil {
 			return Detail{}, err
 		}
+		if err := validateAutoContainerSelection(app.SourceType, *input.Configuration); err != nil {
+			return Detail{}, err
+		}
 		raw, err := json.Marshal(*input.Configuration)
 		if err != nil {
 			return Detail{}, fmt.Errorf("%w: configuration", ErrInvalidInput)
@@ -361,11 +379,15 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Det
 		app.SourceConfig = raw
 	}
 	if requestedDriver != nil {
+		// The legacy API's explicit driver field remains authoritative for
+		// compatibility. A new UI-selected mode is stored only when callers use
+		// configuration.deployment_mode instead.
+		config := decodeConfiguration(app.SourceConfig)
+		delete(config, "deployment_mode")
 		workloads, err := s.repo.Workloads(ctx, id)
 		if err != nil {
 			return Detail{}, err
 		}
-		config := decodeConfiguration(app.SourceConfig)
 		if len(workloads) > 0 {
 			// Keep the currently deployed driver active until the replacement
 			// deployment succeeds. This lets lifecycle actions and reconciliation
@@ -403,13 +425,16 @@ func (s *Service) Detect(ctx context.Context, input CreateInput, actor *string) 
 	}
 
 	input.SourceType = strings.ToLower(strings.TrimSpace(input.SourceType))
-	if input.SourceType != SourceGit && input.SourceType != SourceLocal && input.SourceType != SourceEmpty && input.SourceType != SourceDockerImage {
+	if input.SourceType != SourceGit && input.SourceType != SourceLocal && input.SourceType != SourceEmpty && input.SourceType != SourceImage {
 		return DetectResponse{}, fmt.Errorf("%w: source_type", ErrInvalidInput)
 	}
 	if err := validateConfiguration(input.Configuration); err != nil {
 		return DetectResponse{}, err
 	}
-	source := Source{RepositoryURL: strings.TrimSpace(input.Source.RepositoryURL), Reference: strings.TrimSpace(input.Source.Reference), LocalPath: strings.TrimSpace(input.Source.LocalPath), DockerImage: strings.TrimSpace(input.Source.DockerImage), CredentialID: input.Source.CredentialID}
+	if err := validateAutoContainerSelection(input.SourceType, input.Configuration); err != nil {
+		return DetectResponse{}, err
+	}
+	source := Source{RepositoryURL: strings.TrimSpace(input.Source.RepositoryURL), Reference: strings.TrimSpace(input.Source.Reference), LocalPath: strings.TrimSpace(input.Source.LocalPath), CredentialID: input.Source.CredentialID}
 	if input.SourceType == SourceGit {
 		if source.RepositoryURL == "" {
 			return DetectResponse{}, fmt.Errorf("%w: repository_url is required", ErrInvalidInput)
@@ -428,6 +453,7 @@ func (s *Service) Detect(ctx context.Context, input CreateInput, actor *string) 
 		return DetectResponse{Job: &job}, nil
 	}
 	workDir := ""
+	source.DockerImage = strings.TrimSpace(input.Source.DockerImage)
 	if input.SourceType == SourceLocal {
 		var err error
 		workDir, err = s.validateLocalPath(source.LocalPath)
@@ -443,6 +469,9 @@ func (s *Service) Detect(ctx context.Context, input CreateInput, actor *string) 
 }
 
 func (s *Service) EnqueueDeploy(ctx context.Context, id string, actor *string) (Deployment, domain.Job, error) {
+	return s.EnqueueDeploymentAction(ctx, id, actor, JobDeploy)
+}
+func (s *Service) EnqueueDeploymentAction(ctx context.Context, id string, actor *string, jobType string) (Deployment, domain.Job, error) {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
 	if s.jobs == nil {
@@ -459,7 +488,7 @@ func (s *Service) EnqueueDeploy(ctx context.Context, id string, actor *string) (
 	if err := s.repo.CreateDeployment(ctx, deployment); err != nil {
 		return Deployment{}, domain.Job{}, err
 	}
-	job, err := s.jobs.Enqueue(ctx, jobs.Request{Type: JobDeploy, ApplicationID: &id, RequestedBy: actor, Payload: map[string]any{"application_id": id, "deployment_id": deployment.ID}})
+	job, err := s.jobs.Enqueue(ctx, jobs.Request{Type: jobType, ApplicationID: &id, RequestedBy: actor, Payload: map[string]any{"application_id": id, "deployment_id": deployment.ID}})
 	if err != nil {
 		_ = s.repo.FinishDeployment(context.Background(), deployment.ID, "failed", StageFailed, err.Error())
 		return Deployment{}, domain.Job{}, err
@@ -495,6 +524,10 @@ func (s *Service) EnqueueLifecycle(ctx context.Context, id, action string, actor
 		jobType = JobReconcile
 	case "remove":
 		jobType = JobRemove
+	case "pull":
+		jobType = JobPull
+	case "down":
+		jobType = JobDown
 	default:
 		return domain.Job{}, fmt.Errorf("%w: unsupported action", ErrInvalidInput)
 	}
@@ -555,12 +588,39 @@ func (s *Service) Logs(ctx context.Context, id string, tail int, workloadFilter 
 	if err != nil {
 		return nil, err
 	}
+	if s.databaseResolver != nil {
+		_, password, found, resolveErr := s.databaseResolver.ResolveBoundApplicationDatabase(ctx, id)
+		if resolveErr != nil {
+			return nil, errors.New("could not resolve log redaction values")
+		}
+		if found {
+			secretValues["WORDPRESS_DB_PASSWORD"] = string(password)
+		}
+		for i := range password {
+			password[i] = 0
+		}
+	}
 	out := []ApplicationLog{}
 	for _, workload := range workloads {
 		if workloadFilter != "" && workload.Name != workloadFilter {
 			continue
 		}
 		if workload.DriverResourceID == "" {
+			continue
+		}
+		if provider, ok := s.logs.(interface {
+			LogStreams(context.Context, string, int) ([]providers.ContainerLogLine, error)
+		}); ok {
+			entries, err := provider.LogStreams(ctx, workload.DriverResourceID, tail)
+			if err != nil {
+				if driverMissing(err) {
+					continue
+				}
+				return nil, err
+			}
+			for _, entry := range entries {
+				out = append(out, ApplicationLog{Workload: workload.Name, Stream: entry.Stream, Line: redactLogLine(redactSecretValues(entry.Line, secretValues))})
+			}
 			continue
 		}
 		reader, err := s.logs.Logs(ctx, workload.DriverResourceID, tail, false)
@@ -584,6 +644,8 @@ func (s *Service) Logs(ctx context.Context, id string, tail int, workloadFilter 
 
 func (s *Service) workDir(app Application, source Source) string {
 	switch app.SourceType {
+	case SourceImage:
+		return ""
 	case SourceLocal:
 		return source.LocalPath
 	case SourceGit, SourceEmpty:
@@ -596,7 +658,7 @@ func (s *Service) workDir(app Application, source Source) string {
 func (s *Service) prepareSource(ctx context.Context, app Application, source Source) (string, string, error) {
 	workDir := s.workDir(app, source)
 	switch app.SourceType {
-	case SourceDockerImage:
+	case SourceImage:
 		return "", "", nil
 	case SourceLocal:
 		resolved, err := s.validateLocalPath(workDir)
@@ -605,7 +667,10 @@ func (s *Service) prepareSource(ctx context.Context, app Application, source Sou
 		}
 		return resolved, s.revision(ctx, resolved), nil
 	case SourceEmpty:
-		if err := os.MkdirAll(workDir, 0o750); err != nil {
+		if err := os.MkdirAll(workDir, 0o755); err != nil {
+			return "", "", err
+		}
+		if err := scaffoldEmptySource(workDir, decodeConfiguration(app.SourceConfig)); err != nil {
 			return "", "", err
 		}
 		return workDir, "", nil
@@ -663,6 +728,14 @@ func (s *Service) validateLocalPath(path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("%w: local path is required", ErrInvalidInput)
 	}
+	if !filepath.IsAbs(path) || strings.ContainsAny(path, "\x00\r\n") {
+		return "", fmt.Errorf("%w: source path must be absolute", ErrInvalidInput)
+	}
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if part == ".." || part == ".ssh" || part == ".aws" || part == ".codex" {
+			return "", fmt.Errorf("%w: source path contains a forbidden segment", ErrInvalidInput)
+		}
+	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
@@ -671,9 +744,22 @@ func (s *Service) validateLocalPath(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: local path is unavailable: %v", ErrInvalidInput, err)
 	}
+	for _, part := range strings.Split(filepath.ToSlash(resolved), "/") {
+		if part == ".ssh" || part == ".aws" || part == ".codex" {
+			return "", fmt.Errorf("%w: resolved source path contains a forbidden segment", ErrInvalidInput)
+		}
+	}
 	info, err := os.Stat(resolved)
 	if err != nil || !info.IsDir() {
 		return "", fmt.Errorf("%w: local path must be a directory", ErrInvalidInput)
+	}
+	if resolved == "/" || resolved == "/home" || resolved == "/mnt" || resolved == "/var" || resolved == "/usr" {
+		return "", fmt.Errorf("%w: source path must select an application directory", ErrInvalidInput)
+	}
+	for _, forbidden := range []string{"/etc", "/proc", "/sys", "/dev", "/run", "/var/lib/docker", "/root"} {
+		if pathWithin(resolved, forbidden) {
+			return "", fmt.Errorf("%w: source path is a system directory", ErrInvalidInput)
+		}
 	}
 	for _, root := range s.allowedRoots {
 		if pathWithin(resolved, root) {
@@ -794,4 +880,21 @@ func (s *Service) gitCredentialRef(ctx context.Context, id *string) (*string, er
 	}
 	ref := kind + "|" + scope + "|" + name
 	return &ref, nil
+}
+
+func visibleStatus(app Application, workloads []Workload, operation *ActiveOperation) string {
+	if operation != nil && operation.Status == "running" {
+		switch operation.Type {
+		case JobDeploy, JobBuild, JobRebuild, JobRecreate:
+			return "building"
+		case JobRestart:
+			return "restarting"
+		case JobStart:
+			return "starting"
+		}
+	}
+	if app.ObservedState == ObservedFailed && AggregateStatus(app.DesiredState, workloads) == ObservedUnknown {
+		return "failed"
+	}
+	return AggregateStatus(app.DesiredState, workloads)
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -51,11 +52,21 @@ func (p *PostgreSQLProvider) Endpoint() (string, int) {
 	return p.cfg.ApplicationHost, p.cfg.ApplicationPort
 }
 
+func (p *PostgreSQLProvider) ApplicationEndpoint() providers.DatabaseEndpoint {
+	return providers.DatabaseEndpoint{Host: p.cfg.ApplicationHost, Port: p.cfg.ApplicationPort}
+}
+
 func (p *PostgreSQLProvider) Validate(ctx context.Context) error {
 	return p.Health(ctx)
 }
 
 func (p *PostgreSQLProvider) Health(ctx context.Context) error {
+	// The entrypoint's temporary initialization server accepts Unix sockets,
+	// but has no TCP listener. Wait for the final server used by applications.
+	ready := exec.CommandContext(ctx, p.cfg.DockerBinary, "exec", p.cfg.Container, "pg_isready", "-h", "127.0.0.1", "-U", p.cfg.AdminUser, "-d", "postgres")
+	if err := ready.Run(); err != nil {
+		return fmt.Errorf("PostgreSQL TCP server is not ready: %w", err)
+	}
 	out, err := p.query(ctx, "postgres", "SELECT 1;")
 	if err != nil {
 		return fmt.Errorf("postgresql health check failed: %w", err)
@@ -107,6 +118,12 @@ func (p *PostgreSQLProvider) CreateDatabase(ctx context.Context, spec providers.
 	}
 	if err := p.execSQL(ctx, "postgres", "CREATE DATABASE "+name+" ENCODING "+quoteLiteral(encoding)+";"); err != nil {
 		return fmt.Errorf("create PostgreSQL database: %w", err)
+	}
+	if err := p.execSQL(ctx, "postgres", "REVOKE ALL ON DATABASE "+name+" FROM PUBLIC;"); err != nil {
+		return err
+	}
+	if err := p.execSQL(ctx, spec.Name, "REVOKE CREATE ON SCHEMA public FROM PUBLIC;"); err != nil {
+		return err
 	}
 	return nil
 }
@@ -346,15 +363,18 @@ func (p *PostgreSQLProvider) runPSQL(ctx context.Context, database, statement st
 	args := []string{
 		"exec", p.cfg.Container,
 		"psql", "-X", "-U", p.cfg.AdminUser, "-d", database,
-		"-v", "ON_ERROR_STOP=1", "-A", "-t", "-q", "-c", statement,
+		"-v", "ON_ERROR_STOP=1", "-A", "-t", "-q",
 	}
+	args = append([]string{"exec", "-i"}, args[1:]...)
 	cmd := exec.CommandContext(ctx, p.cfg.DockerBinary, args...)
+	cmd.Stdin = strings.NewReader(statement)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return "", postgreSQLCommandError("psql", stderr.String(), err)
+		masked := regexp.MustCompile(`(?i)PASSWORD\s+'(?:''|[^'])*'`).ReplaceAllString(stderr.String(), "PASSWORD '[REDACTED]'")
+		return "", postgreSQLCommandError("psql", masked, err)
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }

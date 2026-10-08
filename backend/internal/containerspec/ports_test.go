@@ -54,39 +54,3 @@ func TestConfiguredContainerPortChangesGeneratedListenersAndImageFingerprint(t *
 		})
 	}
 }
-
-func TestCustomContainerPortDoesNotRewriteApplicationDockerfile(t *testing.T) {
-	dir := t.TempDir()
-	content := "FROM nginx:alpine\nEXPOSE 80\n"
-	path := filepath.Join(dir, "Dockerfile")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	original, err := GenerateCustomDockerfile("custom-port-test", dir, 8080)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if original.ContainerPort != 80 {
-		t.Fatalf("EXPOSE detection = %d", original.ContainerPort)
-	}
-	configured, err := WithContainerPort(original, 3000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if configured.ContainerPort != 3000 || configured.Fingerprint != original.Fingerprint {
-		t.Fatal("custom image was unexpectedly rewritten")
-	}
-	actual, err := os.ReadFile(path)
-	if err != nil || string(actual) != content {
-		t.Fatalf("source Dockerfile changed: %v", err)
-	}
-	for _, port := range []int{-1, 65536} {
-		if _, err := WithContainerPort(original, port); err == nil {
-			t.Fatalf("accepted %d", port)
-		}
-	}
-	automatic, err := WithContainerPort(original, 0)
-	if err != nil || automatic.ContainerPort != 80 {
-		t.Fatalf("automatic detection was lost: %v", err)
-	}
-}

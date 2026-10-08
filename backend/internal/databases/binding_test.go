@@ -114,6 +114,49 @@ func TestManagedDatabaseResolverUsesContainerDNS(t *testing.T) {
 	}
 }
 
+func TestApplicationDatabaseBindingResolvesManagedCredentials(t *testing.T) {
+	ctx := context.Background()
+	service, repo, store, _ := databaseBindingTestService(t)
+	now := time.Now().UTC()
+	if _, err := repo.db.ExecContext(ctx, `INSERT INTO applications(id,name,slug,source_type,created_at,updated_at) VALUES(?,?,?,?,?,?)`, "app-1", "WordPress", "wordpress", "local", now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	database := Database{ID: "database-application", Provider: "local-mysql", Engine: "mysql", Name: "wordpress_db", Status: "ready", CreatedAt: now, UpdatedAt: now}
+	if err := repo.CreateDatabase(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+	user := DatabaseUser{ID: "wordpress-user", DatabaseID: database.ID, Username: "wordpress", SecretRef: "wordpress-user", Privileges: defaultPrivileges(), CreatedAt: now, UpdatedAt: now}
+	if err := store.Put(ctx, "database-user", user.SecretRef, []byte("database-password")); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := service.BindApplicationDatabase(ctx, "app-1", database.ID, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding.DatabaseName != database.Name || binding.Username != user.Username {
+		t.Fatalf("unexpected binding metadata: %+v", binding)
+	}
+	connection, password, found, err := service.ResolveBoundApplicationDatabase(ctx, "app-1")
+	if err != nil || !found {
+		t.Fatalf("resolve binding found=%v err=%v", found, err)
+	}
+	if connection.Host != DefaultManagedMySQLContainer || connection.Database != database.Name || connection.Username != user.Username || string(password) != "database-password" {
+		t.Fatalf("unexpected resolved connection: %+v", connection)
+	}
+	for i := range password {
+		password[i] = 0
+	}
+	if err := service.UnbindApplicationDatabase(ctx, "app-1", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := service.GetApplicationDatabaseBinding(ctx, "app-1"); err != nil || found {
+		t.Fatalf("binding should be absent, found=%v err=%v", found, err)
+	}
+}
+
 func TestApplicationDatabaseHostNormalizesAcceptedLoopbacks(t *testing.T) {
 	for _, host := range []string{
 		"localhost",

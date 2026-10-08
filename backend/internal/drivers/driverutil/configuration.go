@@ -28,6 +28,8 @@ func ConfigureEndpoint(endpoint applications.PlannedEndpoint, config map[string]
 	if path := ConfigString(config, "health_path"); path != "" {
 		endpoint.HealthPath = path
 	}
+	endpoint.Domain = ConfigString(config, "domain")
+	endpoint.TLSMode = ConfigString(config, "tls_mode")
 	return endpoint
 }
 
@@ -42,7 +44,7 @@ func RollbackPort(ports applications.PortAllocator, request applications.Executi
 func ApplyListener(spec containerspec.DeploymentSpec, endpoint applications.PlannedEndpoint, managed bool) (containerspec.DeploymentSpec, error) {
 	if managed {
 		if endpoint.Protocol != "http" {
-			return spec, fmt.Errorf("%w: managed runtimes use HTTP; use an image or Compose for TCP/TLS", applications.ErrInvalidInput)
+			return spec, fmt.Errorf("%w: managed runtimes use HTTP; use Existing Compose for TCP/TLS", applications.ErrInvalidInput)
 		}
 		return containerspec.WithContainerPort(spec, endpoint.ContainerPort)
 	}

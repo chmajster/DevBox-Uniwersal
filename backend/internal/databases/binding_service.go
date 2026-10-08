@@ -60,6 +60,123 @@ func (s *Service) GetDatabaseBinding(ctx context.Context, projectID string) (Dat
 	return s.decorateBinding(ctx, item)
 }
 
+func (s *Service) GetApplicationDatabaseBinding(ctx context.Context, applicationID string) (providers.ApplicationDatabaseBinding, bool, error) {
+	item, err := s.repo.ApplicationDatabaseBinding(ctx, applicationID)
+	if errors.Is(err, ErrBindingNotFound) {
+		return providers.ApplicationDatabaseBinding{ApplicationID: applicationID}, false, nil
+	}
+	return item, err == nil, err
+}
+
+func (s *Service) BindApplicationDatabase(ctx context.Context, applicationID, databaseID string, actor, remote *string) (providers.ApplicationDatabaseBinding, error) {
+	return s.BindApplicationDatabaseUser(ctx, applicationID, databaseID, "", actor, remote)
+}
+
+func (s *Service) BindApplicationDatabaseUser(ctx context.Context, applicationID, databaseID, userID string, actor, remote *string) (providers.ApplicationDatabaseBinding, error) {
+	if err := s.applicationIdle(ctx, applicationID); err != nil {
+		return providers.ApplicationDatabaseBinding{}, err
+	}
+	database, err := s.repo.DatabaseByID(ctx, strings.TrimSpace(databaseID))
+	if err != nil {
+		return providers.ApplicationDatabaseBinding{}, err
+	}
+	engineName := normalizeDatabaseEngineName(database.Engine)
+	if engineName != "mysql" && engineName != "mariadb" && engineName != "postgresql" {
+		return providers.ApplicationDatabaseBinding{}, fmt.Errorf("unsupported application database engine")
+	}
+	if database.Status != "ready" {
+		return providers.ApplicationDatabaseBinding{}, errors.New("selected database is not ready")
+	}
+	users, err := s.repo.UsersByDatabase(ctx, database.ID)
+	if err != nil {
+		return providers.ApplicationDatabaseBinding{}, err
+	}
+	if len(users) == 0 {
+		return providers.ApplicationDatabaseBinding{}, errors.New("database has no application user with stored credentials")
+	}
+	selected := users[0]
+	if userID != "" {
+		found := false
+		for _, user := range users {
+			if user.ID == userID {
+				selected, found = user, true
+			}
+		}
+		if !found {
+			return providers.ApplicationDatabaseBinding{}, errors.New("selected user has no grant on this database")
+		}
+	}
+	if selected.SecretRef == "" || selected.Username == "root" || selected.Username == "postgres" {
+		return providers.ApplicationDatabaseBinding{}, errors.New("choose a non-administrator application account with stored credentials")
+	}
+	if err := s.repo.UpsertApplicationDatabaseBinding(ctx, applicationID, database.ID, selected.ID); err != nil {
+		return providers.ApplicationDatabaseBinding{}, err
+	}
+	s.recordAudit(ctx, actor, "database_binding.update", "application", &applicationID, map[string]any{"mode": "managed", "database_id": database.ID}, remote)
+	return s.repo.ApplicationDatabaseBinding(ctx, applicationID)
+}
+
+func (s *Service) UnbindApplicationDatabase(ctx context.Context, applicationID string, actor, remote *string) error {
+	if err := s.applicationIdle(ctx, applicationID); err != nil {
+		return err
+	}
+	if err := s.repo.DeleteApplicationDatabaseBinding(ctx, applicationID); err != nil {
+		return err
+	}
+	s.recordAudit(ctx, actor, "database_binding.delete", "application", &applicationID, map[string]any{"mode": "none"}, remote)
+	return nil
+}
+
+func (s *Service) ResolveBoundApplicationDatabase(ctx context.Context, applicationID string) (providers.DatabaseConnection, []byte, bool, error) {
+	binding, err := s.repo.ApplicationDatabaseBinding(ctx, applicationID)
+	if errors.Is(err, ErrBindingNotFound) {
+		return providers.DatabaseConnection{}, nil, false, nil
+	}
+	if err != nil {
+		return providers.DatabaseConnection{}, nil, false, err
+	}
+	database, err := s.repo.DatabaseByID(ctx, binding.DatabaseID)
+	if err != nil {
+		return providers.DatabaseConnection{}, nil, false, err
+	}
+	user, err := s.repo.UserByID(ctx, binding.UserID)
+	if err != nil {
+		return providers.DatabaseConnection{}, nil, false, err
+	}
+	if user.SecretRef == "" {
+		return providers.DatabaseConnection{}, nil, false, errors.New("database credentials are unavailable")
+	}
+	dbEngine, err := s.engineFor(database.Engine)
+	if err != nil {
+		return providers.DatabaseConnection{}, nil, false, err
+	}
+	endpointEngine, ok := dbEngine.(interface {
+		ApplicationEndpoint() providers.DatabaseEndpoint
+	})
+	if !ok {
+		return providers.DatabaseConnection{}, nil, false, errors.New("cannot resolve application database endpoint")
+	}
+	endpoint := endpointEngine.ApplicationEndpoint()
+	if endpoint.Host == "" || endpoint.Port == 0 {
+		return providers.DatabaseConnection{}, nil, false, errors.New("cannot resolve application database endpoint")
+	}
+	password, err := s.secrets.Get(ctx, "database-user", user.SecretRef)
+	if err != nil {
+		return providers.DatabaseConnection{}, nil, false, errors.New("database credentials are unavailable")
+	}
+	granted := false
+	for _, grant := range user.Databases {
+		if grant.DatabaseID == database.ID {
+			granted = true
+		}
+	}
+	if !granted {
+		clear(password)
+		return providers.DatabaseConnection{}, nil, false, errors.New("application database access has been revoked")
+	}
+	return providers.DatabaseConnection{Engine: database.Engine, Host: endpoint.Host, Port: endpoint.Port, Database: database.Name, Username: user.Username, Mode: DatabaseModeManaged}, password, true, nil
+}
+
 func (s *Service) UpdateDatabaseBinding(ctx context.Context, projectID string, input DatabaseBindingInput, actor, remote *string) (DatabaseBinding, error) {
 	if s.secrets == nil {
 		return DatabaseBinding{}, ErrSecretsUnavailable

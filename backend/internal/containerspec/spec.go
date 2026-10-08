@@ -1,7 +1,6 @@
 package containerspec
 
 import (
-	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -50,6 +49,11 @@ type DeploymentSpec struct {
 	Labels               map[string]string
 	Fingerprint          string
 	ReadOnly             bool
+	Command              []string
+	RuntimeDir           string
+	Capabilities         []string
+	WorkingDirectory     string
+	RestartPolicy        string
 }
 
 type moduleDef struct {
@@ -67,9 +71,10 @@ var catalogs = map[string][]moduleDef{
 		{option: ModuleOption{Name: "pdo", Label: "PDO", Description: "PHP Data Objects; dostępne w bazowym obrazie PHP."}},
 		{option: ModuleOption{Name: "pdo_mysql", Label: "PDO MySQL", Description: "Sterownik PDO dla MySQL/MariaDB."}, phpExtension: "pdo_mysql"},
 		{option: ModuleOption{Name: "mysqli", Label: "MySQLi", Description: "Rozszerzenie MySQL Improved."}, phpExtension: "mysqli"},
+		{option: ModuleOption{Name: "pdo_pgsql", Label: "PDO PostgreSQL", Description: "Sterownik PDO PostgreSQL."}, aptPackages: []string{"libpq-dev"}, phpExtension: "pdo_pgsql"},
 		{option: ModuleOption{Name: "pgsql", Label: "PostgreSQL", Description: "Sterowniki PostgreSQL oraz PDO PostgreSQL."}, aptPackages: []string{"libpq-dev"}, phpExtension: "pgsql pdo_pgsql"},
 		{option: ModuleOption{Name: "sqlite3", Label: "SQLite3", Description: "SQLite3 oraz PDO SQLite; dostępne w bazowym obrazie PHP."}},
-		{option: ModuleOption{Name: "mbstring", Label: "mbstring", Description: "Obsługa wielobajtowych ciągów znaków; dostępna w bazowym obrazie PHP."}},
+		{option: ModuleOption{Name: "mbstring", Label: "mbstring", Description: "Obsługa wielobajtowych ciągów znaków."}, aptPackages: []string{"libonig-dev"}, phpExtension: "mbstring"},
 		{option: ModuleOption{Name: "json", Label: "JSON", Description: "Obsługa JSON; dostępna w bazowym obrazie PHP."}},
 		{option: ModuleOption{Name: "session", Label: "Session", Description: "Obsługa sesji PHP; dostępna w bazowym obrazie PHP."}},
 		{option: ModuleOption{Name: "ctype", Label: "Ctype", Description: "Sprawdzanie typów znaków; dostępne w bazowym obrazie PHP."}},
@@ -128,20 +133,12 @@ func NormalizeRuntime(value string) string {
 }
 
 func DefaultVersion(runtime string) string {
-	switch NormalizeRuntime(runtime) {
-	case "php":
-		return "8.3"
-	case "node":
-		return "22"
-	case "python":
-		return "3.12"
-	case "go":
-		return "1.23"
-	case "static":
-		return "1.27"
-	default:
-		return ""
+	for _, item := range RuntimeCatalog() {
+		if item.Name == NormalizeRuntime(runtime) {
+			return item.DefaultVersion
+		}
 	}
+	return ""
 }
 
 func Catalog(runtime string) ([]ModuleOption, error) {
@@ -165,7 +162,7 @@ func Validate(runtime, version string, modules []Module) error {
 		return fmt.Errorf("unsupported managed runtime %q", runtime)
 	}
 	if version != "" && !safeVersion.MatchString(version) {
-		return fmt.Errorf("invalid runtime version")
+		return fmt.Errorf("invalid runtime version %q for %s: use 1–64 letters, digits, dots, underscores or hyphens, starting with a letter or digit (for example 8.3, 8.3.12 or 22-alpine)", version, runtime)
 	}
 	allowed := make(map[string]moduleDef, len(defs))
 	for _, def := range defs {
@@ -189,7 +186,23 @@ func Validate(runtime, version string, modules []Module) error {
 }
 
 func GenerateManaged(projectID, workDir, runtime, version string, modules []Module, revision string, hostPort int) (DeploymentSpec, error) {
+	return GenerateManagedProfile(projectID, workDir, runtime, version, modules, revision, hostPort, "")
+}
+
+// GenerateManagedProfile builds the DevBox Auto Container image specification.
+// Its source is mounted into the running workload; profile selects an optional
+// specialized runtime such as WordPress on Apache.
+func GenerateManagedProfile(projectID, workDir, runtime, version string, modules []Module, revision string, hostPort int, profile string) (DeploymentSpec, error) {
 	runtime = NormalizeRuntime(runtime)
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	// Generic names are persisted display metadata for the default runtime profile.
+	// Normalize them before hashing so Plan and Deploy resolve the same image.
+	if profile == "generic_"+runtime {
+		profile = ""
+	}
+	if profile != "" && !(profile == "wordpress" && runtime == "php") {
+		return DeploymentSpec{}, fmt.Errorf("unsupported managed runtime profile %q", profile)
+	}
 	version = strings.TrimSpace(version)
 	if version == "" {
 		version = DefaultVersion(runtime)
@@ -212,17 +225,33 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 	if err != nil {
 		return DeploymentSpec{}, err
 	}
+	if profile == "wordpress" {
+		for _, defaultModule := range []string{"mysqli", "pdo_mysql", "gd", "zip", "intl", "opcache", "exif"} {
+			found := false
+			for _, module := range resolvedModules {
+				if strings.EqualFold(module.Name, defaultModule) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				resolvedModules = append(resolvedModules, Module{Name: defaultModule})
+			}
+		}
+	}
 	if err := Validate(runtime, version, resolvedModules); err != nil {
 		return DeploymentSpec{}, err
 	}
-	digest, err := contextDigest(abs)
+	digest, err := dependencyDigest(abs, runtime)
 	if err != nil {
 		return DeploymentSpec{}, err
 	}
 	sorted := append([]Module(nil), resolvedModules...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
 	h := sha256.New()
-	_, _ = io.WriteString(h, runtime+"\n"+version+"\n"+revision+"\n"+digest+"\n")
+	_, _ = io.WriteString(h, "devbox-managed-v4\n")
+	_, _ = io.WriteString(h, runtime+"\n"+profile+"\n"+version+"\n")
+	_, _ = io.WriteString(h, digest+"\n")
 	for _, module := range sorted {
 		_, _ = io.WriteString(h, strings.ToLower(strings.TrimSpace(module.Name))+"="+strings.TrimSpace(module.Version)+"\n")
 	}
@@ -237,15 +266,65 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 	if err != nil {
 		return DeploymentSpec{}, err
 	}
+	if runtime == "go" {
+		port, readOnly, env = 8080, false, map[string]string{"PORT": "8080", "GOCACHE": "/tmp/devbox-go-build", "GOMODCACHE": "/tmp/devbox-go-mod"}
+	}
+	capabilities := []string(nil)
+	if runtime == "php" && profile == "" {
+		dockerfile = strings.Replace(dockerfile, "-cli-bookworm", "-apache-bookworm", 1)
+		dockerfile = strings.Replace(dockerfile, "USER 10001\n", "", 1)
+		index := strings.Index(dockerfile, "CMD ")
+		if index >= 0 {
+			dockerfile = dockerfile[:index]
+		}
+		dockerfile += "RUN a2enmod rewrite && sed -i 's/Listen 80/Listen 8080/g' /etc/apache2/ports.conf && sed -i 's/*:80/*:8080/g; s@/var/www/html@/app@g' /etc/apache2/sites-available/000-default.conf && if [ -d /app/public ]; then sed -i 's@/app@/app/public@g' /etc/apache2/sites-available/000-default.conf; fi && printf '<Directory /app>\\nAllowOverride All\\nRequire all granted\\n</Directory>\\n' > /etc/apache2/conf-available/devbox.conf && a2enconf devbox\nCMD [\"apache2-foreground\"]\n"
+		capabilities = []string{"NET_BIND_SERVICE", "SETUID", "SETGID"}
+	}
+	if runtime == "php" {
+		dockerfile += "RUN printf 'opcache.validate_timestamps=1\\nopcache.revalidate_freq=0\\n' > /usr/local/etc/php/conf.d/devbox-development.ini && printf '<Directory /app>\\nDirectoryIndex disabled\\nDirectoryIndex index.php index.html\\n</Directory>\\n<Directory /var/www/html>\\nDirectoryIndex disabled\\nDirectoryIndex index.php index.html\\n</Directory>\\n' > /etc/apache2/conf-available/devbox-index.conf && a2enconf devbox-index\n"
+	}
+	if profile == "wordpress" {
+		dockerfile = strings.Replace(dockerfile, "-cli-bookworm", "-apache-bookworm", 1)
+		dockerfile = strings.Replace(dockerfile, "WORKDIR /app\nCOPY . /app\n", "WORKDIR /var/www/html\n", 1)
+		dockerfile = strings.Replace(dockerfile, "WORKDIR /var/www/html", "RUN a2enmod rewrite && printf '<Directory /var/www/html>\\nAllowOverride All\\nRequire all granted\\n</Directory>\\n' > /etc/apache2/conf-available/devbox-wordpress.conf && a2enconf devbox-wordpress\nWORKDIR /var/www/html", 1)
+		dockerfile = strings.Replace(dockerfile, "ENV COMPOSER_ALLOW_SUPERUSER=1\n", "", 1)
+		dockerfile = strings.Replace(dockerfile, "RUN if [ -f composer.json ]; then composer install --no-interaction --prefer-dist --no-progress --no-ansi --optimize-autoloader; fi\n", "", 1)
+		dockerfile = strings.Replace(dockerfile, "RUN useradd -u 10001 -r -s /usr/sbin/nologin devbox && chown -R 10001:0 /app\n", "", 1)
+		dockerfile = strings.Replace(dockerfile, "USER 10001\n", "", 1)
+		dockerfile = strings.Replace(dockerfile, "EXPOSE 8080", "EXPOSE 80", 1)
+		dockerfile = strings.Replace(dockerfile, "ENV APP_PORT=8080", "ENV APACHE_RUN_USER=www-data APACHE_RUN_GROUP=www-data", 1)
+		dockerfile = strings.Replace(dockerfile, "CMD [\"sh\",\"-lc\",\"if [ -d public ]; then exec php -S 0.0.0.0:8080 -t public; else exec php -S 0.0.0.0:8080 -t .; fi\"]", "CMD [\"apache2-foreground\"]", 1)
+		dockerfile += wordpressEntrypoint()
+		port = 80
+		capabilities = []string{"NET_BIND_SERVICE", "SETUID", "SETGID"}
+	}
 
 	bindMounts := map[string]string{}
 	anonymousVolumes := []string{}
 	containerUser := sourceContainerUser(info, runtime)
+	if runtime == "php" {
+		containerUser = ""
+		if owner, ok := info.Sys().(*syscall.Stat_t); ok && owner.Uid != 0 {
+			env["APACHE_RUN_USER"] = "#" + strconv.FormatUint(uint64(owner.Uid), 10)
+			env["APACHE_RUN_GROUP"] = "#" + strconv.FormatUint(uint64(owner.Gid), 10)
+		}
+	}
+	if profile == "wordpress" {
+		containerUser = ""
+	}
 	switch runtime {
 	case "php":
-		bindMounts[abs] = "/app"
-		if info, statErr := os.Stat(filepath.Join(abs, "composer.json")); statErr == nil && info.Mode().IsRegular() {
-			anonymousVolumes = append(anonymousVolumes, "/app/vendor")
+		if profile == "wordpress" {
+			bindMounts[abs] = "/var/www/html"
+			if owner, ok := info.Sys().(*syscall.Stat_t); ok && owner.Uid != 0 {
+				env["APACHE_RUN_USER"] = "#" + strconv.FormatUint(uint64(owner.Uid), 10)
+				env["APACHE_RUN_GROUP"] = "#" + strconv.FormatUint(uint64(owner.Gid), 10)
+			}
+		} else {
+			bindMounts[abs] = "/app"
+			if info, statErr := os.Stat(filepath.Join(abs, "composer.json")); statErr == nil && info.Mode().IsRegular() {
+				anonymousVolumes = append(anonymousVolumes, "/app/vendor")
+			}
 		}
 	case "node":
 		bindMounts[abs] = "/app"
@@ -254,8 +333,26 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 		}
 	case "python":
 		bindMounts[abs] = "/app"
+	case "go":
+		bindMounts[abs] = "/app"
+		containerUser = sourceGoContainerUser(info)
 	case "static":
 		bindMounts[abs] = "/usr/share/nginx/html"
+	}
+	if runtime == "php" {
+		if owner, ok := info.Sys().(*syscall.Stat_t); ok && owner.Uid != 0 {
+			env["APACHE_RUN_USER"], env["APACHE_RUN_GROUP"] = "devbox-source", "devbox-source"
+			dockerfile += fmt.Sprintf("RUN groupadd --non-unique --gid %d devbox-source && useradd --non-unique --uid %d --gid %d --no-create-home --shell /usr/sbin/nologin devbox-source\n", owner.Gid, owner.Uid, owner.Gid)
+		}
+	}
+	if runtime == "node" {
+		env["HOME"] = "/tmp"
+		if owner, ok := info.Sys().(*syscall.Stat_t); ok && owner.Uid != 0 {
+			dockerfile += fmt.Sprintf("USER root\nRUN if [ -d /app/node_modules ]; then chown -R %d:%d /app/node_modules; fi\nUSER node\n", owner.Uid, owner.Gid)
+		}
+	}
+	if runtime == "static" && containerUser != "" {
+		dockerfile += fmt.Sprintf("USER root\nRUN mkdir -p /var/cache/nginx /etc/nginx/conf.d && chown -R %s /var/cache/nginx /etc/nginx/conf.d\nUSER %s\n", containerUser, containerUser)
 	}
 
 	labels := map[string]string{
@@ -270,7 +367,7 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 	return DeploymentSpec{
 		ProjectID: projectID, Runtime: runtime, Version: version, ContextDir: abs, Dockerfile: dockerfile,
 		Image: image, ContainerName: name, HostPort: hostPort, ContainerPort: port, User: containerUser,
-		Environment: env, BindMounts: bindMounts, AnonymousVolumes: anonymousVolumes,
+		Environment: env, BindMounts: bindMounts, AnonymousVolumes: anonymousVolumes, Capabilities: capabilities,
 		Labels:      labels,
 		Fingerprint: fingerprint, ReadOnly: readOnly,
 	}, nil
@@ -282,13 +379,21 @@ func GenerateManaged(projectID, workDir, runtime, version string, modules []Modu
 // the image's non-root default.
 func sourceContainerUser(info os.FileInfo, runtime string) string {
 	switch NormalizeRuntime(runtime) {
-	case "php", "node", "python":
+	case "php", "node", "python", "static":
 	default:
 		return ""
 	}
 	owner, ok := info.Sys().(*syscall.Stat_t)
 	permissions := info.Mode().Perm()
 	if !ok || owner.Uid == 0 || permissions&0o300 != 0o300 {
+		return ""
+	}
+	return strconv.FormatUint(uint64(owner.Uid), 10) + ":" + strconv.FormatUint(uint64(owner.Gid), 10)
+}
+
+func sourceGoContainerUser(info os.FileInfo) string {
+	owner, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || owner.Uid == 0 || info.Mode().Perm()&0o300 != 0o300 {
 		return ""
 	}
 	return strconv.FormatUint(uint64(owner.Uid), 10) + ":" + strconv.FormatUint(uint64(owner.Gid), 10)
@@ -435,50 +540,6 @@ func composerExtensionModule(requirement string) (string, bool) {
 	}
 }
 
-func GenerateCustomDockerfile(projectID, workDir string, hostPort int) (DeploymentSpec, error) {
-	abs, err := filepath.Abs(workDir)
-	if err != nil {
-		return DeploymentSpec{}, err
-	}
-	dockerfile := filepath.Join(abs, "Dockerfile")
-	if info, statErr := os.Stat(dockerfile); statErr != nil || !info.Mode().IsRegular() {
-		return DeploymentSpec{}, fmt.Errorf("custom Dockerfile was not found")
-	}
-	if hostPort < 1 || hostPort > 65535 {
-		return DeploymentSpec{}, fmt.Errorf("host port is out of range")
-	}
-	digest, err := contextDigest(abs)
-	if err != nil {
-		return DeploymentSpec{}, err
-	}
-	data, err := os.ReadFile(dockerfile)
-	if err != nil {
-		return DeploymentSpec{}, err
-	}
-	h := sha256.Sum256(append(data, []byte("\n"+digest)...))
-	fingerprint := hex.EncodeToString(h[:])
-	short, err := projectResourceSuffix(projectID)
-	if err != nil {
-		return DeploymentSpec{}, err
-	}
-	port := dockerfileExposePort(string(data))
-	if port == 0 {
-		port = 8080
-	}
-	return DeploymentSpec{
-		ProjectID: projectID, Runtime: "custom", ContextDir: abs, DockerfilePath: dockerfile,
-		Image: "devbox/custom-" + short + ":" + fingerprint[:16], ContainerName: "devbox-app-" + short,
-		HostPort: hostPort, ContainerPort: port,
-		Labels: map[string]string{
-			"io.devbox.managed":     "true",
-			"io.devbox.project":     projectID,
-			"io.devbox.runtime":     "custom",
-			"io.devbox.fingerprint": fingerprint,
-		},
-		Fingerprint: fingerprint,
-	}, nil
-}
-
 func dockerfileFor(runtime, version string, modules []Module) (string, int, bool, map[string]string, error) {
 	defs := make(map[string]moduleDef)
 	for _, def := range catalogs[runtime] {
@@ -543,11 +604,13 @@ func dockerfileFor(runtime, version string, modules []Module) (string, int, bool
 		if len(apt) > 0 {
 			install = "RUN apt-get update && apt-get install -y --no-install-recommends " + strings.Join(apt, " ") + " && rm -rf /var/lib/apt/lists/*\n"
 		}
+		start := `if [ -f package.json ] && node -e 'const p=require("./package.json");process.exit(p.scripts&&p.scripts.start?0:1)'; then exec npm start; elif [ -f package.json ] && node -e 'const p=require("./package.json");process.exit(p.scripts&&p.scripts.dev?0:1)'; then exec npm run dev -- --host 0.0.0.0 --port 8080; elif [ -f server.js ]; then exec node server.js; elif [ -f index.js ]; then exec node index.js; else echo 'No Node start script/server.js/index.js found' >&2; exit 1; fi`
+		command, _ := json.Marshal([]string{"sh", "-lc", start})
 		return "FROM node:" + version + "-bookworm-slim\n" + install +
 				"WORKDIR /app\nCOPY . /app\nRUN corepack enable && if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; elif [ -f yarn.lock ]; then yarn install --frozen-lockfile; elif [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi\n" +
 				"RUN if [ -f package.json ]; then npm run build --if-present; fi\n" +
 				"USER node\nENV PORT=8080 HOST=0.0.0.0\nEXPOSE 8080\n" +
-				"CMD [\"sh\",\"-lc\",\"if [ -f package.json ] && node -e 'const p=require(\\\"./package.json\\\");process.exit(p.scripts&&p.scripts.start?0:1)'; then exec npm start; elif [ -f server.js ]; then exec node server.js; elif [ -f index.js ]; then exec node index.js; else echo 'No Node start script/server.js/index.js found' >&2; exit 1; fi\"]\n",
+				"CMD " + string(command) + "\n",
 			8080, false, map[string]string{"PORT": "8080", "HOST": "0.0.0.0"}, nil
 	case "python":
 		install := ""
@@ -565,10 +628,10 @@ func dockerfileFor(runtime, version string, modules []Module) (string, int, bool
 		if len(apt) > 0 {
 			install = "RUN apt-get update && apt-get install -y --no-install-recommends " + strings.Join(apt, " ") + " && rm -rf /var/lib/apt/lists/*\n"
 		}
-		return "FROM golang:" + version + "-bookworm AS build\n" + install +
-				"WORKDIR /src\nCOPY . .\nRUN if [ -f go.mod ]; then go mod download; fi\nRUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/app .\n" +
-				"FROM gcr.io/distroless/static-debian12:nonroot\nCOPY --from=build /out/app /app\nENV PORT=8080\nEXPOSE 8080\nENTRYPOINT [\"/app\"]\n",
-			8080, true, map[string]string{"PORT": "8080"}, nil
+		return "FROM golang:" + version + "-bookworm\n" + install +
+			"RUN printf '#!/bin/sh\\nset -eu\\ngo mod download\\ngo build -o /tmp/devbox-app \"$@\"\\nexec /tmp/devbox-app\\n' > /usr/local/bin/devbox-go-start && chmod 0755 /usr/local/bin/devbox-go-start\n" +
+			"WORKDIR /app\nRUN useradd -u 10001 -r -s /usr/sbin/nologin devbox\nUSER 10001\n" +
+			"ENV PORT=8080 GOCACHE=/tmp/devbox-go-build GOMODCACHE=/tmp/devbox-go-mod\nEXPOSE 8080\nCMD [\"devbox-go-start\",\".\"]\n", 8080, false, map[string]string{"PORT": "8080", "GOCACHE": "/tmp/devbox-go-build", "GOMODCACHE": "/tmp/devbox-go-mod"}, nil
 	case "static":
 		return "FROM nginxinc/nginx-unprivileged:" + version + "-alpine\nCOPY . /usr/share/nginx/html\nEXPOSE 8080\n", 8080, false, nil, nil
 	default:
@@ -576,71 +639,40 @@ func dockerfileFor(runtime, version string, modules []Module) (string, int, bool
 	}
 }
 
-func dockerfileExposePort(content string) int {
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if len(line) < 7 || strings.ToUpper(line[:6]) != "EXPOSE" {
+func dependencyDigest(root, runtime string) (string, error) {
+	files := map[string][]string{
+		"php":    {"composer.json", "composer.lock"},
+		"node":   {"package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"},
+		"python": {"requirements.txt", "pyproject.toml", "poetry.lock", "uv.lock"},
+		"go":     {"go.mod", "go.sum"},
+		"static": {},
+	}[runtime]
+	h := sha256.New()
+	for _, name := range files {
+		path := filepath.Join(root, name)
+		info, err := os.Stat(path)
+		if os.IsNotExist(err) {
 			continue
 		}
-		fields := strings.Fields(line[6:])
-		for _, field := range fields {
-			field = strings.SplitN(field, "/", 2)[0]
-			if port, err := strconv.Atoi(field); err == nil && port > 0 && port <= 65535 {
-				return port
-			}
-		}
-	}
-	return 0
-}
-
-func contextDigest(root string) (string, error) {
-	h := sha256.New()
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		rel, err := filepath.Rel(root, path)
 		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return nil
-		}
-		parts := strings.Split(filepath.ToSlash(rel), "/")
-		if ignoredPath(parts) {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
+			return "", err
 		}
 		if !info.Mode().IsRegular() {
-			return nil
+			continue
 		}
-		_, _ = io.WriteString(h, filepath.ToSlash(rel)+"\n")
 		file, err := os.Open(path)
 		if err != nil {
-			return err
+			return "", err
 		}
+		_, _ = io.WriteString(h, name+"\n")
 		_, copyErr := io.Copy(h, file)
 		closeErr := file.Close()
 		if copyErr != nil {
-			return copyErr
+			return "", copyErr
 		}
-		return closeErr
-	})
-	if err != nil {
-		return "", fmt.Errorf("hash build context: %w", err)
+		if closeErr != nil {
+			return "", closeErr
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }

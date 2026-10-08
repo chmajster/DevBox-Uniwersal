@@ -99,6 +99,9 @@ func (m *ManagedMySQLManager) Ensure(ctx context.Context) error {
 			"io.devbox.managed-mysql.admin-port": strconv.Itoa(m.cfg.AdminPort),
 		},
 	}
+	if m.cfg.AdminPort < 0 {
+		spec.PortBindings = nil
+	}
 	item, err := m.docker.EnsureContainer(ctx, spec)
 	if err != nil {
 		return fmt.Errorf("ensure managed MySQL container: %w", err)
@@ -118,7 +121,8 @@ func (m *ManagedMySQLManager) RootPassword(ctx context.Context) ([]byte, error) 
 	if m == nil || m.secrets == nil {
 		return nil, ErrSecretsUnavailable
 	}
-	value, err := m.secrets.Get(ctx, managedMySQLSecretScope, managedMySQLSecretName)
+	scope, name := m.AdminSecretRef()
+	value, err := m.secrets.Get(ctx, scope, name)
 	if err == nil {
 		return value, nil
 	}
@@ -132,13 +136,16 @@ func (m *ManagedMySQLManager) RootPassword(ctx context.Context) ([]byte, error) 
 			return nil, err
 		}
 	}
-	if err := m.secrets.Put(ctx, managedMySQLSecretScope, managedMySQLSecretName, []byte(password)); err != nil {
+	if err := m.secrets.Put(ctx, scope, name, []byte(password)); err != nil {
 		return nil, fmt.Errorf("store managed MySQL root credential: %w", err)
 	}
 	return []byte(password), nil
 }
 
 func (m *ManagedMySQLManager) AdminSecretRef() (scope, name string) {
+	if m.cfg.Container != DefaultManagedMySQLContainer {
+		return "managed-mysql/" + m.cfg.Container, managedMySQLSecretName
+	}
 	return managedMySQLSecretScope, managedMySQLSecretName
 }
 
