@@ -508,7 +508,11 @@ func TestApplicationDockerSourcesAndRecovery(t *testing.T) {
 		previousT := f.t
 		f.t = t
 		defer func() { f.t = previousT }()
-		root := f.source("custom", map[string]string{"index.html": "custom-workdir", "Dockerfile": "FROM python:3.13-bookworm\nWORKDIR /srv/site\nCOPY . .\nUSER 10001\nEXPOSE 8123\nCMD [\"python\",\"-m\",\"http.server\",\"8123\",\"--bind\",\"0.0.0.0\"]\n"})
+		uid := os.Getuid()
+		if uid == 0 {
+			uid = 10001
+		}
+		root := f.source("custom", map[string]string{"index.html": "custom-workdir", "Dockerfile": fmt.Sprintf("FROM python:3.13-bookworm\nWORKDIR /srv/site\nCOPY . .\nUSER %d\nEXPOSE 8123\nCMD [\"python\",\"-m\",\"http.server\",\"8123\",\"--bind\",\"0.0.0.0\"]\n", uid)})
 		app := f.create(applications.CreateInput{Name: "dockerfile-source", SourceType: applications.SourceLocal, Source: applications.SourceInput{LocalPath: root}, Configuration: map[string]any{"deployment_mode": "dockerfile"}})
 		app = f.deploy(app.ID)
 		if f.http(app) != "custom-workdir" {
