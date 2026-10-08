@@ -1,142 +1,57 @@
 # Architecture
 
-## Objective
+DevBox Universal is a local hosting control plane with a Go backend, React frontend, SQLite persistence, durable jobs and Docker as the boundary for every user application. Application language runtimes are never started as host processes.
 
-DevBox Universal is a local application management control plane. The architecture separates stable orchestration contracts from replaceable platform implementations so multiple agents can develop Git, runtime, Docker, database, proxy, monitoring and Windows/WSL capabilities in parallel.
+## Responsibilities
 
-## Repository layout
+| Component | Location | Responsibility |
+| --- | --- | --- |
+| Application Service/API | `backend/internal/applications` | Validate sources/settings, own desired state, enqueue operations, store topology/history and coordinate managers |
+| Runtime Catalog | `backend/internal/containerspec/runtime_catalog.go` | Single version/default catalog consumed by API, detection and frontend |
+| Runtime Detector | `backend/internal/runtimes`, application selector | Pure source inspection: Compose/Dockerfile/manifests/frameworks/entry points |
+| Managed Runtime Manager | `internal/drivers/managed`, `internal/containerspec`, `internal/docker/runtime_managed.go` | Generate selected runtime, live RW source mounts, UID/GID, private network, safe image/container replacement |
+| Compose Manager | `internal/drivers/compose`, `internal/docker/compose*.go` | Preserve original stack, discover services, choose primary, apply private overrides and execute Compose |
+| Port Manager | `internal/applications/ports.go`, `internal/proxy/port_manager.go` | Durable endpoint leases and shared reservation space, conflict/socket detection, central inventory |
+| Reverse Proxy / SSL Manager | `internal/proxy`, application routing | Domain ownership, certificate validation, candidate/global Nginx validation and controlled reload |
+| Environment / Secret Manager | Application repository, `internal/secrets` | Separate public-env table; encrypted secret bindings, injection/redaction |
+| Job Manager | `internal/jobs`, application job handlers | Persisted queue, stages/output, cancellation/retry, per-app operation lock |
+| Health / Reconciliation Manager | App reconciler and Docker inspections | Actual container/service states, publication checks, stable startup, optional HTTP/source healthchecks |
+| Directory browser | `internal/projects/browser.go` | Independently mounted audited browser/create-directory routes with the same configured source roots |
 
-```text
-backend/
-  cmd/devbox/              composition root, server bootstrap and operator CLI
-  cmd/devbox-helper/       narrow Linux privileged helper
-  internal/api/            core API envelope, middleware, core handlers, Module contract
-  internal/auth/           authentication/session service
-  internal/config/         environment configuration
-  internal/database/       SQLite bootstrap and migration runner
-  internal/domain/         shared core entities only
-  internal/repository/     core repository interfaces + SQLite adapters
-  internal/jobs/           Job Engine contracts
-  internal/audit/          append-only audit service
-  internal/secrets/        encryption + SecretStore
-  internal/system/         host/WSL detection, component status and doctor
-  internal/webui/          production static frontend serving/fallback
-  internal/runtimes/       Runtime detection and runtime contracts
-  internal/containerspec/  managed application image specifications
-  internal/providers/      cross-module provider contracts
-  internal/applications/   application/source/workload/endpoint lifecycle, API and reconciliation
-  internal/drivers/        managed, Dockerfile, OCI image and Compose deployment drivers
-  internal/projects/      legacy Project lifecycle unmounted; independent directory picker mounted
-  internal/docker/         owned by Docker agent
-  internal/databases/      owned by Database agent
-  internal/proxy/          owned by Reverse Proxy agent
-frontend/                   React/Vite UI shell and domain UI modules
-migrations/                 ordered, immutable SQL migrations
-docs/adr/                   architecture decisions
-scripts/                    developer/operator entrypoints
-```
+Host Docker/database/plugin inventories, SQL database user administration, backups, monitoring, update handling, audit/RBAC, Windows/WSL setup and narrowly scoped privileged helpers remain independent modules. They do not introduce another application deployment engine.
 
-## Layering
+## Three source execution modes
 
-HTTP handlers parse and validate transport input, call services and convert domain failures to the standard API error envelope. Services own orchestration and authorization-sensitive behavior. Repositories own persistence only. Providers own interaction with external tools or operating-system facilities.
+The application API is `/api/v1/applications`; the canonical frontend route is `/apps`. Exactly two registered drivers exist: `managed` and `compose`. Public settings select `auto` (generated Docker), `dockerfile` or `compose`. OCI sources use mode `image` through the same managed driver. Mode changes apply at the next successful deployment; the current driver owns existing resources until replacement.
 
-Concrete provider implementations may depend on shared contracts and infrastructure utilities. They must not depend on another provider implementation. For example, Docker may use `PortAllocator` but must not import the concrete MySQL package.
+Existing Compose detects any supported root Compose filename and retains its normalized services, dependencies and volumes. Ambiguous HTTP service selection requires explicit `compose_service` and container port. Private overrides publish the selected primary endpoint, apply settings/ownership labels, deterministic container names and writable source mounts. Named data volumes are preserved on down/delete. External networks/volumes stay source-owned external resources.
 
-## API modules
+Managed generation covers PHP, Node, Python, Go, static HTML and WordPress as a PHP/Apache profile. Code is mounted RW from the original directory; dependency images/volumes do not replace the live source. Writable processes use the source UID/GID when practical. Managed replacement can restore the old container on failure and preserves the owned port lease. Failed Compose updates reapply the previous successful command/port plan using retained images and volumes. Changes made by the user to the original Compose file or external services cannot be rolled back atomically.
 
-`api.Module` is the HTTP extension boundary. A domain can expose a module with its own route registration without adding handlers to the core API type. Core authentication middleware and role middleware are supplied through `api.ModuleMiddleware`.
+## Persistence and orchestration
 
-A future integration agent may wire modules in the composition root. Domain agents should keep their implementation self-contained so wiring is a small, reviewable change.
+Applications own source, settings, desired/observed state, runtime, workloads, endpoints, volumes, secret/env bindings, routes, port leases, deployments and jobs. Hosting read models expose source path, mode/type/version, command, ports, domain, SSL and deterministic Docker project name from these records. Public environment lives in its own table; API settings combine it for editing. Migration 017 separates public environment values. Migration 018 preserves historical image references before its schema change; 019 restores OCI support and maps the old image/Dockerfile drivers into `managed`; 020 persists the exact selected SQL account for each application binding.
 
-Core host introspection remains under `/api/v1/system/*`. Component/platform endpoints are read-only and require an authenticated Viewer or higher role.
+Generated artifacts are `<database directory>/projects/<id>/runtime/{Dockerfile,compose.yaml,metadata.json}` with private permissions. They contain no secret values. Durable Compose port overrides default to `<database directory>/compose-ports`; source files are not rewritten. Generated Managed Compose is a reviewable configuration snapshot; actual execution uses the shared Docker provider's replacement mechanism.
 
-## Authentication and RBAC
+HTTP mutations return queued jobs. One job owns an application's operation lock; cancellation retains the lock until cleanup completes. Deployment stages cover source analysis, detection, planning, runtime/dependencies, build, create/start, health, routing and finalization. Rebuild bypasses a cached Managed image and forces Compose recreation; restart retains images. Jobs expose progress, process streams, times and errors without logging resolved Docker introspection env.
 
-Authentication uses random opaque session tokens. Only a SHA-256 token hash is stored in SQLite. The session token is sent as an HttpOnly, SameSite=Lax cookie. TLS deployments should set `DEVBOX_COOKIE_SECURE=true`.
+Docker names contain immutable application IDs. Ownership labels identify containers/images/private networks and nonexternal Compose networks/volumes. Reconciliation inspects actual resources every five seconds and skips application replacements in progress. It invalidates observations when Docker is unavailable and treats missing/exited desired-running resources and lost publication as failures. Endpoint/domain URLs reflect publication/route activity.
 
-Roles are ordered by capability: Admin > Operator > Viewer. Endpoints select the minimum required role explicitly. Authorization rules more granular than these roles should be introduced as a separate policy layer rather than hard-coded across providers.
+Domains reserve unique ownership before Nginx activation. Candidate and global config pass validation before reload. Existing certificates are verified for domain/date/key pair and terminate TLS at Nginx; application runtime remains HTTP. ACME is disabled because no issuer/challenge implementation is configured.
 
-## Database and migrations
+## Security and deletion
 
-SQLite is the bootstrap database. Foreign keys, WAL and busy timeout are enabled at startup. Migration files under `migrations/` are applied lexicographically and recorded in `schema_migrations`. Applied migration files are immutable.
+Local source paths are absolute, allowlisted and symlink-resolved; traversal, credential segments and protected system roots are rejected. Start command is parsed into argv; host CLI calls never concatenate a user shell command. Ports, Docker identifiers, runtime versions/modules and domains are validated. Secrets are encrypted, injected separately and masked in application/job output.
 
-## Secrets
+Application deletion removes owned containers/networks, generated config, routes, secrets and port reservations; it preserves user source and persistent named volumes. Volume destruction is a separate explicit Docker inventory operation. Go/Node used by the source installer compile DevBox itself; PHP/Composer/Python runtime installation and host-runtime lifecycle endpoints have been removed.
 
-`secrets.SecretStore` defines persistence access. `secrets.AESGCM` provides authenticated encryption using a 32-byte master key supplied out-of-band as base64. The current foundation does not invent or persist a default master key.
+See [Application hosting](docs/application-control-plane.md) for the full workflow, examples, runtime limitations and the A–G Docker verification matrix.
 
-Provider configuration should store references to secrets, never raw secret values.
+## Shared SQL servers
 
-## Jobs
+The Application aggregate owns database/account bindings. Independent MySQL, MariaDB and PostgreSQL managers own their servers and persistent volumes. Provisioning and SQL tests use the durable Job Engine and the application operation lock. Creating a binding generates an application password in SecretStore, grants only the selected database and injects DB_HOST/PORT/NAME/USER/PASSWORD into web/API/worker/scheduler workloads. Infrastructure services do not receive those credentials. All app workloads join the shared Docker DNS network alongside private app networks.
 
-Potentially slow or external mutations should execute through `jobs.JobRunner`. HTTP handlers should enqueue work and return a job identity instead of invoking long-running processes directly. Handlers are registered by job type. Implementations must support durable state and logs through the `jobs` and `job_logs` tables.
+SQL administration runs through clients inside the server containers, so application use does not require host database ports or host SQL clients. PostgreSQL databases revoke PUBLIC connection/creation grants before application grants are applied. The static `devbox-dbcheck` executable is copied into the selected running application container; credentials pass through stdin, and it authenticates and executes SELECT 1. Tests cannot pass merely because a sidecar can reach the database.
 
-Privileged component installation is not exposed synchronously through the System Components HTTP API. Privileged mutations must use audited jobs and the typed privileged-helper boundary.
-
-## Runtime and application execution model
-
-Docker is the mandatory execution boundary for managed applications. DevBox no longer deploys PHP, Go, Node.js, Python or static applications as host processes.
-
-The runtime registry is retained for source-based runtime and framework detection. Project deployment does not call host lifecycle methods such as InstallDependencies, Build or Start for supported application runtimes.
-
-Container resolution is deterministic:
-
-1. a project-owned Compose file is used when present;
-2. otherwise a project-owned Dockerfile is used when present;
-3. otherwise, with container policy `auto`, DevBox generates an allowlisted managed image specification for PHP, Node.js, Python, Go or static content;
-4. container policy `custom` requires a project-owned Compose file or Dockerfile.
-
-Per-project runtime version and module selections are stored in SQLite. Module names are validated against runtime-specific catalogs; arbitrary package names or shell fragments are not accepted through this API.
-
-Managed build contexts are staged outside the project tree and exclude `.env*`, VCS metadata, dependency directories and common local caches. Secrets are not written to generated Dockerfiles or image layers.
-
-A content fingerprint covers the runtime, selected version/modules, source revision and sanitized build context. The Job Engine rebuilds only when the fingerprint changes or an operator requests a forced rebuild. Managed containers are replaced atomically: the previous container is retained until the new container starts and passes its health check, then removed; failures restore the previous container.
-
-Host ports continue to come from the central PortAllocator and successful deployments are attached to the existing reverse-proxy routing layer.
-
-## Project database connectivity
-
-Credential-bearing database connectivity is resolved per project through the existing persisted database binding with modes `none`, `managed`, `compose` and `external`. In addition, `project_database_service_access` records whether a project exposes the shared DevBox MySQL/MariaDB service, PostgreSQL service or both. That service selection stores no database name, SQL account, password or grants; those remain centrally managed by the Databases module. Previously persisted credential-free `host_access_only` bindings remain readable for compatibility but are no longer created by the project UI.
-
-The project database UI treats the shared DevBox services as infrastructure endpoints with non-editable application addresses. MySQL/MariaDB is reached through Docker DNS `devbox-mysql:3306` and PostgreSQL through `devbox-postgresql:5432`, both on `devbox-apps`. Selecting one or both services does not provision a database or user and does not duplicate credentials. Existing credential-bearing Compose/external bindings keep their current connection forms and SecretStore behavior.
-
-Application database servers installed from Plugins are persistent Docker services on the shared `devbox-apps` network. MySQL uses `devbox-mysql` with `devbox-mysql-data`; PostgreSQL uses `devbox-postgresql` with `devbox-postgresql-data`. Their administrative credentials are SecretStore-backed. Every DevBox application container—including generated runtimes, custom Dockerfile deployments and running services from project-owned Compose—is attached to the same shared network, so application code can use stable Docker DNS names (`devbox-mysql:3306`, `devbox-postgresql:5432`) without exposing database ports publicly. Managed/container deployments pass sensitive runtime variables through protected temporary env files; project-owned Compose receives private overrides outside the source tree. Project Compose files and generated Dockerfiles never receive stored secret plaintext.
-
-Runtime environment precedence is deterministic: generated runtime defaults < explicit project environment < project SecretStore environment < reserved database binding variables. Compose application-service selection prefers explicit configuration, then a DevBox label, then deterministic heuristics; ambiguity requires an explicit UI choice.
-
-Connection tests execute `SELECT 1`. Managed and external tests run from the Docker execution boundary; Compose tests execute against the selected database service. No WSL host/subnet IP is persisted. See ADR-011.
-
-## Provider contracts
-
-Stable contracts live in `backend/internal/providers/contracts.go`:
-
-- `GitProvider`
-- `ProcessManager`
-- `DockerProvider`
-- `DatabaseProvider`
-- `ReverseProxyProvider`
-- `PortAllocator`
-- `SystemServiceProvider`
-- alias `SecretStore`
-- alias `JobRunner`
-
-The types next to those interfaces are transport-neutral orchestration DTOs. Provider-specific settings belong inside the provider module rather than expanding shared types for every implementation detail.
-
-## Windows / WSL and installation
-
-Windows uses WSL as the Linux execution boundary. `install.ps1` detects WSL and supported Ubuntu/Debian distributions, can bootstrap Ubuntu explicitly, verifies/enables WSL systemd when required and delegates installation to `install.sh` inside the selected distribution.
-
-The Linux installer builds backend and frontend, installs the control plane under `/opt/devbox` and `/usr/local/lib/devbox`, stores mutable data under `/var/lib/devbox` and installs `devbox.service` under the unprivileged `devbox` account. `DEVBOX_FRONTEND_DIR` lets the Go process serve the built SPA and API on one listener.
-
-## Privilege boundary
-
-The HTTP API runs unprivileged. Operations requiring Administrator/root privileges must be delegated through a narrow, auditable system-service boundary rather than running the entire API as Administrator/root. See ADR-006 and ADR-008.
-
-`devbox-helper` exposes only typed, whitelisted operations. It cannot execute an arbitrary executable/argument vector, cannot write an arbitrary path and cannot install a package name supplied directly by a caller without allowlist mapping.
-
-### Project port publishing
-
-`projects.PortConfiguration` keeps desired settings and the last applied mapping in additive SQLite state. Deployment jobs use the central `PortManager` through the optional `SequentialPortAllocator`/`PortLeaseOwner` contracts, keep previous leases until a replacement is healthy, and retain leases when cleanup cannot safely confirm the ports are unused. Resolved host ports become the stable project settings. Generated container listeners are configured in `containerspec`; actual Docker and opt-in Compose publication remains in the Docker provider. Compose overrides are stored in a private durable directory, not in the application source tree. See ADR-010 and `docs/project-port-publishing.md`.
-
-## Application ownership
-
-ADR 012 defines the active Application control plane. The workspace is no longer a thin UI over Project records. Jobs, desired/observed state, staged topology, stable endpoint leases and encrypted application secrets have dedicated contracts. See `docs/application-control-plane.md` for API, concurrency, deletion and compatibility boundaries.
+Deleting an application detaches its binding and removes only labelled application resources. Shared servers, SQL accounts, databases and durable volumes remain separately administered. Legacy project data is preserved; the Application workflow replaces project-specific database onboarding.

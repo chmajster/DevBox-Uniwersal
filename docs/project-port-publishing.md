@@ -1,5 +1,8 @@
 # Porty kontenera i dostęp do aplikacji
 
+> Historical design: hosting/runtime decisions are superseded by [ADR-014](adr/014-hosting-runtime-model.md) and the [current hosting guide](application-control-plane.md).
+
+
 W konfiguracji runtime projektu znajduje się sekcja **Porty Docker i dostęp do aplikacji**. Wybierz port HTTP wewnątrz kontenera oraz port publikowany na hoście. Puste pole portu wewnętrznego oznacza automatyczne wykrycie z Dockerfile lub obrazu generowanego przez DevBox.
 
 Nowe aplikacje zarządzane przez DevBox zaczynają od portu hosta **8080**. Dodatkowe mapowanie HTTPS, jeśli je włączysz, zaczyna od **8443** i wskazuje domyślnie port kontenera **443**. Na przykład kontener nasłuchujący na 80 może być dostępny przez `http://HOST:8080`, a jego skonfigurowany serwer TLS na 443 przez `https://HOST:8443`.
