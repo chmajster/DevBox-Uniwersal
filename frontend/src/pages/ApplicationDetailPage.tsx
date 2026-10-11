@@ -49,7 +49,7 @@ function ConfigForm({ app, disabled, onSaved }: { app: ApplicationDetail; disabl
   return <form onSubmit={(event) => void submit(event)}><fieldset className="acp-card" disabled={disabled || saving}><legend>Konfiguracja aplikacji</legend>
     <div className="acp-fields"><label>Nazwa<input name="name" required defaultValue={app.name} /></label><label>Opis<input name="description" defaultValue={app.description} /></label></div>
     <ConfigurationFields value={{ ...app.source_config, ...(phpRuntime && !app.source_config?.runtime ? { runtime: 'php' } : {}) }} deploymentMode={deploymentMode} hasProvisionedWorkloads={app.workloads.length > 0} applicationId={app.id} moduleContainerID={moduleContainerID} phpRuntime={phpRuntime} onDeploymentModeChange={setDeploymentMode} /><label className="acp-check"><input type="checkbox" name="auto_start" defaultChecked={app.auto_start} />Przywracanie stanu docelowego po restarcie DevBox</label>
-    <p>Zmiana technologii lub wersji uruchamia przebudowę działającej aplikacji. Pozostałe zmiany zastosuj przyciskiem „Deploy”.</p>
+    <p>Zmiana technologii, wersji, modułów lub document root uruchamia przebudowę działającej aplikacji. Pozostałe zmiany zastosuj przyciskiem „Deploy”.</p>
     {error && <p role="alert" className="error-banner">{error}</p>}{saved && <p role="status">Konfiguracja zapisana. Postęp przebudowy sprawdzisz w Zadaniach.</p>}
     <button type="submit">{saving ? 'Zapisywanie…' : 'Zapisz konfigurację'}</button>
   </fieldset></form>

@@ -70,7 +70,7 @@ def install_api(context, role='admin', authenticated=True):
                  '/databases': [dict(id='db1', name='one', engine='mysql', status='ready'), dict(id='db2', name='two', engine='postgresql', status='ready')],
                  '/database-users': [],
                  '/database-servers': [dict(engine=engine, container='devbox-'+engine, running=True, installed=True) for engine in ('mysql','mariadb','postgresql')],
-                 '/runtimes/catalog': [dict(name=name, label=name, versions=[version], default_version=version, container_port=port) for name, version, port in [('php','8.4',8080),('python','3.13',8000),('node','22',3000),('go','1.26',8080),('static','1.28',8080)]],
+                 '/runtimes/catalog': [dict(name=name, label=name, versions=[version, '8.3'] if name == 'php' else [version], default_version=version, container_port=port) for name, version, port in [('php','8.4',8080),('python','3.13',8000),('node','22',3000),('go','1.26',8080),('static','1.28',8080)]],
                  '/runtimes/php/modules': [dict(name='pdo_mysql', label='pdo_mysql', description='SQL')],
                  '/runtimes/static/modules': [],
                  '/jobs/job-test/logs': [],
@@ -129,9 +129,16 @@ def install_api(context, role='admin', authenticated=True):
         elif endpoint == '/applications/detect':
             assert method == 'POST'
             assert route.request.headers.get('x-csrf-token') == 'smoke-csrf'
-            data = dict(detection=dict(driver='managed', runtime='static', version='1.28', confidence='high', requires_configuration=False,
+            body = route.request.post_data_json
+            config = body.get('configuration', {})
+            runtime = config.get('runtime', 'static')
+            version = {'php': '8.4', 'python': '3.13', 'node': '22', 'go': '1.26', 'static': '1.28'}[runtime]
+            port = config.get('container_port', 8080)
+            command = 'apache2-foreground' if runtime == 'php' else ''
+            data = dict(detection=dict(driver='managed', runtime=runtime, version=version, start_command=command, confidence='high', requires_configuration=False,
+                                       compose_found=True, dockerfile_found=True,
                                        services=[dict(name='app', suggested_role='web', primary=True)],
-                                       endpoints=[dict(service='app', protocol='http', container_port=80, primary=True)]))
+                                       endpoints=[dict(service='app', protocol='http', container_port=port, primary=True)]))
         elif endpoint == '/applications':
             if method == 'POST':
                 assert route.request.headers.get('x-csrf-token') == 'smoke-csrf'
@@ -144,7 +151,10 @@ def install_api(context, role='admin', authenticated=True):
                 data = state['applications']
         elif endpoint.startswith('/applications/'):
             parts = endpoint.split('/')
-            app = next(item for item in state['applications'] if item['id'] == parts[2])
+            app = next((item for item in state['applications'] if item['id'] == parts[2]), None)
+            if app is None:
+                route.fulfill(status=404, json={'error': {'code': 'not_found', 'message': 'Application not found'}})
+                return
             suffix = '/'.join(parts[3:])
             if method in ('POST', 'PATCH', 'PUT', 'DELETE'):
                 assert route.request.headers.get('x-csrf-token') == 'smoke-csrf'
@@ -279,6 +289,7 @@ def main():
             page.get_by_label('Nazwa', exact=True).fill('Nowa aplikacja')
             source_select = page.get_by_label('Źródło', exact=True)
             source_select.select_option('local')
+            page.get_by_label('Język aplikacji', exact=True).select_option('php')
             local_path = page.get_by_label('Katalog z kodem', exact=True)
             local_path.fill('/opt/devbox/projects/aplikacja')
             page.get_by_role('button', name='Przeglądaj', exact=True).click()
@@ -286,6 +297,40 @@ def main():
             expect(page.get_by_text('/opt/devbox/projects/aplikacja', exact=True).last).to_be_visible()
             page.get_by_role('button', name='Wybierz katalog', exact=True).click()
             expect(local_path).to_have_value('/opt/devbox/projects/aplikacja')
+            # Explicit language, version and edited fields survive new analysis.
+            with page.expect_response(lambda response: '/applications/detect' in response.url):
+                page.clock.fast_forward(600)
+            page.get_by_role('button', name='Dalej', exact=True).click()
+            expect(page.get_by_label('Język / oprogramowanie', exact=True)).to_have_value('php')
+            expect(page.get_by_label('DevBox Managed Runtime', exact=True)).to_be_checked()
+            page.get_by_label('Wybór wersji', exact=True).select_option('8.3')
+            page.get_by_role('button', name='Dalej', exact=True).click()
+            page.get_by_label('Start command', exact=True).fill('php -S 0.0.0.0:9000 -t public')
+            page.get_by_label('Port hosta', exact=True).fill('8097')
+            page.get_by_role('button', name='Dodaj zmienną', exact=True).click()
+            page.get_by_label('Nazwa zmiennej 1', exact=True).fill('APP_ENV')
+            page.get_by_label('Wartość zmiennej 1', exact=True).fill('development')
+            page.get_by_label('Port wewnętrzny', exact=True).fill('9000')
+            with page.expect_response(lambda response: '/applications/detect' in response.url):
+                page.clock.fast_forward(600)
+            page.get_by_role('button', name='1. Źródło', exact=True).click()
+            local_path.fill('/opt/devbox/projects/other')
+            with page.expect_response(lambda response: '/applications/detect' in response.url):
+                page.clock.fast_forward(600)
+            expect(page.get_by_label('Język aplikacji', exact=True)).to_have_value('php')
+            page.get_by_role('button', name='2. Technologia', exact=True).click()
+            expect(page.get_by_label('Wybór wersji', exact=True)).to_have_value('8.3')
+            page.get_by_label('Dockerfile aplikacji', exact=True).check()
+            with page.expect_response(lambda response: '/applications/detect' in response.url):
+                page.clock.fast_forward(600)
+            expect(page.get_by_label('Dockerfile aplikacji', exact=True)).to_be_checked()
+            page.get_by_role('button', name='3. Uruchamianie', exact=True).click()
+            expect(page.get_by_label('Start command', exact=True)).to_have_value('php -S 0.0.0.0:9000 -t public')
+            expect(page.get_by_label('Port hosta', exact=True)).to_have_value('8097')
+            expect(page.get_by_label('Nazwa zmiennej 1', exact=True)).to_have_value('APP_ENV')
+            expect(page.get_by_label('Wartość zmiennej 1', exact=True)).to_have_value('development')
+            expect(page.get_by_label('Port wewnętrzny', exact=True)).to_have_value('9000')
+            page.screenshot(path=str(OUT / 'application-wizard-local-settings.png'), full_page=True)
             # Start the existing Docker-image wizard flow from a clean form so the
             # directory-browser regression does not leave asynchronous UI state behind.
             page.reload()
@@ -308,10 +353,10 @@ def main():
             page.get_by_role('button', name='Zapisz', exact=True).click()
             expect(page.get_by_role('heading', name='Nowa aplikacja', exact=True)).to_be_visible()
             assert state['posts'] == ['/applications']
-            state['applications'].pop()
-            state['posts'].clear()
             page.goto(BASE + '/apps/portal')
             expect(page.get_by_role('heading', name='Portal zespołu', exact=True)).to_be_visible()
+            state['applications'].pop()
+            state['posts'].clear()
             page.get_by_role('button', name='Usuń', exact=True).click()
             dialog = page.get_by_role('dialog', name='Usuń aplikację')
             expect(dialog).to_be_visible()

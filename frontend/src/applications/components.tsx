@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { request } from '../api/client'
 import type { RuntimeModuleOption } from '../api/types'
 import { PHPModulePicker } from '../runtime/PHPModulePicker'
 import { ComposeChoice } from './ComposeChoice'
-import type { Configuration, Detection } from './model'
+import type { Configuration, Detection, StartOption } from './model'
 import { statusNames } from './model'
 import { EnvironmentEditor } from './EnvironmentEditor'
 import './styles.css'
@@ -30,7 +30,9 @@ function initialRuntimeVersion(value: unknown, runtime: string): string {
 
 const phpStatusModules = ['pdo_mysql', 'mbstring', 'json', 'session', 'ctype', 'dom', 'fileinfo', 'filter', 'gd', 'iconv', 'pdo', 'mysqli', 'pdo_pgsql', 'pgsql', 'sqlite3', 'curl', 'intl', 'zip', 'bcmath', 'gmp', 'opcache', 'soap', 'ldap', 'redis', 'memcached', 'sockets', 'pcntl', 'exif', 'xdebug']
 
-export function ConfigurationFields({ value = {}, deploymentMode = '', hasProvisionedWorkloads = false, applicationId, moduleContainerID, phpRuntime, onDeploymentModeChange, onRuntimeChange, onModulesChange, wizardStep }: { wizardStep?: number; value?: Configuration; deploymentMode?: string; hasProvisionedWorkloads?: boolean; applicationId?: string; moduleContainerID?: string; phpRuntime?: boolean; onDeploymentModeChange?(mode: string): void; onRuntimeChange?(runtime: string): void; onModulesChange?(modules: string[]): void }) {
+export function ConfigurationFields({ value = {}, runtimeSelection, startOptions = [], onDetectionSettingsChange, deploymentMode = '', hasProvisionedWorkloads = false, applicationId, moduleContainerID, phpRuntime, onDeploymentModeChange, onRuntimeChange, onModulesChange, wizardStep }: { wizardStep?: number; value?: Configuration; runtimeSelection?: string; startOptions?: StartOption[]; onDetectionSettingsChange?(settings: Configuration): void; deploymentMode?: string; hasProvisionedWorkloads?: boolean; applicationId?: string; moduleContainerID?: string; phpRuntime?: boolean; onDeploymentModeChange?(mode: string): void; onRuntimeChange?(runtime: string): void; onModulesChange?(modules: string[]): void }) {
+  const fields = useRef<HTMLDivElement>(null)
+  const edited = useRef(new Set<string>())
   const [runtimeOptions, setRuntimeOptions] = useState<RuntimeChoice[]>([])
   const [runtimeError, setRuntimeError] = useState('')
   useEffect(() => { let cancelled = false; request<RuntimeChoice[]>('/runtimes/catalog').then((items) => { if (!cancelled) setRuntimeOptions(items) }).catch((error) => { if (!cancelled) setRuntimeError(String(error)) }); return () => { cancelled = true } }, [])
@@ -43,6 +45,7 @@ export function ConfigurationFields({ value = {}, deploymentMode = '', hasProvis
   const [runtime, setRuntime] = useState(typeof value.runtime === 'string' ? value.runtime : '')
   const [version, setVersion] = useState(() => initialRuntimeVersion(value.runtime_version, runtime))
   const [modules, setModules] = useState<string[]>(Array.isArray(value.modules) ? value.modules.filter((item): item is string => typeof item === 'string') : [])
+  const [reload, setReload] = useState(value.development_reload === true)
   const versions = runtimeChoices[runtime]?.versions ?? []
   const [customVersion, setCustomVersion] = useState(false)
   const useCustomVersion = customVersion || (!!version && runtimeOptions.length > 0 && !versions.includes(version))
@@ -51,6 +54,24 @@ export function ConfigurationFields({ value = {}, deploymentMode = '', hasProvis
     setRuntime(name); setVersion(runtimeChoices[name]?.default_version ?? ''); setCustomVersion(false); setModules([]); setCatalog([]); setCatalogError('')
     onRuntimeChange?.(name); onModulesChange?.([])
   }
+  useEffect(() => {
+    if (runtimeSelection !== undefined && runtimeSelection !== runtime) {
+      setRuntime(runtimeSelection); setVersion(''); setModules([]); setCustomVersion(false)
+      edited.current.delete('runtime_version')
+    }
+  }, [runtimeSelection, runtime])
+  useEffect(() => {
+    if (!edited.current.has('runtime_version') && runtime) {
+      setVersion(initialRuntimeVersion(value.runtime_version, runtime) || runtimeOptions.find((item) => item.name === runtime)?.default_version || '')
+    }
+  }, [runtime, value.runtime_version, runtimeOptions]) // catalog is loaded asynchronously
+  useEffect(() => {
+    if (runtimeSelection === undefined) return
+    for (const name of ['container_port', 'start_command', 'compose_service', 'document_root', 'working_directory', 'mount_target']) {
+      const input = fields.current?.querySelector<HTMLInputElement>(`input[name="${name}"]`)
+      if (input && !edited.current.has(name)) input.value = String(value[name] ?? '')
+    }
+  }, [value, runtimeSelection])
   const showPHPStatus = phpRuntime ?? runtime === 'php'
   const selected = useMemo(() => new Set(modules), [modules])
   const installedModuleSet = new Set((moduleInventory?.modules ?? []).map((item) => item.toLowerCase()))
@@ -92,22 +113,24 @@ export function ConfigurationFields({ value = {}, deploymentMode = '', hasProvis
   }, [applicationId, moduleContainerID, showPHPStatus])
   const text = (key: string) => typeof value[key] === 'string' || typeof value[key] === 'number' ? String(value[key]) : ''
 
-  return <>
+  return <div ref={fields} onChange={(event) => { const target = event.target as HTMLInputElement; if (target.name) edited.current.add(target.name) }}>
     {runtimeError && <p role="alert">{runtimeError}</p>}
     <div className="acp-fields" data-step="1" hidden={wizardStep !== undefined && wizardStep !== 1}>
       <div className="acp-wide"><ComposeChoice value={deploymentMode} onChange={(value) => onDeploymentModeChange?.(value)} />
         <small>{hasProvisionedWorkloads ? 'Zmiana wymaga wdrożenia. DevBox zatrzyma bieżące usługi na czas przełączenia i przywróci je, jeśli nowe wdrożenie się nie powiedzie.' : 'Compose użyje pliku z katalogu głównego źródła. Ty wybierasz język, wersję i dodatki. DevBox zbuduje kontener i zamontuje katalog źródłowy do zapisu.'}</small>
       </div>
       {deploymentMode === 'auto' && <>
-        <label>Język / oprogramowanie<select name="runtime" required value={runtime} onChange={(event) => changeRuntime(event.target.value)}><option value="">Wybierz język / oprogramowanie</option>{Object.entries(runtimeChoices).map(([name, choice]) => <option key={name} value={name}>{choice.label}</option>)}</select><small>Dla WordPress wybierz PHP. Profil WordPress zostanie rozpoznany ze źródła.</small></label>
-        <label>Wersja {runtimeChoices[runtime]?.label ?? 'oprogramowania'}<select aria-label="Wybór wersji" required disabled={!runtime} value={useCustomVersion ? 'custom' : version} onChange={(event) => { const chosen = event.target.value; setCustomVersion(chosen === 'custom'); setVersion(chosen === 'custom' ? '' : chosen) }}><option value="">Wybierz wersję</option>{(version && !versions.includes(version) ? [version, ...versions] : versions).map((item) => <option key={item} value={item}>{item}</option>)}<option value="custom">Inna wersja — wpiszę ręcznie</option></select><small>{runtime === 'php' ? 'Wybierz wersję PHP dla obrazu kontenera. Ten wybór zastępuje zakres z composer.json.' : 'Propozycje wersji; dostępność konkretnego obrazu zostanie sprawdzona przy budowaniu kontenera.'}</small></label>
+        <label>Język / oprogramowanie<select aria-label="Język / oprogramowanie" name="runtime" required value={runtime} onChange={(event) => changeRuntime(event.target.value)}><option value="">Wybierz język / oprogramowanie</option>{Object.entries(runtimeChoices).map(([name, choice]) => <option key={name} value={name}>{choice.label}</option>)}</select><small>Dla WordPress wybierz PHP. Profil WordPress zostanie rozpoznany ze źródła.</small></label>
+        <label>Wersja {runtimeChoices[runtime]?.label ?? 'oprogramowania'}<select aria-label="Wybór wersji" required disabled={!runtime} value={useCustomVersion ? 'custom' : version} onChange={(event) => { const chosen = event.target.value; edited.current.add('runtime_version'); setCustomVersion(chosen === 'custom'); setVersion(chosen === 'custom' ? '' : chosen) }}><option value="">Wybierz wersję</option>{(version && !versions.includes(version) ? [version, ...versions] : versions).map((item) => <option key={item} value={item}>{item}</option>)}<option value="custom">Inna wersja — wpiszę ręcznie</option></select><small>{runtime === 'php' ? 'Wybierz wersję PHP dla obrazu kontenera. Ten wybór zastępuje zakres z composer.json.' : 'Propozycje wersji; dostępność konkretnego obrazu zostanie sprawdzona przy budowaniu kontenera.'}</small></label>
         {useCustomVersion ? <label>Dokładna wersja<input name="runtime_version" required disabled={!runtime} value={version} onChange={(event) => setVersion(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,63}" placeholder={runtime === 'php' ? 'np. 8.3.12' : 'np. 22.14.0'} /><small>Podaj numer wersji bazowego obrazu, bez nazwy obrazu i sufiksu dystrybucji.</small></label> : <input type="hidden" name="runtime_version" value={version} />}
       </>}
     </div><div data-step="2" hidden={wizardStep !== undefined && wizardStep !== 2}><div className="acp-fields">
       <input name="runtime_image" type="hidden" value={runtimeChoices[runtime]?.image_template?.replace('{version}', version) ?? ''} />
-      <label>Port wewnętrzny<input name="container_port" type="number" min="0" max="65535" defaultValue={text('container_port')} placeholder="0 — automatycznie" /></label>
-      <label>Port hosta<input name="host_port" type="number" min="0" max="65535" defaultValue={text('host_port')} placeholder="0 — automatycznie" /><small>Port aplikacji, nie port panelu DevBox.</small></label>
-      <label className="acp-wide">Start command<input name="start_command" defaultValue={text('start_command')} placeholder="npm start / python app.py / apache2-foreground" /><small>Program i argumenty. Proces ma nasłuchiwać na 0.0.0.0 oraz wybranym porcie kontenera.</small></label>
+      <label>Port wewnętrzny<input aria-label="Port wewnętrzny" name="container_port" type="number" min="0" max="65535" defaultValue={text('container_port')} onChange={(event) => { const port = Number(event.target.value); if (Number.isInteger(port) && port >= 0 && port <= 65535) onDetectionSettingsChange?.({ container_port: port }) }} placeholder="0 — automatycznie" /></label>
+      <label>Port hosta<input aria-label="Port hosta" name="host_port" type="number" min="0" max="65535" defaultValue={text('host_port')} placeholder="0 — automatycznie" /><small>Port aplikacji, nie port panelu DevBox.</small></label>
+      <label className="acp-wide">Start command<input aria-label="Start command" name="start_command" defaultValue={text('start_command')} placeholder="npm start / python app.py / apache2-foreground" /><small>Program i argumenty. Proces ma nasłuchiwać na 0.0.0.0 oraz wybranym porcie kontenera.</small></label>
+      {deploymentMode === 'auto' && startOptions.length > 0 && <label className="acp-wide">Wykryty entrypoint<select aria-label="Wykryty entrypoint" defaultValue="" onChange={(event) => { const input = fields.current?.querySelector<HTMLInputElement>('input[name="start_command"]'); if (input && event.target.value) { input.value = event.target.value; edited.current.add('start_command') } }}><option value="">{startOptions.length > 1 ? 'Wybierz entrypoint lub wpisz własną komendę' : 'Zastosuj wykrytą komendę'}</option>{startOptions.map((item) => <option key={item.command} value={item.command}>{item.framework} · {item.name} — {item.command}</option>)}</select></label>}
+      {deploymentMode === 'auto' && ['python', 'go'].includes(runtime) && <label className="acp-check"><input type="checkbox" checked={reload} onChange={(event) => { setReload(event.target.checked); onDetectionSettingsChange?.({ development_reload: event.target.checked }) }} />Przeładowuj po zmianie źródeł<input type="hidden" name="development_reload" value={String(reload)} /><small>{runtime === 'go' ? 'Go przebuduje binarkę w kontenerze. Bez tej opcji użyj Rebuild.' : 'FastAPI/Flask/Django przeładują proces dla proponowanej komendy. Własna komenda określa zachowanie procesu.'}</small></label>}
       <label>Katalog roboczy w kontenerze<input name="working_directory" defaultValue={text('working_directory')} placeholder="Wykryj z obrazu / Dockerfile" /></label>
       <label>Restart policy<select name="restart_policy" defaultValue={text('restart_policy') || 'unless-stopped'}><option value="unless-stopped">unless-stopped</option><option value="always">always</option><option value="on-failure">on-failure</option><option value="no">no</option></select></label>
       {(deploymentMode === 'dockerfile' || deploymentMode === 'compose') && <label>Katalog montowania kodu<input name="mount_target" defaultValue={text('mount_target')} placeholder="Wykryj z WORKDIR, np. /srv/app" /></label>}
@@ -134,11 +157,14 @@ export function ConfigurationFields({ value = {}, deploymentMode = '', hasProvis
     </div></details>
     <EnvironmentEditor value={value.environment && typeof value.environment === 'object' ? value.environment as Record<string, unknown> : {}} />
     </div>
-  </>
+  </div>
 }
 export function DetectionResult({ value }: { value: Detection }) {
   return <section className="acp-card" aria-live="polite"><h2>Wynik analizy</h2><p>Tryb: <strong>{value.driver === 'compose' ? 'Docker Compose z aplikacji' : value.runtime === 'dockerfile' ? 'Dockerfile aplikacji' : value.runtime === 'image' ? 'Obraz OCI' : value.driver ? 'DevBox Auto Container' : 'do wyboru'}</strong> · Pewność: {value.confidence}{value.profile === 'wordpress' ? ' · WordPress (PHP + Apache)' : ''}{value.runtime && ` · ${value.runtime} ${value.version ?? ''}`}</p>
-    {value.requires_configuration && <p className="acp-notice">{value.driver === 'compose' ? 'Potrzebna konfiguracja przed wdrożeniem. Wybierz główną usługę HTTP i jej port kontenera.' : 'Nie wykryto runtime aplikacji. Wybierz runtime albo popraw konfigurację źródła.'}</p>}
+    {value.framework && <p>Framework: <strong>{value.framework}</strong></p>}
+    {value.start_command && <p>Proponowana komenda: <code>{value.start_command}</code></p>}
+    {value.runtime_candidates && value.runtime_candidates.length > 1 && <p>Wykryte technologie: {value.runtime_candidates.map((item) => `${item.runtime} (${item.framework || item.runtime})`).join(', ')}. Wybierz język aplikacji.</p>}
+    {value.requires_configuration && <p className="acp-notice">{value.driver === 'compose' ? 'Potrzebna konfiguracja przed wdrożeniem. Wybierz główną usługę HTTP i jej port kontenera.' : 'Wybierz technologię i entrypoint lub wpisz własną komendę przed wdrożeniem.'}</p>}
     {value.services?.map((service) => <p key={service.name}><code>{service.name}</code> — {service.suggested_role}{service.primary ? ' · główny' : ''}</p>)}
     {value.endpoints?.map((ep) => <p key={`${ep.service}:${ep.container_port}`}><code>{ep.service}:{ep.container_port}</code> · {ep.protocol}{ep.primary ? ' · główny endpoint' : ''}</p>)}
     {value.warnings?.map((warning, i) => <p className="acp-notice" key={i}>{warning}</p>)}

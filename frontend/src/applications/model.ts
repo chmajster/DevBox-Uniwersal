@@ -24,9 +24,11 @@ export interface ApplicationDetail extends Application { workloads: Workload[]; 
 export interface Detection {
   driver: string; profile?: string; runtime?: string; version?: string; confidence: string; requires_configuration: boolean
   warnings?: string[]; reasons?: string[]; start_command?: string; compose_found?: boolean; dockerfile_found?: boolean
+  framework?: string; start_options?: StartOption[]; runtime_candidates?: { runtime: string; version: string; framework?: string; start_options?: StartOption[] }[]
   services?: { name: string; suggested_role: string; primary: boolean; reason?: string }[]
   endpoints?: { service: string; protocol: string; container_port: number; primary: boolean; reason?: string }[]
 }
+export interface StartOption { name: string; framework?: string; command: string }
 export interface CreateApplication {
   name: string; description: string; source_type: string; source: Application['source']
   auto_start: boolean; configuration: Configuration
@@ -69,6 +71,7 @@ export function readConfiguration(form: FormData): Configuration {
   }
   const modules = String(form.get('modules') ?? '').split(/[\s,]+/).filter(Boolean)
   if (modules.length) config.modules = modules
+  if (form.has('development_reload')) config.development_reload = form.get('development_reload') === 'true'
   if (form.has('environment_rows')) {
     const rows = JSON.parse(String(form.get('environment_rows'))) as EnvironmentRow[]
     const { publicValues } = encodeEnvironment(rows)

@@ -39,6 +39,13 @@ describe('application control plane UI contract', () => {
 })
 
 describe('explicit managed container settings', () => {
+  it('persists the development reload switch as a boolean', () => {
+    const form = new FormData()
+    form.set('development_reload', 'false')
+    expect(readConfiguration(form)).toEqual({ development_reload: false })
+    form.set('development_reload', 'true')
+    expect(readConfiguration(form)).toEqual({ development_reload: true })
+  })
   it('requires language and version while allowing Compose', () => {
     expect(() => validateManagedConfiguration({ deployment_mode: 'auto' })).toThrow('Wybierz język')
     expect(() => validateManagedConfiguration({ deployment_mode: 'auto', runtime: 'php' })).toThrow('Wybierz wersję')
