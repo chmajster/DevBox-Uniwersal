@@ -579,6 +579,7 @@ func TestApplicationDockerSourcesAndRecovery(t *testing.T) {
 		if !strings.Contains(f.http(app), "DevBox") {
 			t.Fatal("empty starter HTTP")
 		}
+		f.verifyManagedSourceWrite(app)
 	})
 	t.Run("git", func(t *testing.T) {
 		previousT := f.t
@@ -596,6 +597,7 @@ func TestApplicationDockerSourcesAndRecovery(t *testing.T) {
 		if f.http(app) != "git-source" {
 			t.Fatal("Git HTTP")
 		}
+		f.verifyManagedSourceWrite(app)
 		os.WriteFile(filepath.Join(repo, "index.html"), []byte("git-update"), 0644)
 		cmd := exec.CommandContext(f.ctx, "git", "-c", "safe.directory="+repo, "-C", repo, "-c", "user.name=DevBox test", "-c", "user.email=test@devbox.invalid", "commit", "-am", "update")
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -691,4 +693,14 @@ func TestApplicationDockerSourcesAndRecovery(t *testing.T) {
 			t.Fatal("forbidden source accepted")
 		}
 	})
+}
+
+func (f *hostingDockerFixture) verifyManagedSourceWrite(app applications.Detail) {
+	f.t.Helper()
+	if out, err := exec.CommandContext(f.ctx, "docker", "exec", app.Workloads[0].DriverResourceID, "sh", "-c", "printf managed-rw > /usr/share/nginx/html/managed-rw.txt").CombinedOutput(); err != nil {
+		f.t.Fatalf("managed source is not writable by its process user: %s %v", out, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(app.SourcePath, "managed-rw.txt")); err != nil || string(data) != "managed-rw" {
+		f.t.Fatalf("managed container write is not visible on host: %s %v", data, err)
+	}
 }

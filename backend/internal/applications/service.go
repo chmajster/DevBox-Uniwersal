@@ -670,6 +670,9 @@ func (s *Service) prepareSource(ctx context.Context, app Application, source Sou
 		if err := scaffoldEmptySource(workDir, decodeConfiguration(app.SourceConfig)); err != nil {
 			return "", "", err
 		}
+		if err := s.prepareManagedSourceOwnership(ctx, workDir); err != nil {
+			return "", "", err
+		}
 		return workDir, "", nil
 	case SourceGit:
 		if s.git == nil {
@@ -701,6 +704,9 @@ func (s *Service) prepareSource(ctx context.Context, app Application, source Sou
 			if err := s.git.Clone(ctx, providers.GitSource{RepositoryURL: source.RepositoryURL, Reference: source.Reference, Destination: workDir, CredentialRef: credentialRef}); err != nil {
 				return "", "", err
 			}
+		}
+		if err := s.prepareManagedSourceOwnership(ctx, workDir); err != nil {
+			return "", "", err
 		}
 		revision, err := s.git.Revision(ctx, workDir)
 		if err != nil {
