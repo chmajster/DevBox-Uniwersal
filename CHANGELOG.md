@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-11 — Local runtime configuration
+
+- Preserved explicit language, version, execution mode and edited settings when source detection completes; language selection is available before choosing the directory.
+- Added mixed-runtime and framework/entrypoint discovery, public-only PHP detection, nested Python application objects and real Go main packages under cmd/.
+- Added optional Python reload and container-local Go watching with failed-build recovery, plus automatic rebuild for module/document-root changes.
+- Verified original source reads/writes against the selected daemon before replacement, including Dockerfile/Compose helper probes; made root-created private Git/starter sources writable by non-root runtimes.
+- Extended actual Docker version-isolation/RW/reload tests and browser regressions.
+
 ## 2026-10-08 — Docker hosting task
 
 - Added local/Git/empty/OCI sources, existing Dockerfile support and a five-step application wizard with Save and Create/start actions.

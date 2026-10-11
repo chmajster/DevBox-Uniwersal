@@ -1,6 +1,6 @@
 # Current status
 
-Verified on 2026-10-08. Application is the only user-application lifecycle model. `/apps` supports local, Git, empty starter and OCI sources, with existing Compose, existing Dockerfile and generated Docker choices. All application processes run in Docker; the managed and Compose engines share persistent topology, jobs, ports, secrets and reconciliation.
+Updated on 2026-10-11; verification from both sessions is recorded below. Application is the only user-application lifecycle model. `/apps` supports local, Git, empty starter and OCI sources, with existing Compose, existing Dockerfile and generated Docker choices. All application processes run in Docker; the managed and Compose engines share persistent topology, jobs, ports, secrets and reconciliation.
 
 Implemented:
 
@@ -14,7 +14,7 @@ Implemented:
 - RBAC, encrypted SecretStore, redacted logs, source/Compose/build path validation, restricted container capabilities and ownership checks before replacement/removal.
 - Linux/Windows Reinstall preserving configuration, SQLite, keys, sources and SQL volumes; Docker/Compose/network diagnostics and sibling probe installation.
 
-## Executed verification
+## Executed verification on 2026-10-08
 
 Environment: Windows host, Ubuntu-26.04 WSL, Go 1.26.0 and Node 22.22.1. Real containers ran on the native WSL Docker Engine with its Compose plugin. Tests use isolated SQLite databases, uniquely owned containers/networks/volumes and disposable source directories.
 
@@ -45,12 +45,41 @@ GitHub Actions also confirmed backend/frontend/installer checks, the Runtime con
 
 Commands, API semantics and the CODEX_TASK A–G mapping are in [Application hosting](docs/application-control-plane.md). CI builds the probe and runs the full Docker application suite with a 50-minute timeout.
 
+## Executed verification on 2026-10-11
+
+The wizard now preserves explicit language/version/mode and edited fields across analysis. Detection returns mixed-runtime candidates, frameworks and real Python/Go entrypoints. Generated Go supports optional watching; Python supports framework reload and live src-layout imports. PHP public-only sources are recognized and module/document-root changes queue rebuilds. Every source deployment checks bidirectional daemon mapping before replacement. Dockerfile/Compose checks use the official alpine:3.22 helper. Root-created private Git/starter sources use UID/GID 10001; local sources and linked targets are not changed.
+
+Environment: Windows host, Ubuntu-26.04 WSL, Docker Engine 29.1.3, Compose 2.40.3, Go 1.26.0, Node 22.22.1, Python 3.14 and headless Playwright 1.63 Chromium. Disposable resources and separate port ranges isolate the test groups from existing applications.
+
+| Check | Result |
+| --- | --- |
+| gofmt, full backend tests, go vet | PASS |
+| Race tests: applications, drivers, Docker, databases, proxy and jobs | PASS |
+| Backend, helper and static SQL-probe builds | PASS |
+| Frontend unit tests | 77 PASS in 19 files |
+| ESLint, TypeScript and production build | PASS |
+| Bash syntax, ShellCheck, installer preservation/idempotency | PASS |
+| Native Windows PowerShell syntax and installer tests | PASS |
+| Python branding checks / Chromium branding | 5 / 6 PASS |
+| Local Chromium workspace smoke, production bundle / synthetic API | PASS; language before directory, version/mode/port/command/environment retention, lifecycle/jobs/secrets, RBAC and mobile layouts |
+| Real Docker lifecycle: generated runtimes, WordPress and Compose filenames | PASS, 953.06 s; Compose variants after helper-probe change PASS, 187.02 s |
+| Real Docker concurrent PHP versions and failed replacement rollback | PASS, 90.12 s |
+| Real Docker Python 3.12/3.13 and Go 1.25/1.26, concurrent isolation, nested/multiple entrypoints, RW, manual rebuild and reload | PASS after fixture correction, 331.17 s; final Go watcher rerun PASS, 194.40 s |
+| Real Docker MySQL/PostgreSQL/MariaDB, account isolation, persisted data and Compose web/worker SQL | PASS, 346.29 s |
+| Real Docker sources/recovery, including Windows /mnt/c and Dockerfile mapping probe | PASS after ownership correction, 222.70 s; Git/empty sources also prove runtime-user writes |
+| Real Docker legacy database connectivity / publications | PASS, 33.39 / 18.01 s |
+| Real Apache non-root worker, public/index.php only, RW and source preflight | PASS, 29.20 s |
+| Read-only service source and wrong daemon mapping regressions | PASS; permission check also run as WSL UID 1000 |
+| git diff --check | PASS |
+
+The initial aggregate Docker run exposed a nested-file fixture error and root-created Git/starter source ownership that prevented non-root writes. Both were corrected and the affected groups rerun successfully. A targeted Dockerfile run collided with a simultaneously running source group using the same host ports; the final full source/recovery group passed without that overlap. All five application Docker groups have passing executed results. Results combine aggregate and affected-group reruns rather than claiming the initial aggregate passed. The browser fixture also removed a synthetic application before its reads finished; cleanup ordering and normal 404 behavior were corrected and the workspace smoke rerun successfully.
+
 ## Operational limits and unverified items
 
-- Browser regressions used synthetic API fixtures. The real backend/SQL path was checked separately through HTTP and Docker. No interactive local browser was exposed in this session.
+- Browser regressions use synthetic API fixtures and the production frontend bundle. The current bundle was exercised locally in headless Chromium, with screenshots inspected. Real runtime/SQL behavior was checked separately with Docker; the 2026-10-08 session also checked the backend HTTP API.
 - No installed production service was reinstalled or purged. Reinstall preservation was checked through installer tests; real application/SQL persistence was checked with Docker. Repository validation does not replace a host installation trial.
 - Domain/TLS routing was covered by backend tests, not a live public DNS/certificate deployment. Nginx/client DNS and existing certificates require operator configuration. ACME remains disabled.
 - Compose recovery is best effort for retained images and the previous plan. Source Compose changes, external services and data writes cannot be rolled back atomically; same-port replacement can briefly interrupt service.
 - Dockerfile/Compose sources retain responsibility for their own image/process compatibility. Unsupported host privileges and paths outside the authorized application source are rejected. Root-owned/unwritable Linux source directories require suitable operator permissions; DevBox does not make them globally writable.
-- Go supports manual rebuilding and compile-on-start, without automatic file watching or a separate minimal production image. HTTP readiness establishes reachability, not business correctness.
+- Go supports manual rebuilding, compile-on-start and optional container-local polling/rebuilding. A separate minimal production image remains optional and is not implemented. HTTP readiness establishes reachability, not business correctness.
 - Windows/WSL mounting was tested against this native WSL daemon. A different Docker Desktop distribution/path integration still requires its own daemon access and mapping checks.
