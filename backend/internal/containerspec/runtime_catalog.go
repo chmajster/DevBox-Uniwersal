@@ -90,6 +90,14 @@ func ParseStartCommand(command string) ([]string, error) {
 }
 
 func SuggestedCommand(root, runtime, profile string, port int) string {
+	options := StartOptions(root, runtime, profile, port, false)
+	if len(options) == 1 {
+		return options[0].Command
+	}
+	return ""
+}
+
+func legacySuggestedCommand(root, runtime, profile string, port int) string {
 	has := func(name string) bool {
 		info, err := os.Stat(filepath.Join(root, name))
 		return err == nil && info.Mode().IsRegular()

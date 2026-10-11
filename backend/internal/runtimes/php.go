@@ -22,7 +22,7 @@ func (r *PHPRuntime) Detect(_ context.Context, project ProjectContext) (Detectio
 		return Detection{}, err
 	}
 
-	files := existingFiles(project.WorkDir, "artisan", "composer.json", "index.php", "symfony.lock")
+	files := existingFiles(project.WorkDir, "artisan", "composer.json", "index.php", "public/index.php", "symfony.lock")
 	phpEntries, globErr := filepath.Glob(filepath.Join(project.WorkDir, "*.php"))
 	if globErr != nil {
 		return Detection{}, globErr
@@ -117,7 +117,7 @@ func composerExtensions(manifest *composerManifest) []string {
 }
 
 func phpDocumentRoot(workDir, framework string) string {
-	if (framework == "Laravel" || framework == "Symfony") && fileExists(workDir, filepath.Join("public", "index.php")) {
+	if fileExists(workDir, filepath.Join("public", "index.php")) {
 		return "public"
 	}
 	return "."

@@ -223,6 +223,9 @@ type DetectionResult struct {
 	Runtime               string              `json:"runtime,omitempty"`
 	Version               string              `json:"version,omitempty"`
 	StartCommand          string              `json:"start_command,omitempty"`
+	Framework             string              `json:"framework,omitempty"`
+	RuntimeCandidates     []RuntimeCandidate  `json:"runtime_candidates,omitempty"`
+	StartOptions          []StartOption       `json:"start_options,omitempty"`
 	ComposeFound          bool                `json:"compose_found"`
 	DockerfileFound       bool                `json:"dockerfile_found"`
 	Services              []ServiceDetection  `json:"services,omitempty"`
@@ -230,6 +233,19 @@ type DetectionResult struct {
 	Warnings              []string            `json:"warnings,omitempty"`
 	Reasons               []string            `json:"reasons,omitempty"`
 	RequiresConfiguration bool                `json:"requires_configuration"`
+}
+
+type StartOption struct {
+	Name      string `json:"name"`
+	Framework string `json:"framework,omitempty"`
+	Command   string `json:"command"`
+}
+
+type RuntimeCandidate struct {
+	Runtime      string        `json:"runtime"`
+	Version      string        `json:"version"`
+	Framework    string        `json:"framework,omitempty"`
+	StartOptions []StartOption `json:"start_options,omitempty"`
 }
 
 type ApplicationState struct {

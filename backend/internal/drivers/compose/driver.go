@@ -225,6 +225,13 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 	if err := d.engine.ComposeValidate(ctx, request.WorkDir, projectName); err != nil {
 		return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StagePrepare, Driver: d.Name(), Operation: "compose_validate", Reason: err.Error(), Action: "fix compose.yaml before deploying"}
 	}
+	if verifier, ok := d.engine.(interface {
+		VerifyApplicationSource(context.Context, string, map[string]string) error
+	}); ok {
+		if err := verifier.VerifyApplicationSource(ctx, request.WorkDir, driverutil.Labels(request.Application, request.Deployment, "source-probe")); err != nil {
+			return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageStorage, Driver: d.Name(), Operation: "verify_source", Reason: err.Error(), Action: "verify Docker daemon source mapping and directory permissions"}
+		}
+	}
 	pull := func() error { return d.engine.ComposePull(ctx, request.WorkDir, projectName, "") }
 	if provider, ok := d.engine.(interface {
 		ComposePullApplication(context.Context, string, string) error

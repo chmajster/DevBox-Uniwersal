@@ -2,8 +2,10 @@ package managed
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/applications"
@@ -11,6 +13,62 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
 )
+
+func TestDetectionKeepsExplicitTechnologyAndExposesAmbiguity(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{"public/index.php": "<?php echo 'ok';", "requirements.txt": "fastapi\nuvicorn\n", "main.py": "from fastapi import FastAPI\napi = FastAPI()"} {
+		file := filepath.Join(root, name)
+		os.MkdirAll(filepath.Dir(file), 0o755)
+		os.WriteFile(file, []byte(content), 0o644)
+	}
+	driver := New(nil, runtimes.NewDefaultRegistry(), nil, nil, "")
+	request := applications.DetectRequest{WorkDir: root}
+	detection, err := driver.Detect(context.Background(), request)
+	if !errors.Is(err, applications.ErrConfigurationRequired) || len(detection.RuntimeCandidates) != 2 || detection.Runtime != "" {
+		t.Fatalf("arbitrary runtime selected: %+v %v", detection, err)
+	}
+	request.Configuration = map[string]any{"runtime": "python", "container_port": 9000, "development_reload": true}
+	detection, err = driver.Detect(context.Background(), request)
+	if err != nil || detection.Runtime != "python" || detection.Framework != "FastAPI" || !strings.Contains(detection.StartCommand, "main:api --host 0.0.0.0 --port 9000 --reload") {
+		t.Fatalf("explicit choice/port lost: %+v %v", detection, err)
+	}
+	request.Configuration["runtime"] = "php"
+	detection, err = driver.Detect(context.Background(), request)
+	if err != nil || detection.Runtime != "php" {
+		t.Fatalf("public-only PHP missed: %+v %v", detection, err)
+	}
+}
+
+func TestAmbiguousEntrypointsCannotBePlannedWithoutSelection(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "requirements.txt"), []byte("fastapi\nuvicorn\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "main.py"), []byte("from fastapi import FastAPI\nfirst = FastAPI()\nsecond = FastAPI()"), 0o644)
+	driver := New(nil, runtimes.NewDefaultRegistry(), nil, nil, "")
+	config := map[string]any{"runtime": "python"}
+	detection, err := driver.Detect(context.Background(), applications.DetectRequest{WorkDir: root, Configuration: config})
+	if err != nil || !detection.RequiresConfiguration || detection.StartCommand != "" {
+		t.Fatalf("guessed entrypoint: %+v %v", detection, err)
+	}
+	request := applications.PlanRequest{Application: applications.Application{ID: "ambiguous"}, WorkDir: root, Configuration: config, Detection: detection}
+	if _, err := driver.Plan(context.Background(), request); !errors.Is(err, applications.ErrConfigurationRequired) {
+		t.Fatalf("ambiguous deployment permitted: %v", err)
+	}
+	config["start_command"] = detection.StartOptions[1].Command
+	request.Detection, _ = driver.Detect(context.Background(), applications.DetectRequest{WorkDir: root, Configuration: config})
+	plan, err := driver.Plan(context.Background(), request)
+	if err != nil || len(plan.Workloads[0].Command) == 0 {
+		t.Fatalf("selected command rejected: %+v %v", plan, err)
+	}
+}
+
+func TestDockerfileUsesFinalAbsoluteWorkdir(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "Dockerfile"), []byte("FROM alpine\nWORKDIR /builder\nFROM alpine\nWORKDIR /old\nWORKDIR /srv\nWORKDIR app\nEXPOSE 8080\n"), 0o644)
+	workdir, _, err := customDefaults(root)
+	if err != nil || workdir != "/srv/app" {
+		t.Fatalf("final WORKDIR: %s %v", workdir, err)
+	}
+}
 
 func TestDetectWordPressProfileWithoutConfig(t *testing.T) {
 	root := t.TempDir()

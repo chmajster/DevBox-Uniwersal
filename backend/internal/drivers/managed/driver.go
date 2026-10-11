@@ -46,78 +46,98 @@ func New(engine engine, registry runtimes.Registry, ports applications.PortAlloc
 }
 func (d *Driver) Name() string { return "managed" }
 
-func (d *Driver) Detect(ctx context.Context, request applications.DetectRequest) (result applications.DetectionResult, err error) {
+func (d *Driver) Detect(ctx context.Context, request applications.DetectRequest) (applications.DetectionResult, error) {
 	if mode := customMode(request.SourceType, request.Configuration); mode != "" {
 		return d.detectCustom(request, mode)
 	}
-	defer func() {
-		if result.Runtime != "" {
-			if result.Version == "" {
-				result.Version = containerspec.DefaultVersion(result.Runtime)
-			}
-			port := 8080
-			if result.Profile == "wordpress" {
-				port = 80
-			}
-			result.StartCommand = containerspec.SuggestedCommand(request.WorkDir, result.Runtime, result.Profile, port)
-		}
-	}()
 	if request.WorkDir == "" {
 		return applications.DetectionResult{}, applications.ErrConfigurationRequired
 	}
-	wordpress := isWordPress(request.WorkDir)
-	if name := driverutil.ConfigString(request.Configuration, "runtime"); name != "" {
-		name = containerspec.NormalizeRuntime(name)
-		version := driverutil.ConfigString(request.Configuration, "runtime_version")
-		if name == "php" {
-			version = normalizeDetectedVersion(name, version)
-		}
-		if err := containerspec.Validate(name, version, driverutil.Modules(request.Configuration)); err != nil {
-			return applications.DetectionResult{}, fmt.Errorf("%w: %v", applications.ErrInvalidInput, err)
-		}
-		profile, port, endpointReason := "", 8080, "managed runtime default; final port is derived from generated container specification"
-		if wordpress && name == "php" {
-			profile, port, endpointReason = "wordpress", 80, "Apache WordPress image listens on port 80"
-		}
-		return applications.DetectionResult{
-			Driver: d.Name(), Runtime: name, Profile: profile, Version: version, Confidence: "high",
-			Services:  []applications.ServiceDetection{{Name: "web", SuggestedRole: "web", Primary: true, Confidence: "high", Reason: "single managed runtime workload"}},
-			Endpoints: []applications.EndpointDetection{{Service: "web", Protocol: "http", ContainerPort: port, Primary: true, Confidence: "medium", Reason: endpointReason}},
-			Reasons:   []string{"runtime configured explicitly"},
-		}, nil
+	port := driverutil.ConfigInt(request.Configuration, "container_port")
+	if port == 0 {
+		port = 8080
 	}
-	if wordpress {
-		version := normalizeDetectedVersion("php", driverutil.ConfigString(request.Configuration, "runtime_version"))
-		return applications.DetectionResult{Driver: d.Name(), Runtime: "php", Profile: "wordpress", Version: version, Confidence: "high",
-			Services:  []applications.ServiceDetection{{Name: "web", SuggestedRole: "web", Primary: true, Confidence: "high", Reason: "WordPress source profile"}},
-			Endpoints: []applications.EndpointDetection{{Service: "web", Protocol: "http", ContainerPort: 80, Primary: true, Confidence: "high", Reason: "Apache WordPress image listens on port 80"}},
-			Reasons:   []string{"WordPress markers detected; PHP + Apache runtime selected"}}, nil
-	}
-	bestRuntime, bestVersion, bestConfidence := "", "", -1
+	reload, _ := request.Configuration["development_reload"].(bool)
+	configured := containerspec.NormalizeRuntime(driverutil.ConfigString(request.Configuration, "runtime"))
+	candidates := []applications.RuntimeCandidate{}
 	for _, name := range d.runtimes.List() {
 		runtime, ok := d.runtimes.Get(name)
 		if !ok {
 			continue
 		}
-		detection, err := runtime.Detect(ctx, runtimes.ProjectContext{ProjectID: "detect", ProjectName: "detect", WorkDir: request.WorkDir, Config: request.Configuration})
-		if err != nil || !detection.Detected {
+		detected, err := runtime.Detect(ctx, runtimes.ProjectContext{WorkDir: request.WorkDir, Config: request.Configuration})
+		if err != nil {
+			if configured == name {
+				return applications.DetectionResult{}, fmt.Errorf("%w: %v", applications.ErrInvalidInput, err)
+			}
 			continue
 		}
-		confidence := confidenceValue(detection.Metadata)
-		if confidence > bestConfidence {
-			bestRuntime, bestVersion, bestConfidence = detection.Runtime, detection.Version, confidence
+		if !detected.Detected {
+			continue
+		}
+		framework, _ := detected.Metadata["framework"].(string)
+		version := normalizeDetectedVersion(name, detected.Version)
+		if version == "" {
+			version = containerspec.DefaultVersion(name)
+		}
+		candidates = append(candidates, applications.RuntimeCandidate{Runtime: name, Version: version, Framework: framework, StartOptions: startOptions(request.WorkDir, name, "", port, reload)})
+	}
+	result := applications.DetectionResult{Driver: d.Name(), RuntimeCandidates: candidates, Confidence: "high"}
+	if configured != "" {
+		version := normalizeDetectedVersion(configured, driverutil.ConfigString(request.Configuration, "runtime_version"))
+		if err := containerspec.Validate(configured, version, driverutil.Modules(request.Configuration)); err != nil {
+			return result, fmt.Errorf("%w: %v", applications.ErrInvalidInput, err)
+		}
+		result.Runtime, result.Version = configured, version
+		result.Reasons = []string{"runtime configured explicitly"}
+		for _, candidate := range candidates {
+			if candidate.Runtime == configured {
+				result.Framework = candidate.Framework
+			}
+		}
+	} else if isWordPress(request.WorkDir) {
+		result.Runtime, result.Framework = "php", "WordPress"
+	} else if len(candidates) == 1 {
+		result.Runtime, result.Version, result.Framework = candidates[0].Runtime, candidates[0].Version, candidates[0].Framework
+		result.Reasons = []string{"runtime manifest/files detected"}
+	} else {
+		result.RequiresConfiguration = true
+		result.Confidence = "none"
+		result.Warnings = []string{"select a runtime explicitly; source contains multiple technologies or no supported runtime"}
+		return result, applications.ErrConfigurationRequired
+	}
+	if isWordPress(request.WorkDir) && result.Runtime == "php" {
+		result.Profile, result.Framework = "wordpress", "WordPress"
+		if driverutil.ConfigInt(request.Configuration, "container_port") == 0 {
+			port = 80
 		}
 	}
-	if bestRuntime == "" {
-		return applications.DetectionResult{Driver: d.Name(), Confidence: "none", RequiresConfiguration: true}, applications.ErrConfigurationRequired
+	if result.Version == "" {
+		result.Version = containerspec.DefaultVersion(result.Runtime)
 	}
-	bestVersion = normalizeDetectedVersion(bestRuntime, bestVersion)
-	return applications.DetectionResult{
-		Driver: d.Name(), Confidence: confidenceLabel(bestConfidence), Runtime: bestRuntime, Version: bestVersion,
-		Services:  []applications.ServiceDetection{{Name: "web", SuggestedRole: "web", Primary: true, Confidence: "high", Reason: "single managed runtime workload"}},
-		Endpoints: []applications.EndpointDetection{{Service: "web", Protocol: "http", ContainerPort: 8080, Primary: true, Confidence: "medium", Reason: "managed runtime default; final port is derived from generated container specification"}},
-		Reasons:   []string{"runtime manifest/files detected"},
-	}, nil
+	result.StartOptions = startOptions(request.WorkDir, result.Runtime, result.Profile, port, reload)
+	if len(result.StartOptions) == 1 && result.StartOptions[0].Framework != "" {
+		result.Framework = result.StartOptions[0].Framework
+	}
+	if command := driverutil.ConfigString(request.Configuration, "start_command"); command != "" {
+		result.StartCommand = command
+	} else if len(result.StartOptions) == 1 {
+		result.StartCommand = result.StartOptions[0].Command
+	} else if len(result.StartOptions) > 1 && len(driverutil.ConfigStringSlice(request.Configuration, "command")) == 0 {
+		result.RequiresConfiguration = true
+		result.Warnings = append(result.Warnings, "multiple entrypoints detected; select a start command before deployment")
+	}
+	result.Services = []applications.ServiceDetection{{Name: "web", SuggestedRole: "web", Primary: true, Confidence: "high", Reason: "single selected managed workload"}}
+	result.Endpoints = []applications.EndpointDetection{{Service: "web", Protocol: "http", ContainerPort: port, Primary: true, Confidence: "medium"}}
+	return result, nil
+}
+
+func startOptions(root, runtime, profile string, port int, reload bool) []applications.StartOption {
+	out := []applications.StartOption{}
+	for _, item := range containerspec.StartOptions(root, runtime, profile, port, reload) {
+		out = append(out, applications.StartOption{Name: item.Name, Framework: item.Framework, Command: item.Command})
+	}
+	return out
 }
 
 func normalizeDetectedVersion(runtimeName, version string) string {
@@ -137,11 +157,17 @@ func normalizeDetectedVersion(runtimeName, version string) string {
 }
 
 func (d *Driver) Plan(ctx context.Context, request applications.PlanRequest) (applications.DeploymentPlan, error) {
+	if request.Detection.RequiresConfiguration {
+		return applications.DeploymentPlan{}, applications.ErrConfigurationRequired
+	}
 	runtimeName := strings.TrimSpace(request.Detection.Runtime)
 	if runtimeName == "" {
 		detection, err := d.Detect(ctx, applications.DetectRequest{SourceType: request.Application.SourceType, Source: request.Source, WorkDir: request.WorkDir, Configuration: request.Configuration})
 		if err != nil {
 			return applications.DeploymentPlan{}, err
+		}
+		if detection.RequiresConfiguration {
+			return applications.DeploymentPlan{}, applications.ErrConfigurationRequired
 		}
 		runtimeName = detection.Runtime
 		request.Detection = detection
@@ -190,6 +216,9 @@ func (d *Driver) Plan(ctx context.Context, request applications.PlanRequest) (ap
 	}
 	if len(command) == 0 && (runtimeName == "go" || runtimeName == "python") {
 		command, _ = containerspec.ParseStartCommand(request.Detection.StartCommand)
+	}
+	if reload, configured := request.Configuration["development_reload"].(bool); configured {
+		command = containerspec.ApplyDevelopmentReload(command, runtimeName, reload)
 	}
 	endpoint = driverutil.ConfigureEndpoint(endpoint, request.Configuration)
 	endpoint.Workload = "web"
@@ -311,6 +340,14 @@ func (d *Driver) Deploy(ctx context.Context, request applications.ExecutionReque
 	}
 	if request.Progress != nil {
 		request.Progress(applications.StageCreate, 65)
+	}
+	if verifier, ok := d.engine.(interface {
+		VerifyManagedSource(context.Context, containerspec.DeploymentSpec) error
+	}); ok {
+		if err := verifier.VerifyManagedSource(ctx, spec); err != nil {
+			driverutil.RollbackPort(d.ports, request, endpoint, lease.Port)
+			return applications.DeploymentResult{}, &applications.OperationError{Stage: applications.StageStorage, Driver: d.Name(), Operation: "verify_source_mount", Reason: err.Error(), Action: "check Docker daemon path mapping and source permissions"}
+		}
 	}
 	if err := d.engine.ReplaceManagedPorts(ctx, spec, nil); err != nil {
 		driverutil.RollbackPort(d.ports, request, endpoint, lease.Port)
@@ -440,34 +477,6 @@ func (d *Driver) each(ctx context.Context, request applications.InspectRequest, 
 	return nil
 }
 
-func confidenceValue(metadata map[string]any) int {
-	if metadata == nil {
-		return 0
-	}
-	switch value := metadata["confidence"].(type) {
-	case int:
-		return value
-	case float64:
-		return int(value)
-	case string:
-		if value == "high" {
-			return 100
-		}
-		if value == "medium" {
-			return 50
-		}
-	}
-	return 0
-}
-func confidenceLabel(value int) string {
-	if value >= 80 {
-		return "high"
-	}
-	if value >= 40 {
-		return "medium"
-	}
-	return "low"
-}
 func preferred(port int) *int {
 	if port <= 0 {
 		return nil

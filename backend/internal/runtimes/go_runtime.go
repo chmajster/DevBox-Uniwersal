@@ -3,6 +3,8 @@ package runtimes
 import (
 	"context"
 	"strings"
+
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/containerspec"
 )
 
 type GoRuntime struct{}
@@ -18,7 +20,7 @@ func (r *GoRuntime) Detect(_ context.Context, project ProjectContext) (Detection
 	if err != nil {
 		return Detection{}, err
 	}
-	if content == nil {
+	if content == nil && len(containerspec.StartOptions(project.WorkDir, "go", "", 8080, false)) == 0 {
 		return Detection{Runtime: r.Name()}, nil
 	}
 	version := ""

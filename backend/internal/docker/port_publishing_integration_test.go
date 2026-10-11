@@ -142,7 +142,10 @@ func TestManagedPHPWritableBindMountDockerIntegration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "host.txt"), []byte("host-write"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "index.php"), []byte("<?php file_put_contents(__DIR__ . '/container.txt', 'container-write'); echo file_get_contents(__DIR__ . '/host.txt');"), 0o644); err != nil {
+	if err := os.Mkdir(filepath.Join(dir, "public"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "public", "index.php"), []byte("<?php file_put_contents(dirname(__DIR__) . '/container.txt', 'container-write'); echo file_get_contents(dirname(__DIR__) . '/host.txt');"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	host, _, _ := freePublishingPorts(t)
@@ -162,6 +165,9 @@ func TestManagedPHPWritableBindMountDockerIntegration(t *testing.T) {
 		_, _, _ = provider.runner.Run(cleanup, "image", "rm", "-f", spec.Image)
 	})
 	if err := provider.BuildManaged(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.VerifyManagedSource(ctx, spec); err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.ReplaceManagedPorts(ctx, spec, nil); err != nil {

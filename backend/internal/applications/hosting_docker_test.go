@@ -74,6 +74,9 @@ func newHostingDockerFixture(t *testing.T) *hostingDockerFixture {
 	if strings.Contains(t.Name(), "Sources") {
 		portStart = 49000
 	}
+	if strings.Contains(t.Name(), "Entrypoints") {
+		portStart = 52000
+	}
 	ports := applications.NewApplicationPortAllocator(db, portStart, portStart+999).WithDockerPorts(engine.PublishedApplicationPorts)
 	registry := applications.NewDriverRegistry()
 	for _, driver := range []applications.DeploymentDriver{manageddriver.New(engine, runtimes.NewDefaultRegistry(), ports, engine, network), composedriver.New(engine, ports, engine, network)} {
@@ -171,6 +174,9 @@ func (f *hostingDockerFixture) source(name string, files map[string]string) stri
 		}
 	}
 	for name, body := range files {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755); err != nil {
+			f.t.Fatal(err)
+		}
 		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0644); err != nil {
 			f.t.Fatal(err)
 		}

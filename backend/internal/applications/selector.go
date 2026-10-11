@@ -59,7 +59,7 @@ func (s *Selector) Detect(ctx context.Context, request DetectRequest, explicitDr
 		return s.detectWith(ctx, "managed", request, "Dockerfile detected")
 	}
 	result, err := s.detectWith(ctx, "managed", request, "supported managed runtime detected")
-	if err == nil && result.Runtime != "" {
+	if err == nil && (result.Runtime != "" || result.RequiresConfiguration) {
 		return result, nil
 	}
 	if err != nil && !errors.Is(err, ErrConfigurationRequired) {

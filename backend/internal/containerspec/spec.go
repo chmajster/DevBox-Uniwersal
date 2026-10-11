@@ -620,16 +620,16 @@ func dockerfileFor(runtime, version string, modules []Module) (string, int, bool
 		return "FROM python:" + version + "-slim-bookworm\n" + install +
 				"WORKDIR /app\nCOPY . /app\nRUN python -m pip install --no-cache-dir --upgrade pip && if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; elif [ -f pyproject.toml ]; then pip install --no-cache-dir .; fi\n" +
 				"RUN useradd -u 10001 -r -s /usr/sbin/nologin devbox && chown -R 10001:0 /app\n" +
-				"USER 10001\nENV PORT=8080 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\nEXPOSE 8080\n" +
+				"USER 10001\nENV PORT=8080 PYTHONPATH=/app:/app/src PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\nEXPOSE 8080\n" +
 				"CMD [\"sh\",\"-lc\",\"if [ -f manage.py ]; then exec python manage.py runserver 0.0.0.0:8080; elif [ -f main.py ] && python -c 'import uvicorn' >/dev/null 2>&1; then exec python -m uvicorn main:app --host 0.0.0.0 --port 8080; elif [ -f app.py ] && python -c 'import uvicorn' >/dev/null 2>&1; then exec python -m uvicorn app:app --host 0.0.0.0 --port 8080; elif [ -f app.py ]; then exec python app.py; elif [ -f main.py ]; then exec python main.py; else echo 'No Python entry point found' >&2; exit 1; fi\"]\n",
-			8080, false, map[string]string{"PORT": "8080", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1"}, nil
+			8080, false, map[string]string{"PORT": "8080", "PYTHONPATH": "/app:/app/src", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1"}, nil
 	case "go":
 		install := ""
 		if len(apt) > 0 {
 			install = "RUN apt-get update && apt-get install -y --no-install-recommends " + strings.Join(apt, " ") + " && rm -rf /var/lib/apt/lists/*\n"
 		}
 		return "FROM golang:" + version + "-bookworm\n" + install +
-			"RUN printf '#!/bin/sh\\nset -eu\\ngo mod download\\ngo build -o /tmp/devbox-app \"$@\"\\nexec /tmp/devbox-app\\n' > /usr/local/bin/devbox-go-start && chmod 0755 /usr/local/bin/devbox-go-start\n" +
+			"RUN printf '#!/bin/sh\\nset -eu\\nif [ -f go.mod ]; then go mod download; else export GO111MODULE=off; fi\\ngo build -o /tmp/devbox-app \"$@\"\\nexec /tmp/devbox-app\\n' > /usr/local/bin/devbox-go-start && chmod 0755 /usr/local/bin/devbox-go-start\n" + goDevelopmentWatcher() +
 			"WORKDIR /app\nRUN useradd -u 10001 -r -s /usr/sbin/nologin devbox\nUSER 10001\n" +
 			"ENV PORT=8080 GOCACHE=/tmp/devbox-go-build GOMODCACHE=/tmp/devbox-go-mod\nEXPOSE 8080\nCMD [\"devbox-go-start\",\".\"]\n", 8080, false, map[string]string{"PORT": "8080", "GOCACHE": "/tmp/devbox-go-build", "GOMODCACHE": "/tmp/devbox-go-mod"}, nil
 	case "static":

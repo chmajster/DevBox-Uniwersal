@@ -431,9 +431,6 @@ func (s *Service) Detect(ctx context.Context, input CreateInput, actor *string) 
 	if err := validateConfiguration(input.Configuration); err != nil {
 		return DetectResponse{}, err
 	}
-	if err := validateAutoContainerSelection(input.SourceType, input.Configuration); err != nil {
-		return DetectResponse{}, err
-	}
 	source := Source{RepositoryURL: strings.TrimSpace(input.Source.RepositoryURL), Reference: strings.TrimSpace(input.Source.Reference), LocalPath: strings.TrimSpace(input.Source.LocalPath), CredentialID: input.Source.CredentialID}
 	if input.SourceType == SourceGit {
 		if source.RepositoryURL == "" {

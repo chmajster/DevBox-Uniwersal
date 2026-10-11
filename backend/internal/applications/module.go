@@ -146,7 +146,7 @@ func (m *Module) update(w http.ResponseWriter, r *http.Request) {
 	actor := applicationActor(r)
 	if len(previous.Workloads) > 0 && input.Configuration != nil {
 		old, new := decodeConfiguration(previous.SourceConfig), *input.Configuration
-		if configString(old, "runtime") != configString(new, "runtime") || configString(old, "runtime_version") != configString(new, "runtime_version") {
+		if runtimeBuildChanged(old, new) {
 			if _, _, err := m.service.EnqueueDeploymentAction(r.Context(), id, actor, JobRebuild); err != nil {
 				m.fail(w, err)
 				return

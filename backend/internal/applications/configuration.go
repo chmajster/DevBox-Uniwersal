@@ -10,8 +10,25 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
+
+func runtimeBuildChanged(old, next map[string]any) bool {
+	for _, key := range []string{"runtime", "runtime_version", "document_root"} {
+		if configString(old, key) != configString(next, key) {
+			return true
+		}
+	}
+	modules := func(config map[string]any) []string {
+		data, _ := json.Marshal(config["modules"])
+		var names []string
+		_ = json.Unmarshal(data, &names)
+		slices.Sort(names)
+		return names
+	}
+	return !slices.Equal(modules(old), modules(next))
+}
 
 var environmentName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -23,6 +40,10 @@ func validateConfiguration(config map[string]any) error {
 	}
 	for key, value := range config {
 		switch key {
+		case "development_reload":
+			if _, ok := value.(bool); !ok {
+				return fmt.Errorf("%w: development_reload must be a boolean", ErrInvalidInput)
+			}
 		case "start_command":
 			text, ok := value.(string)
 			if !ok {

@@ -60,7 +60,11 @@ func customDefaults(root string) (string, []int, error) {
 			if strings.ContainsAny(fields[1], "$\\") {
 				continue
 			}
-			workdir = path.Join(workdir, fields[1])
+			if path.IsAbs(fields[1]) {
+				workdir = path.Clean(fields[1])
+			} else {
+				workdir = path.Join(workdir, fields[1])
+			}
 		case "EXPOSE":
 			for _, item := range fields[1:] {
 				if port, err := strconv.Atoi(strings.TrimSuffix(item, "/tcp")); err == nil && port > 0 && port <= 65535 {
