@@ -7,6 +7,7 @@
 - Added optional Python reload and container-local Go watching with failed-build recovery, plus automatic rebuild for module/document-root changes.
 - Verified original source reads/writes against the selected daemon before replacement, including Dockerfile/Compose helper probes; made root-created private Git/starter sources writable by non-root runtimes.
 - Extended actual Docker version-isolation/RW/reload tests and browser regressions.
+- Fixed source probes on Windows-backed WSL directories where the service account can write but chmod returns EPERM; retained mandatory bidirectional runtime-user verification and added a real non-root Docker regression.
 
 ## 2026-10-08 — Docker hosting task
 

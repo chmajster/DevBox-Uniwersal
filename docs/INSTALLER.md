@@ -54,4 +54,13 @@ The installer checks Docker Engine, Compose and daemon access and adds the servi
 
 For Windows source directories configure DEVBOX_DIRECTORY_BROWSE_ROOTS with the corresponding `/mnt/c/...` roots visible inside the selected WSL distribution. Select a specific application directory, not the whole drive. DevBox resolves symlinks and validates the Linux path before mounting it. Generated, Dockerfile and Compose deployments automatically test both directions against the selected daemon before replacing the running container. Dockerfile/Compose mapping checks use the official alpine:3.22 helper image; allow its first pull or preload it. A failed RW probe reports daemon/WSL path mapping or UID/GID permissions. Custom application process users must also have source access; use WSL metadata/UID ownership where required by your filesystem settings. No global chmod 777 is applied.
 
+The systemd service uses `ProtectSystem=strict` and initially permits writes only under the DevBox data directory. An external local source also needs a specific `ReadWritePaths` exception in `/etc/systemd/system/devbox.service.d/local-sources.conf`, in addition to the browse allowlist and filesystem permissions:
+
+```ini
+[Service]
+ReadWritePaths="/mnt/c/Users/Chris/projects/myapp"
+```
+
+Create the drop-in directory if needed, then run `sudo systemctl daemon-reload` and `sudo systemctl restart devbox`. Add only the selected sources; keep the service sandbox enabled. A restart leaves application containers running. On Windows drives without Linux metadata, the temporary probe's `chmod` can fail despite working writes. DevBox treats that mode adjustment as optional and still requires the application user to read the host nonce, write its reply and have the reply visible on the original host path.
+
 A real reinstall of an existing service is intentionally separate from repository validation. Bash/Powershell parser tests verify installer logic; the Docker E2E suite verifies actual `/mnt/c` application reads and writes when DEVBOX_TEST_WSL_ROOT is set.

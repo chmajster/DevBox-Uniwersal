@@ -2,6 +2,8 @@
 
 Updated on 2026-10-11; verification from both sessions is recorded below. Application is the only user-application lifecycle model. `/apps` supports local, Git, empty starter and OCI sources, with existing Compose, existing Dockerfile and generated Docker choices. All application processes run in Docker; the managed and Compose engines share persistent topology, jobs, ports, secrets and reconciliation.
 
+The installed systemd service also deployed the existing OpenWiki Windows source through the DevBox API and Job Engine on port 8080, using PHP 8.4.26 and its existing MySQL database. Login and `/health` returned HTTP 200; the non-root Apache worker (1000:1000) authenticated with application credentials and executed SELECT 1. Host-to-container reads, container-to-host source writes and storage writes passed. The source probe now tolerates DrvFS chmod rejection while still proving actual reads/writes. Full backend tests, vet, Docker race tests, backend build, the real non-root DrvFS regression and the real PHP writable-mount test passed. External local sources require the specific systemd ReadWritePaths exception documented in the installer guide. Browser UI automation was unavailable in this session; this deployment used the actual API and job lifecycle.
+
 Implemented:
 
 - Five-step onboarding, backend runtime/version catalog, official-image availability checks and automatic rebuild on a provisioned application's version change.

@@ -68,10 +68,10 @@ func (p *CLIProvider) verifySource(ctx context.Context, spec containerspec.Deplo
 		file.Close()
 		return err
 	}
-	if err := file.Chmod(0o644); err != nil {
-		file.Close()
-		return err
-	}
+	// DrvFS without Linux metadata can allow writes but reject chmod for the
+	// service user. The container read below is the authoritative permission
+	// check; chmod only makes this temporary nonce readable on POSIX filesystems.
+	_ = file.Chmod(0o644)
 	if err := file.Close(); err != nil {
 		return err
 	}
