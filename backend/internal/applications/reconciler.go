@@ -26,11 +26,14 @@ func (s *Service) reconcile(ctx context.Context, id string) (ApplicationState, e
 	}
 	if len(workloads) == 0 {
 		observed := ObservedUnknown
+		if app.ObservedState == ObservedFailed {
+			observed = ObservedFailed
+		}
 		if app.DesiredState == DesiredStopped {
 			observed = ObservedStopped
 		}
 		_ = s.repo.UpdateApplicationState(ctx, id, observed, HealthUnknown)
-		return ApplicationState{ApplicationID: id, DesiredState: app.DesiredState, ObservedState: observed, HealthState: HealthUnknown, Status: AggregateStatus(app.DesiredState, nil), Workloads: workloads, CheckedAt: time.Now().UTC()}, nil
+		return ApplicationState{ApplicationID: id, DesiredState: app.DesiredState, ObservedState: observed, HealthState: HealthUnknown, Status: visibleStatus(Application{ObservedState: observed, DesiredState: app.DesiredState}, nil, nil), Workloads: workloads, CheckedAt: time.Now().UTC()}, nil
 	}
 	driver, ok := s.drivers.Get(app.Driver)
 	if !ok {
@@ -58,12 +61,33 @@ func (s *Service) reconcile(ctx context.Context, id string) (ApplicationState, e
 		if !ok {
 			current = ObservedWorkload{Name: workloads[i].Name, ResourceID: workloads[i].DriverResourceID, ObservedState: ObservedMissing, HealthState: HealthUnknown}
 		}
+		if current.ResourceID == "" && current.ObservedState == ObservedUnknown {
+			current.ObservedState = ObservedMissing
+			current.HealthState = HealthUnhealthy
+		}
 		workloads[i].DriverResourceID = current.ResourceID
 		if current.Image != "" {
 			workloads[i].Image = current.Image
 		}
 		workloads[i].ObservedState = current.ObservedState
 		workloads[i].HealthState = current.HealthState
+		if checker, ok := s.logs.(interface {
+			CheckApplicationHTTP(context.Context, int, string, string) error
+		}); ok && current.ObservedState == ObservedRunning {
+			for _, endpoint := range endpoints {
+				if endpoint.WorkloadID != workloads[i].ID || endpoint.HostPort == nil || !endpoint.Public || (endpoint.Protocol != "http" && endpoint.Protocol != "https") {
+					continue
+				}
+				checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				err := checker.CheckApplicationHTTP(checkCtx, *endpoint.HostPort, endpoint.Protocol, endpoint.HealthPath)
+				cancel()
+				if err != nil {
+					workloads[i].HealthState = HealthUnhealthy
+				} else if workloads[i].HealthState != HealthUnhealthy {
+					workloads[i].HealthState = HealthHealthy
+				}
+			}
+		}
 		if err := s.repo.UpdateWorkloadObserved(ctx, workloads[i].ID, workloads[i].DriverResourceID, workloads[i].ObservedState, workloads[i].HealthState, workloads[i].Image); err != nil {
 			return ApplicationState{}, err
 		}
@@ -77,6 +101,21 @@ func (s *Service) reconcile(ctx context.Context, id string) (ApplicationState, e
 		for _, workload := range workloads {
 			if workload.ID == endpoint.WorkloadID {
 				status = workload.ObservedState
+				if status == ObservedRunning && workload.HealthState == HealthUnhealthy {
+					status = "unhealthy"
+				}
+				current := byName[workload.Name]
+				if status == ObservedRunning && endpoint.Public && endpoint.HostPort != nil && current.PortBindings != nil {
+					published := false
+					for _, binding := range current.PortBindings {
+						if binding.ContainerPort == endpoint.ContainerPort && binding.HostPort == *endpoint.HostPort {
+							published = true
+						}
+					}
+					if !published {
+						status = ObservedMissing
+					}
+				}
 				break
 			}
 		}
@@ -124,10 +163,10 @@ func AggregateStatus(desired string, workloads []Workload) string {
 				return "failed"
 			}
 		}
-		return "degraded"
+		return "failed"
 	}
 	if anyFailure {
-		return "degraded"
+		return "failed"
 	}
 	if anyStarting {
 		return "starting"
@@ -213,6 +252,10 @@ func (s *Service) ReconcileAll(ctx context.Context, autoHeal bool) error {
 		return err
 	}
 	for _, app := range apps {
+		active, err := s.repo.ActiveOperation(ctx, app.ID)
+		if err != nil || active != nil {
+			continue
+		}
 		state, err := s.reconcile(ctx, app.ID)
 		if err != nil {
 			if errors.Is(err, ErrProviderUnavailable) {

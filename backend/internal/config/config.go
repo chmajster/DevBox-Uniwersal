@@ -98,7 +98,7 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	portStart, err := getEnvInt("DEVBOX_PORT_RANGE_START", 8000)
+	portStart, err := getEnvInt("DEVBOX_PORT_RANGE_START", 8080)
 	if err != nil {
 		return Config{}, err
 	}

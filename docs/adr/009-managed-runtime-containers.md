@@ -1,5 +1,8 @@
 # ADR-009: Managed runtime containers
 
+> Runtime/driver decisions are superseded by [ADR-014](014-hosting-runtime-model.md).
+
+
 ## Status
 
 Accepted.

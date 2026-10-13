@@ -295,6 +295,14 @@ export interface DatabaseBindingInput {
   host_access_only?: boolean
 }
 
+export interface ApplicationDatabaseBinding {
+  application_id: string
+  database_id: string
+  database_name?: string
+  engine?: string
+  username?: string
+}
+
 export interface ProjectDatabaseServices {
   project_id: string
   engines: Array<'mysql' | 'postgresql'>
@@ -458,6 +466,10 @@ export interface ProvisionResult {
 }
 
 export interface PortRecord {
+  application_id?: string
+  endpoint_id?: string
+  container_port?: number
+  mapping_active: boolean
   id: string
   project_id?: string
   application?: string

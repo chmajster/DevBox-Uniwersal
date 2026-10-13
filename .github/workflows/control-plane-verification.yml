@@ -18,7 +18,7 @@ concurrency:
 jobs:
   docker-lifecycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,8 +34,11 @@ jobs:
       - name: Application API, state, encryption and operation-lock regressions
         working-directory: backend
         run: go test -race ./internal/applications ./internal/drivers/... -count=1
-      - name: Four real deployment drivers and persistent data safety
+      - name: Managed runtimes, Existing Compose and persistent data safety
         working-directory: backend
         env:
           DEVBOX_TEST_APPLICATION_DOCKER: '1'
-        run: go test ./internal/applications -run '^TestApplicationDockerLifecycle$' -v -count=1 -timeout=10m
+        run: |
+          mkdir -p ../.build
+          CGO_ENABLED=0 go build -o ../.build/devbox-dbcheck ./cmd/devbox-dbcheck
+          go test ./internal/applications -run '^TestApplicationDocker' -v -count=1 -timeout=50m

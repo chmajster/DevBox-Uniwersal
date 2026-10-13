@@ -2,6 +2,7 @@ package runtimes
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -60,7 +61,7 @@ func TestRuntimeDetectorsFromFixtures(t *testing.T) {
 
 func TestPythonPackageManagersFromFixtures(t *testing.T) {
 	t.Parallel()
-	runtime := NewPythonRuntime(NewLocalProcessManager(), ExecRunner{})
+	runtime := NewPythonRuntime()
 	for _, testCase := range []struct {
 		fixture string
 		want    string
@@ -82,7 +83,7 @@ func TestPythonPackageManagersFromFixtures(t *testing.T) {
 
 func TestPHPDetectorExtractsComposerExtensions(t *testing.T) {
 	t.Parallel()
-	runtime := NewPHPRuntime(NewLocalProcessManager(), ExecRunner{})
+	runtime := NewPHPRuntime()
 	project := ProjectContext{WorkDir: filepath.Join("testdata", "php-laravel")}
 	detection, err := runtime.Detect(context.Background(), project)
 	if err != nil {
@@ -99,9 +100,25 @@ func TestPHPDetectorExtractsComposerExtensions(t *testing.T) {
 	}
 }
 
+func TestPHPDetectorRecognizesAnyRootPHPFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "login.php"), []byte("<?php"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtime := NewPHPRuntime()
+	detection, err := runtime.Detect(context.Background(), ProjectContext{WorkDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !detection.Detected || detection.Runtime != "php" {
+		t.Fatalf("detection = %+v", detection)
+	}
+}
+
 func TestNodeDetectorUsesLockfilePackageManager(t *testing.T) {
 	t.Parallel()
-	runtime := NewNodeRuntime(NewLocalProcessManager(), ExecRunner{})
+	runtime := NewNodeRuntime()
 	project := ProjectContext{WorkDir: filepath.Join("testdata", "node-vite")}
 	detection, err := runtime.Detect(context.Background(), project)
 	if err != nil {

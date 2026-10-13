@@ -16,9 +16,15 @@ import (
 var ErrNoPorts = errors.New("no application ports available")
 
 type ApplicationPortAllocator struct {
-	db    *sql.DB
-	start int
-	end   int
+	db       *sql.DB
+	start    int
+	end      int
+	occupied func(context.Context) (map[int]bool, error)
+}
+
+func (a *ApplicationPortAllocator) WithDockerPorts(check func(context.Context) (map[int]bool, error)) *ApplicationPortAllocator {
+	a.occupied = check
+	return a
 }
 
 func NewApplicationPortAllocator(db *sql.DB, start, end int) *ApplicationPortAllocator {
@@ -32,6 +38,9 @@ func (a *ApplicationPortAllocator) Reserve(ctx context.Context, applicationID, e
 	if preferred != nil {
 		port, err := a.reserveExact(ctx, applicationID, endpointID, purpose, *preferred)
 		if err != nil {
+			if errors.Is(err, ErrConflict) {
+				err = fmt.Errorf("%w: host port %d is already occupied", ErrConflict, *preferred)
+			}
 			return providers.PortLease{}, err
 		}
 		return providers.PortLease{Port: port, ProjectID: applicationID, Purpose: purpose}, nil
@@ -85,6 +94,15 @@ func (a *ApplicationPortAllocator) reserveExact(ctx context.Context, application
 	}
 	if legacy > 0 {
 		return 0, ErrConflict
+	}
+	if a.occupied != nil {
+		occupied, err := a.occupied(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if occupied[port] {
+			return 0, ErrConflict
+		}
 	}
 	available, err := probeApplicationPort(port)
 	if err != nil {

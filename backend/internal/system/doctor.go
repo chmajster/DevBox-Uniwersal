@@ -40,6 +40,7 @@ type DoctorOptions struct {
 	DataDir       string
 	HTTPAddr      string
 	ServiceName   string
+	SharedNetwork string
 	Runner        CommandRunner
 }
 
@@ -56,8 +57,9 @@ func RunDoctor(ctx context.Context, opts DoctorOptions) DoctorReport {
 		checkFilesystem(opts.DataDir),
 		checkNginx(ctx, opts.Runner),
 		checkDocker(ctx, opts.Runner),
-		checkMySQL(ctx, opts.Runner),
-		checkRuntimes(ctx, opts.Runner),
+		checkCompose(ctx, opts.Runner),
+		checkAppNetwork(ctx, opts.Runner, opts.SharedNetwork),
+		{Name: "runtimes", Status: CheckInfo, Message: "PHP, Python, Go and Node run in application images; host interpreters are optional"},
 		checkHTTPPort(ctx, opts.HTTPAddr),
 		checkDevBoxService(ctx, opts.Runner, opts.ServiceName),
 	}
@@ -177,6 +179,32 @@ func checkMySQL(ctx context.Context, runner CommandRunner) CheckResult {
 		}
 	}
 	return checkServiceAny(ctx, runner, "mysql", []string{"mysql.service", "mariadb.service"})
+}
+
+func checkCompose(ctx context.Context, runner CommandRunner) CheckResult {
+	checkCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	out, err := runner.CombinedOutput(checkCtx, "docker", "compose", "version")
+	if err != nil {
+		out, err = runner.CombinedOutput(checkCtx, "docker-compose", "version")
+	}
+	if err != nil {
+		return CheckResult{Name: "compose", Status: CheckFail, Message: firstDiagnosticLine(out, err)}
+	}
+	return CheckResult{Name: "compose", Status: CheckOK, Message: ParseVersionOutput(string(out))}
+}
+
+func checkAppNetwork(ctx context.Context, runner CommandRunner, name string) CheckResult {
+	if name == "" {
+		name = "devbox-apps"
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	out, err := runner.CombinedOutput(checkCtx, "docker", "network", "inspect", "--format", "{{.Name}}", name)
+	if err != nil {
+		return CheckResult{Name: "application-network", Status: CheckWarn, Message: name + " will be created on first deployment: " + firstDiagnosticLine(out, err)}
+	}
+	return CheckResult{Name: "application-network", Status: CheckOK, Message: strings.TrimSpace(string(out))}
 }
 
 func checkRuntimes(ctx context.Context, runner CommandRunner) CheckResult {

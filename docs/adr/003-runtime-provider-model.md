@@ -1,5 +1,8 @@
 # ADR-003: Runtime and provider model
 
+> Runtime/driver decisions are superseded by [ADR-014](014-hosting-runtime-model.md).
+
+
 Status: Accepted
 
 ## Decision

@@ -3,6 +3,10 @@ package proxy
 import "time"
 
 type PortRecord struct {
+	ApplicationID   *string    `json:"application_id,omitempty"`
+	EndpointID      *string    `json:"endpoint_id,omitempty"`
+	ContainerPort   *int       `json:"container_port,omitempty"`
+	MappingActive   bool       `json:"mapping_active"`
 	ID              string     `json:"id"`
 	ProjectID       *string    `json:"project_id,omitempty"`
 	Application     *string    `json:"application,omitempty"`

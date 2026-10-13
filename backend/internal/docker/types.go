@@ -1,5 +1,7 @@
 package docker
 
+import "github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
+
 type DockerVersion struct {
 	Client string `json:"client"`
 	Server string `json:"server"`
@@ -49,6 +51,7 @@ type Container struct {
 }
 
 type ContainerDetail struct {
+	PortBindings []providers.ContainerPortBinding `json:"port_bindings"`
 	Container
 	Running    bool              `json:"running"`
 	Health     string            `json:"health,omitempty"`
@@ -88,11 +91,12 @@ type ComposeProject struct {
 }
 
 type ComposeProcess struct {
-	Name    string `json:"name,omitempty"`
-	Service string `json:"service,omitempty"`
-	State   string `json:"state,omitempty"`
-	Health  string `json:"health,omitempty"`
-	Image   string `json:"image,omitempty"`
+	PortBindings []providers.ContainerPortBinding `json:"port_bindings"`
+	Name         string                           `json:"name,omitempty"`
+	Service      string                           `json:"service,omitempty"`
+	State        string                           `json:"state,omitempty"`
+	Health       string                           `json:"health,omitempty"`
+	Image        string                           `json:"image,omitempty"`
 }
 
 type ExecCommand string

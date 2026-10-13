@@ -50,6 +50,9 @@ func MissingError(err error) bool {
 
 func Labels(application applications.Application, deployment applications.Deployment, workload string) map[string]string {
 	return map[string]string{
+		"devbox.managed":             "true",
+		"devbox.project_id":          application.ID,
+		"devbox.project_name":        application.Name,
 		"io.devbox.managed":          "true",
 		"io.devbox.application.id":   application.ID,
 		"io.devbox.application.slug": application.Slug,

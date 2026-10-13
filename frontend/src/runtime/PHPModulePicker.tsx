@@ -54,9 +54,41 @@ const categoryByModule: Record<string, string> = {
   xdebug: 'Development',
 }
 
-const bundledModules = new Set(['pdo', 'sqlite3', 'mbstring', 'curl', 'xml'])
+const bundledModules = new Set(['pdo', 'sqlite3', 'mbstring', 'curl', 'xml', 'json', 'session', 'ctype', 'dom', 'fileinfo', 'filter', 'iconv'])
 const peclModules = new Set(['imagick', 'redis', 'memcached', 'xdebug'])
 const commonWebPreset = ['pdo_mysql', 'mbstring', 'intl', 'gd', 'curl', 'zip', 'opcache']
+const fallbackPHPModuleCatalog: RuntimeModuleOption[] = [
+  { name: 'pdo', label: 'PDO', description: 'Interfejs dostępu do baz danych.', versioned: false },
+  { name: 'pdo_mysql', label: 'PDO MySQL', description: 'Sterownik PDO dla MySQL/MariaDB.', versioned: false },
+  { name: 'mysqli', label: 'MySQLi', description: 'Rozszerzenie MySQL Improved.', versioned: false },
+  { name: 'pgsql', label: 'PostgreSQL', description: 'Sterowniki PostgreSQL oraz PDO PostgreSQL.', versioned: false },
+  { name: 'sqlite3', label: 'SQLite3', description: 'SQLite3 oraz PDO SQLite.', versioned: false },
+  { name: 'mbstring', label: 'mbstring', description: 'Obsługa wielobajtowych ciągów znaków.', versioned: false },
+  { name: 'json', label: 'JSON', description: 'Obsługa JSON.', versioned: false },
+  { name: 'session', label: 'Session', description: 'Obsługa sesji PHP.', versioned: false },
+  { name: 'ctype', label: 'Ctype', description: 'Sprawdzanie typów znaków.', versioned: false },
+  { name: 'dom', label: 'DOM', description: 'Document Object Model dla XML.', versioned: false },
+  { name: 'fileinfo', label: 'Fileinfo', description: 'Rozpoznawanie typów plików.', versioned: false },
+  { name: 'filter', label: 'Filter', description: 'Walidacja i filtrowanie danych.', versioned: false },
+  { name: 'gd', label: 'GD', description: 'Przetwarzanie obrazów.', versioned: false },
+  { name: 'iconv', label: 'Iconv', description: 'Konwersja kodowań znaków.', versioned: false },
+  { name: 'intl', label: 'intl', description: 'Funkcje internacjonalizacji ICU.', versioned: false },
+  { name: 'imagick', label: 'Imagick', description: 'Przetwarzanie obrazów przez ImageMagick.', versioned: false },
+  { name: 'curl', label: 'cURL', description: 'Klient HTTP/libcurl.', versioned: false },
+  { name: 'zip', label: 'ZIP', description: 'Obsługa archiwów ZIP.', versioned: false },
+  { name: 'bcmath', label: 'BCMath', description: 'Arytmetyka dużej precyzji.', versioned: false },
+  { name: 'gmp', label: 'GMP', description: 'Arytmetyka dużych liczb.', versioned: false },
+  { name: 'opcache', label: 'OPcache', description: 'Cache kodu bajtowego PHP.', versioned: false },
+  { name: 'xml', label: 'XML', description: 'DOM, SimpleXML, XMLReader i XMLWriter.', versioned: false },
+  { name: 'soap', label: 'SOAP', description: 'Klient i serwer SOAP.', versioned: false },
+  { name: 'ldap', label: 'LDAP', description: 'Integracja z LDAP i Active Directory.', versioned: false },
+  { name: 'redis', label: 'Redis', description: 'Klient Redis dla PHP.', versioned: false },
+  { name: 'memcached', label: 'Memcached', description: 'Klient Memcached dla PHP.', versioned: false },
+  { name: 'sockets', label: 'Sockets', description: 'Niskopoziomowe gniazda sieciowe.', versioned: false },
+  { name: 'pcntl', label: 'PCNTL', description: 'Kontrola procesów.', versioned: false },
+  { name: 'exif', label: 'EXIF', description: 'Metadane EXIF obrazów.', versioned: false },
+  { name: 'xdebug', label: 'Xdebug', description: 'Debugger i profiler dla PHP.', versioned: false },
+]
 
 function moduleMeta(name: string): ModuleMeta {
   if (bundledModules.has(name)) {
@@ -90,10 +122,11 @@ export function PHPModulePicker({
 }: Props) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<ModuleFilter>('all')
+  const effectiveCatalog = catalog.length > 0 ? catalog : fallbackPHPModuleCatalog
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return catalog.filter((item) => {
+    return effectiveCatalog.filter((item) => {
       const meta = moduleMeta(item.name)
       if (needle && ![
         item.name,
@@ -109,7 +142,7 @@ export function PHPModulePicker({
       if (filter === 'pecl') return meta.delivery === 'pecl'
       return true
     })
-  }, [catalog, filter, query, selected])
+  }, [effectiveCatalog, filter, query, selected])
 
   const grouped = useMemo(() => categoryOrder
     .map((category) => ({
@@ -119,12 +152,12 @@ export function PHPModulePicker({
     .filter((group) => group.items.length > 0), [visible])
 
   const selectedItems = useMemo(
-    () => catalog.filter((item) => selected.has(item.name)),
-    [catalog, selected],
+    () => effectiveCatalog.filter((item) => selected.has(item.name)),
+    [effectiveCatalog, selected],
   )
 
   function addCommonWebPreset() {
-    const available = new Set(catalog.map((item) => item.name))
+    const available = new Set(effectiveCatalog.map((item) => item.name))
     const next = new Set(selected)
     commonWebPreset.forEach((name) => {
       if (available.has(name)) next.add(name)

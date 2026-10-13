@@ -440,6 +440,10 @@ func (p *CLIProvider) ComposePS(ctx context.Context, directory, projectName stri
 		return nil, err
 	}
 	var raw []struct {
+		Publishers []struct {
+			TargetPort    int
+			PublishedPort int
+		} `json:"Publishers"`
 		Name    string `json:"Name"`
 		Service string `json:"Service"`
 		State   string `json:"State"`
@@ -459,7 +463,13 @@ func (p *CLIProvider) ComposePS(ctx context.Context, directory, projectName stri
 	}
 	items := make([]ComposeProcess, 0, len(raw))
 	for _, item := range raw {
-		items = append(items, ComposeProcess{Name: item.Name, Service: item.Service, State: item.State, Health: item.Health, Image: item.Image})
+		bindings := make([]providers.ContainerPortBinding, 0, len(item.Publishers))
+		for _, port := range item.Publishers {
+			if port.PublishedPort > 0 {
+				bindings = append(bindings, providers.ContainerPortBinding{ContainerPort: port.TargetPort, HostPort: port.PublishedPort})
+			}
+		}
+		items = append(items, ComposeProcess{Name: item.Name, Service: item.Service, State: item.State, Health: item.Health, Image: item.Image, PortBindings: bindings})
 	}
 	return items, nil
 }
@@ -631,6 +641,9 @@ func (p *CLIProvider) composePSByInspect(ctx context.Context, directory, project
 			return nil, err
 		}
 		var raw []struct {
+			NetworkSettings struct {
+				Ports map[string][]struct{ HostPort string }
+			} `json:"NetworkSettings"`
 			Name   string `json:"Name"`
 			Config struct {
 				Image  string            `json:"Image"`
@@ -654,13 +667,24 @@ func (p *CLIProvider) composePSByInspect(ctx context.Context, directory, project
 		if item.State.Health != nil {
 			health = item.State.Health.Status
 		}
+		bindings := []providers.ContainerPortBinding{}
+		for target, published := range item.NetworkSettings.Ports {
+			targetPort, _ := strconv.Atoi(strings.Split(target, "/")[0])
+			for _, port := range published {
+				hostPort, _ := strconv.Atoi(port.HostPort)
+				if targetPort > 0 && hostPort > 0 {
+					bindings = append(bindings, providers.ContainerPortBinding{ContainerPort: targetPort, HostPort: hostPort})
+				}
+			}
+		}
 		service := item.Config.Labels["com.docker.compose.service"]
 		items = append(items, ComposeProcess{
-			Name:    strings.TrimPrefix(item.Name, "/"),
-			Service: service,
-			State:   item.State.Status,
-			Health:  health,
-			Image:   item.Config.Image,
+			Name:         strings.TrimPrefix(item.Name, "/"),
+			Service:      service,
+			State:        item.State.Status,
+			Health:       health,
+			Image:        item.Config.Image,
+			PortBindings: bindings,
 		})
 	}
 	return items, nil

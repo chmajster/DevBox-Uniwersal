@@ -1,5 +1,8 @@
 # ADR 012: Application, workload and endpoint ownership
 
+> Runtime/driver decisions are superseded by [ADR-014](014-hosting-runtime-model.md).
+
+
 Status: Accepted for PR #140
 
 ## Decision
@@ -8,9 +11,13 @@ Replace the workspace's Project lifecycle with an Application aggregate. Sources
 
 Deployment drivers implement Detect, Plan, Deploy, Inspect and lifecycle operations. Selection favors explicit declarations over heuristics. Ambiguity is configuration work, not a reason to publish MySQL/Redis through an HTTP endpoint.
 
+The user-facing Application workflow has two persisted deployment modes: `compose` and `auto`. `compose` requires a root Compose file and delegates to the existing Compose driver without editing the source definition. `auto` selects the existing managed runtime driver even when Compose or Dockerfile files are present; it detects an allowlisted runtime and mounts source live/read-write. Internal Dockerfile and image drivers remain available for existing application records and APIs. The mode lives in public application configuration, so this change requires no migration and existing rows with no mode retain their current driver.
+
 Persist application ownership on jobs and enforce one active mutation per application with a SQLite unique index plus a service mutation lock. Do not release cancellation ownership before rollback completes. Configuration changes and explicit retry use the same guard. Record the retrying actor.
 
 Stage new topology without dropping previous runtime identities before successful execution. Preserve observed host ports separately from requested plan ports. Reconciliation derives status from workloads and invalidates stale observations on provider failure, never from the outcome of the last deployment alone.
+
+Applications with provisioned workloads may save a different deployment driver. The saved driver remains pending while the current driver continues to own live resources and lifecycle actions. Driver switches stop the previous workloads to release conflicting published ports; if the new deployment fails, DevBox attempts to restart them. A successful deployment activates the new driver, stores its runtime, and asks the previous driver to remove only superseded resource identities. Cleanup failures are reported as deployment warnings; Compose remains nontransactional and may require operator recovery.
 
 ## Consequences
 

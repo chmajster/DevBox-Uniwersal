@@ -44,3 +44,7 @@
 .application-directory-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
 .application-directory-row > button { white-space: nowrap; }
 @media (max-width: 720px) { .acp-fields, .acp-facts { grid-template-columns: 1fr; } .acp-card { padding: 16px; } .acp-header { align-items: flex-start; } .acp-toolbar > label { width: 100%; } .application-directory-row { grid-template-columns: 1fr; } }
+
+.acp-env-row { display:grid; grid-template-columns: 1fr auto 2fr auto auto; gap:8px; align-items:center; margin-bottom:10px; }
+@media(max-width:720px){ .acp-env-row{grid-template-columns:1fr;} }
+.acp [hidden] { display: none !important; }

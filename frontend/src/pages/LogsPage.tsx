@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { apiURL } from '../api/client'
-import { listLogSources, listLogs, listProjects, logQuery } from '../api/operations'
-import type { LogEntry, Project } from '../api/types'
+import type { Application } from '../applications/model'
+import { request, apiURL } from '../api/client'
+import { listLogSources, listLogs, logQuery } from '../api/operations'
+import type { LogEntry } from '../api/types'
 import { ErrorState } from '../components/ErrorState'
 
 const requiredSources = ['all', 'devbox', 'project', 'deployment', 'job', 'docker']
@@ -16,14 +17,14 @@ export function LogsPage() {
   const [until, setUntil] = useState('')
   const [live, setLive] = useState(false)
   const [sources, setSources] = useState<string[]>(requiredSources)
-  const [projects, setProjects] = useState<Project[]>([])
+  const [projects, setProjects] = useState<Application[]>([])
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [error, setError] = useState('')
   const cursorRef = useRef(0)
   useEffect(() => {
     let cancelled = false
     void listLogSources().then((available) => { if (!cancelled) setSources(Array.from(new Set([...requiredSources, ...(available ?? [])]))) }).catch(() => { if (!cancelled) setSources(requiredSources) })
-    void listProjects().then((items) => { if (!cancelled) setProjects(items) }).catch(() => { if (!cancelled) setProjects([]) })
+    void request<Application[]>('/applications').then((items) => { if (!cancelled) setProjects(items) }).catch(() => { if (!cancelled) setProjects([]) })
     return () => { cancelled = true }
   }, [])
   const filters = useMemo(() => ({ source, project: project || undefined, level: level || undefined, search: search || undefined,
@@ -65,7 +66,7 @@ export function LogsPage() {
     <div className="page-heading"><div><h1>Logi</h1><p className="muted">Centralny podgląd zdarzeń aplikacji, zadań i usług.</p></div></div>
     <div className="filter-bar">
       <label>Źródło<select value={source} onChange={(event) => { const next = new URLSearchParams(params); next.set('source', event.target.value); setParams(next, { replace: true }) }}>{sources.map((item) => <option key={item} value={item}>{item === 'all' ? 'Wszystkie usługi' : item}</option>)}</select></label>
-      <label>Projekt<select value={project} onChange={(event) => setProject(event.target.value)}><option value="">Wszystkie</option>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label>Aplikacja<select value={project} onChange={(event) => setProject(event.target.value)}><option value="">Wszystkie</option>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <label>Poziom<select value={level} onChange={(event) => setLevel(event.target.value)}><option value="">Wszystkie</option>{['debug', 'info', 'warn', 'error'].map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}</select></label>
       <label className="search-filter">Wyszukiwanie<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Treść komunikatu" /></label>
       <label>Od<input type="datetime-local" value={since} onChange={(event) => setSince(event.target.value)} /></label><label>Do<input type="datetime-local" value={until} onChange={(event) => setUntil(event.target.value)} /></label>

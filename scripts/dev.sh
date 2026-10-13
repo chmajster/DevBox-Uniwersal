@@ -3,9 +3,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if [[ -z "${DEVBOX_BOOTSTRAP_ADMIN_USERNAME:-}" || -z "${DEVBOX_BOOTSTRAP_ADMIN_PASSWORD:-}" ]]; then
+if [[ "${DEVBOX_AUTH_DISABLED:-true}" == "false" ]] && [[ -z "${DEVBOX_BOOTSTRAP_ADMIN_USERNAME:-}" || -z "${DEVBOX_BOOTSTRAP_ADMIN_PASSWORD:-}" ]]; then
   echo "DEVBOX_BOOTSTRAP_ADMIN_USERNAME and DEVBOX_BOOTSTRAP_ADMIN_PASSWORD are required for first login." >&2
   exit 1
+fi
+
+if [[ -z "${DEVBOX_DATABASE_PROBE:-}" ]]; then
+  mkdir -p "$ROOT/.build"
+  (cd "$ROOT/backend" && CGO_ENABLED=0 go build -buildvcs=false -o "$ROOT/.build/devbox-dbcheck" ./cmd/devbox-dbcheck)
+  export DEVBOX_DATABASE_PROBE="$ROOT/.build/devbox-dbcheck"
 fi
 
 cleanup() {

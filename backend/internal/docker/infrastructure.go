@@ -106,6 +106,11 @@ func (p *CLIProvider) EnsureContainer(ctx context.Context, spec providers.Contai
 	}
 	item, err := p.InspectContainer(ctx, spec.Name)
 	if err == nil {
+		for _, ownership := range []string{"io.devbox.managed-mysql", "io.devbox.managed-postgresql", "io.devbox.phpmyadmin"} {
+			if spec.Labels[ownership] == "true" && item.Labels[ownership] != "true" {
+				return providers.ContainerInfo{}, fmt.Errorf("refusing to replace foreign container %s", spec.Name)
+			}
+		}
 		if item.Image == spec.Image && containerLabelsMatch(item.Labels, spec.Labels) {
 			return providers.ContainerInfo{ID: item.ID, Name: item.Name, State: item.State}, nil
 		}

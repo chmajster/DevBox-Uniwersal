@@ -14,8 +14,8 @@ func TestOpenAPISpecContainsCoreAndModuleRoutes(t *testing.T) {
 	for _, path := range []string{
 		"/api/v1/users",
 		"/api/v1/update/progress",
-		"/api/v1/projects",
-		"/api/v1/projects/{id}/ports/config",
+		"/api/v1/applications",
+		"/api/v1/applications/{id}",
 		"/api/v1/docker/containers",
 		"/api/v1/plugins/mysql/status",
 		"/api/v1/plugins/mysql/install",
@@ -38,7 +38,7 @@ func TestOpenAPISpecContainsCoreAndModuleRoutes(t *testing.T) {
 func TestOpenAPIPortConfigurationMethodsAndRoles(t *testing.T) {
 	spec := buildOpenAPISpec("test")
 	paths := spec["paths"].(map[string]any)
-	item, ok := paths["/api/v1/projects/{id}/ports/config"].(map[string]any)
+	item, ok := paths["/api/v1/applications/{id}"].(map[string]any)
 	if !ok {
 		t.Fatal("project port configuration path missing")
 	}
@@ -46,7 +46,7 @@ func TestOpenAPIPortConfigurationMethodsAndRoles(t *testing.T) {
 	if !ok || get["x-devbox-min-role"] != "viewer" {
 		t.Fatalf("GET port configuration role = %#v", get["x-devbox-min-role"])
 	}
-	put, ok := item["put"].(map[string]any)
+	put, ok := item["patch"].(map[string]any)
 	if !ok || put["x-devbox-min-role"] != "operator" {
 		t.Fatalf("PUT port configuration role = %#v", put["x-devbox-min-role"])
 	}
@@ -104,8 +104,15 @@ func TestOpenAPIProjectDatabaseServicesMethodsAndRoles(t *testing.T) {
 	if !ok || get["x-devbox-min-role"] != "viewer" {
 		t.Fatalf("GET project database services role = %#v", get["x-devbox-min-role"])
 	}
-	put, ok := item["put"].(map[string]any)
-	if !ok || put["x-devbox-min-role"] != "operator" {
-		t.Fatalf("PUT project database services role = %#v", put["x-devbox-min-role"])
+	for _, method := range []string{"put", "post", "delete"} {
+		if _, exists := item[method]; exists {
+			t.Fatalf("retired project database write method %s is still documented", method)
+		}
+	}
+	for _, path := range []string{"/api/v1/applications/{id}/database-binding/provision", "/api/v1/applications/{id}/database-binding/test"} {
+		native := paths[path].(map[string]any)["post"].(map[string]any)
+		if native["x-devbox-min-role"] != "operator" {
+			t.Fatalf("POST %s role = %#v", path, native["x-devbox-min-role"])
+		}
 	}
 }

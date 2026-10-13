@@ -23,7 +23,33 @@ func NewService(repo *SQLiteRepository, nginx *NginxProvider, hosts HostsManager
 }
 
 func (s *Service) ListDomains(ctx context.Context) ([]Domain, error) {
-	return s.repo.ListDomains(ctx)
+	legacy, err := s.repo.ListDomains(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.repo.db.QueryContext(ctx, `SELECT r.id,r.application_id,a.name,r.domain,r.target_port,r.tls_mode,r.active,e.status,r.created_at,r.updated_at FROM application_routes r JOIN applications a ON a.id=r.application_id JOIN endpoints e ON e.id=r.endpoint_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item Domain
+		var tlsMode, created, updated, endpointStatus string
+		var active bool
+		if err := rows.Scan(&item.ID, &item.ProjectID, &item.Application, &item.Hostname, &item.TargetPort, &tlsMode, &active, &endpointStatus, &created, &updated); err != nil {
+			return nil, err
+		}
+		item.Target = fmt.Sprintf("127.0.0.1:%d", item.TargetPort)
+		item.TLSEnabled = tlsMode == "existing"
+		item.Status = "inactive"
+		if active && endpointStatus == "running" {
+			item.Status = "active"
+		}
+		item.CreatedAt, _ = parseDBTime(created)
+		item.UpdatedAt, _ = parseDBTime(updated)
+		legacy = append(legacy, item)
+	}
+	return legacy, rows.Err()
 }
 
 func (s *Service) CreateDomain(ctx context.Context, projectID, hostname string, targetPort int) (DomainMutationResult, error) {

@@ -49,6 +49,26 @@ type ProjectDatabaseResolver interface {
 	TestApplicationConnection(ctx context.Context, projectID string) error
 }
 
+type ApplicationDatabaseBinding struct {
+	UserID        string `json:"user_id"`
+	ApplicationID string `json:"application_id"`
+	DatabaseID    string `json:"database_id"`
+	DatabaseName  string `json:"database_name"`
+	Engine        string `json:"engine"`
+	Username      string `json:"username"`
+}
+
+type ApplicationContainerDatabaseTester interface {
+	TestApplicationContainerDatabase(context.Context, string, DatabaseConnection, []byte) error
+}
+
+type ApplicationDatabaseResolver interface {
+	GetApplicationDatabaseBinding(ctx context.Context, applicationID string) (ApplicationDatabaseBinding, bool, error)
+	BindApplicationDatabase(ctx context.Context, applicationID, databaseID string, actor, remote *string) (ApplicationDatabaseBinding, error)
+	UnbindApplicationDatabase(ctx context.Context, applicationID string, actor, remote *string) error
+	ResolveBoundApplicationDatabase(ctx context.Context, applicationID string) (DatabaseConnection, []byte, bool, error)
+}
+
 type DockerInfrastructureProvider interface {
 	DockerProvider
 	EnsureNetwork(ctx context.Context, name string) error

@@ -139,7 +139,7 @@ func ParseManifest(content string) (*Manifest, error) {
 				return nil, fmt.Errorf("line %d: unsupported deployment key %q", lineNo, key)
 			}
 			switch value {
-			case "compose", "dockerfile", "managed", "image":
+			case "compose", "managed":
 			default:
 				return nil, fmt.Errorf("line %d: unsupported driver %q", lineNo, value)
 			}

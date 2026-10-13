@@ -43,7 +43,7 @@ func (d *fixtureDriver) Name() string {
 	if d.name != "" {
 		return d.name
 	}
-	return "image"
+	return "managed"
 }
 func (d *fixtureDriver) Detect(context.Context, DetectRequest) (DetectionResult, error) {
 	return DetectionResult{Driver: d.Name(), Confidence: "high", Runtime: "static"}, nil
@@ -144,7 +144,7 @@ func newFixture(t *testing.T) *fixture {
 }
 func (f *fixture) create(t *testing.T) Detail {
 	t.Helper()
-	app, err := f.service.Create(context.Background(), CreateInput{Name: NewID(), SourceType: SourceDockerImage, Source: SourceInput{DockerImage: "test-image"}}, nil)
+	app, err := f.service.Create(context.Background(), CreateInput{Name: NewID(), SourceType: SourceEmpty, Source: SourceInput{}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func (f *fixture) deploy(t *testing.T, id string) (Deployment, domain.Job) {
 }
 
 func TestConfigurationStrictValidation(t *testing.T) {
-	for _, raw := range []string{`{"host_port":1.5}`, `{"container_port":65536}`, `{"container_port":-1}`, `{"protocol":"udp"}`, `{"health_path":"https://evil.example/"}`, `{"environment":{"DB_PASSWORD":"private"}}`, `{"environment":{"DSN":"mysql://user:pass@db/one"}}`, `{"environment":{"nest":{"token":"private"}}}`, `{"unknown":true}`, `{"command":[1]}`} {
+	for _, raw := range []string{`{"host_port":1.5}`, `{"container_port":65536}`, `{"container_port":-1}`, `{"protocol":"udp"}`, `{"health_path":"https://evil.example/"}`, `{"root_dir":"/etc"}`, `{"root_dir":"../outside"}`, `{"environment":{"DB_PASSWORD":"private"}}`, `{"environment":{"DSN":"mysql://user:pass@db/one"}}`, `{"environment":{"nest":{"token":"private"}}}`, `{"unknown":true}`, `{"command":[1]}`} {
 		var input map[string]any
 		if err := json.Unmarshal([]byte(raw), &input); err != nil {
 			t.Fatal(err)
@@ -199,6 +199,9 @@ func TestConfigurationStrictValidation(t *testing.T) {
 	}
 	if err := validateConfiguration(map[string]any{"container_port": 8080, "host_port": 0, "environment": map[string]string{"APP_ENV": "test"}, "modules": []string{"gd", "zip"}}); err != nil {
 		t.Fatal(err)
+	}
+	if err := validateConfiguration(map[string]any{"root_dir": "apps/portal"}); err != nil {
+		t.Fatalf("valid relative root_dir rejected: %v", err)
 	}
 }
 func TestConfigurationWaitRecoveryAndStableResourceIdentity(t *testing.T) {
@@ -253,6 +256,40 @@ func TestConfigurationWaitRecoveryAndStableResourceIdentity(t *testing.T) {
 		t.Fatal("rename moved source directory identity")
 	}
 }
+
+func TestLegacyDriverUpdateRemainsAuthoritativeOverDeploymentMode(t *testing.T) {
+	f := newFixture(t)
+	app, err := f.service.Create(context.Background(), CreateInput{
+		Name: NewID(), SourceType: SourceEmpty, Source: SourceInput{},
+		Configuration: map[string]any{"deployment_mode": "auto", "runtime": "static", "runtime_version": "1.28"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	driver := "managed"
+	updated, err := f.service.Update(context.Background(), app.ID, UpdateInput{Driver: &driver})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := decodeConfiguration(updated.SourceConfig)
+	if _, exists := config["deployment_mode"]; exists || updated.Driver != driver {
+		t.Fatalf("legacy driver selection was not preserved: driver=%q config=%v", updated.Driver, config)
+	}
+}
+
+func TestAutoContainerRequiresUserSelectedRuntimeAndVersion(t *testing.T) {
+	if err := validateAutoContainerSelection(SourceLocal, map[string]any{"deployment_mode": "auto"}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("missing runtime should be rejected, got %v", err)
+	}
+	if err := validateAutoContainerSelection(SourceLocal, map[string]any{"deployment_mode": "auto", "runtime": "php"}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("missing runtime version should be rejected, got %v", err)
+	}
+	if err := validateAutoContainerSelection(SourceLocal, map[string]any{"deployment_mode": "auto", "runtime": "php", "runtime_version": "8.5"}); err != nil {
+		t.Fatalf("complete runtime selection rejected: %v", err)
+	}
+
+}
+
 func TestOperationLockCancellationAndRetry(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -493,7 +530,7 @@ func TestDeleteUndeployedAndPreserveLocalSources(t *testing.T) {
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	local, err := f.service.Create(ctx, CreateInput{Name: NewID(), SourceType: SourceLocal, Source: SourceInput{LocalPath: path}, Driver: "image"}, nil)
+	local, err := f.service.Create(ctx, CreateInput{Name: NewID(), SourceType: SourceLocal, Source: SourceInput{LocalPath: path}, Driver: "managed"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,7 +578,7 @@ func TestStrictJSONAndReadOnlyHTTPRole(t *testing.T) {
 func TestDetectionPrecedenceAndUnsafeGitInput(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	for _, name := range []string{"compose", "dockerfile", "managed"} {
+	for _, name := range []string{"compose"} {
 		if err := f.service.drivers.Register(&fixtureDriver{name: name}); err != nil {
 			t.Fatal(err)
 		}
@@ -555,12 +592,30 @@ func TestDetectionPrecedenceAndUnsafeGitInput(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, test := range []struct{ file, body, want string }{{"index.html", "ok", "managed"}, {"Dockerfile", "FROM nginx:alpine", "dockerfile"}, {"compose.yaml", "services:\n  web:\n    image: nginx:alpine\n", "compose"}, {"devbox.yaml", "version: 1\ndeployment:\n  driver: dockerfile\n", "dockerfile"}} {
+	for _, test := range []struct{ file, body, want string }{{"index.html", "ok", "managed"}, {"Dockerfile", "FROM nginx:alpine", "managed"}, {"compose.yaml", "services:\n  web:\n    image: nginx:alpine\n", "compose"}, {"devbox.yaml", "version: 1\ndeployment:\n  driver: managed\n", "compose"}} {
 		write(test.file, test.body)
 		result, err := f.service.selector.Detect(ctx, DetectRequest{SourceType: SourceLocal, WorkDir: dir}, "")
 		if err != nil || result.Driver != test.want {
 			t.Fatalf("%s selected %s: %v", test.file, result.Driver, err)
 		}
+	}
+	write("compose.yaml", "services:\n  web:\n    image: nginx:alpine\n")
+	for _, test := range []struct {
+		mode   string
+		config map[string]any
+		want   string
+	}{{"compose", map[string]any{"deployment_mode": "compose"}, "compose"}, {"auto", map[string]any{"deployment_mode": "auto", "runtime": "static", "runtime_version": "1.27"}, "managed"}} {
+		result, err := f.service.selector.Detect(ctx, DetectRequest{SourceType: SourceLocal, WorkDir: dir, Configuration: test.config}, "")
+		if err != nil || result.Driver != test.want {
+			t.Fatalf("mode %s selected %s: %v", test.mode, result.Driver, err)
+		}
+	}
+	missingCompose := filepath.Join(f.root, "no-compose")
+	if err := os.Mkdir(missingCompose, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.selector.Detect(ctx, DetectRequest{SourceType: SourceLocal, WorkDir: missingCompose, Configuration: map[string]any{"deployment_mode": "compose"}}, ""); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("Compose mode without a Compose file error = %v", err)
 	}
 	if _, err := f.service.Detect(ctx, CreateInput{SourceType: SourceGit, Source: SourceInput{RepositoryURL: "https://user:private@example.invalid/repo", LocalPath: dir}}, nil); !errors.Is(err, ErrInvalidInput) {
 		t.Fatal("Git password persisted in analysis payload", err)
@@ -592,7 +647,7 @@ func TestObservedAggregationIsOrderIndependent(t *testing.T) {
 		want    string
 	}{
 		{DesiredRunning, []Workload{{Primary: true, ObservedState: ObservedRunning, HealthState: HealthHealthy}}, "running"},
-		{DesiredRunning, []Workload{{Primary: true, ObservedState: ObservedRunning}, {ObservedState: ObservedFailed}}, "degraded"},
+		{DesiredRunning, []Workload{{Primary: true, ObservedState: ObservedRunning}, {ObservedState: ObservedFailed}}, "failed"},
 		{DesiredRunning, []Workload{{Primary: true, ObservedState: ObservedFailed}}, "failed"},
 		{DesiredStopped, []Workload{{Primary: true, ObservedState: ObservedExited}}, "stopped"},
 		{DesiredRunning, []Workload{{Primary: true, ObservedState: ObservedUnknown}}, "unknown"},

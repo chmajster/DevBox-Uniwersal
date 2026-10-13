@@ -15,4 +15,7 @@ if (Test-SupportedDistroId -Id 'arch') {
 if ((Get-LinuxInstallerMode -RequestedMode 'Repair') -ne '--repair') {
     throw 'mode mapping test failed'
 }
+if ((Get-LinuxInstallerMode -RequestedMode 'Reinstall') -ne '--reinstall') {
+    throw 'reinstall mode mapping test failed'
+}
 Write-Host 'install.ps1 parser/WSL metadata tests: OK'

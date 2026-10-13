@@ -26,8 +26,6 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/databases"
 	dockermodule "github.com/chmajster/DevBox-Uniwersal/backend/internal/docker"
 	composedriver "github.com/chmajster/DevBox-Uniwersal/backend/internal/drivers/compose"
-	dockerfiledriver "github.com/chmajster/DevBox-Uniwersal/backend/internal/drivers/dockerfile"
-	imagedriver "github.com/chmajster/DevBox-Uniwersal/backend/internal/drivers/image"
 	manageddriver "github.com/chmajster/DevBox-Uniwersal/backend/internal/drivers/managed"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/jobs"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/monitoring"
@@ -37,7 +35,6 @@ import (
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/proxy"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/repository"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/runtimes"
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/scriptapps"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/secrets"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/sourcegit"
 	devsystem "github.com/chmajster/DevBox-Uniwersal/backend/internal/system"
@@ -157,14 +154,20 @@ func serve() error {
 	credentialModule := credentials.NewModule(credentialService, auditService)
 
 	runtimeRegistry := runtimes.NewDefaultRegistry()
-	runtimeProjectResolver := runtimes.NewSQLiteProjectResolver(db)
-	runtimeModule := runtimes.NewModule(
-		runtimeRegistry,
-		runtimeProjectResolver,
-		secretStore,
-	)
+	runtimeModule := runtimes.NewModule()
 
-	dockerProvider := dockermodule.NewCLIProvider()
+	if strings.TrimSpace(os.Getenv("DEVBOX_COMPOSE_PORTS_DIR")) == "" {
+		directory, err := filepath.Abs(filepath.Join(filepath.Dir(cfg.DatabasePath), "compose-ports"))
+		if err != nil {
+			logger.Error("invalid Compose state path", "error", err)
+			os.Exit(1)
+		}
+		if err := os.Setenv("DEVBOX_COMPOSE_PORTS_DIR", directory); err != nil {
+			logger.Error("configure Compose state", "error", err)
+			os.Exit(1)
+		}
+	}
+	dockerProvider := dockermodule.NewCLIProvider().WithRuntimeRoot(filepath.Join(filepath.Dir(cfg.DatabasePath), "projects"))
 	dockerService := dockermodule.NewService(dockerProvider, auditService, cfg.ProjectsRoot)
 	dockerModule := dockermodule.NewModule(dockerService)
 
@@ -220,6 +223,7 @@ func serve() error {
 	managedMySQLAdminEndpoint := managedMySQL.AdminEndpoint()
 	managedMySQLApplicationEndpoint := managedMySQL.ApplicationEndpoint()
 	managedMySQLProvider := databases.NewMySQLProvider(databases.MySQLConfig{
+		DockerContainer:         managedMySQL.ContainerName(),
 		Host:                    managedMySQLAdminEndpoint.Host,
 		Port:                    managedMySQLAdminEndpoint.Port,
 		AdminUser:               "root",
@@ -231,6 +235,9 @@ func serve() error {
 		MySQLBinary:             cfg.MySQLBinary,
 		DumpBinary:              cfg.MySQLDumpBinary,
 	}, secretStore)
+	managedMariaDB := databases.NewManagedMySQLManager(dockerProvider, secretStore, databases.ManagedMySQLConfig{Image: "mariadb:11.4", Container: "devbox-mariadb", Network: cfg.SharedAppNetwork, Volume: "devbox-mariadb-data", AdminPort: 13307})
+	mariaScope, mariaSecret := managedMariaDB.AdminSecretRef()
+	mariaProvider := databases.NewMySQLProvider(databases.MySQLConfig{DockerContainer: managedMariaDB.ContainerName(), ClientBinary: "mariadb", AdminUser: "root", AdminSecretScope: mariaScope, AdminSecretRef: mariaSecret, ApplicationEndpointHost: managedMariaDB.ContainerName(), ApplicationEndpointPort: 3306}, secretStore)
 
 	postgresqlProvider := databases.NewPostgreSQLProvider(databases.PostgreSQLConfig{
 		DockerBinary:    cfg.PHPMyAdminDockerBinary,
@@ -258,8 +265,9 @@ func serve() error {
 		databases.WithComposeDatabaseProvider(dockerProvider),
 		databases.WithManagedMySQL(managedMySQL),
 		databases.WithDatabaseEngine("mysql", managedMySQLProvider),
-		databases.WithDatabaseEngine("mariadb", managedMySQLProvider),
+		databases.WithDatabaseEngine("mariadb", mariaProvider),
 		databases.WithDatabaseEngine("postgresql", postgresqlProvider),
+		databases.WithDatabaseServers(map[string]databases.DatabaseServerManager{"mysql": managedMySQL, "mariadb": managedMariaDB, "postgresql": managedPostgreSQL}),
 	}
 	databaseService, err := databases.NewService(databaseRepo, mysqlProvider, secretStore, jobRunner, auditService, phpMyAdmin, cfg.MySQLBackupDir, databaseOptions...)
 	if err != nil {
@@ -271,6 +279,7 @@ func serve() error {
 	networkRepo := proxy.NewSQLiteRepository(db)
 	portManager := proxy.NewPortManager(db, cfg.PortRangeStart, cfg.PortRangeEnd)
 	nginxProvider := proxy.NewNginxProvider(proxy.NginxOptions{
+		CertificateDir: filepath.Join(filepath.Dir(cfg.DatabasePath), "certificates"),
 		Binary:         cfg.NginxBinary,
 		SitesAvailable: cfg.NginxSitesAvailable,
 		SitesEnabled:   cfg.NginxSitesEnabled,
@@ -283,12 +292,11 @@ func serve() error {
 	networkModule := proxy.NewModule(networkService, portManager, healthChecker, nginxProvider, auditService, cfg.HealthTimeout)
 	gitClient := sourcegit.New(secretStore)
 	applicationRepo := applications.NewRepository(db)
-	applicationPorts := applications.NewApplicationPortAllocator(db, cfg.PortRangeStart, cfg.PortRangeEnd)
+	applicationPorts := applications.NewApplicationPortAllocator(db, cfg.PortRangeStart, cfg.PortRangeEnd).WithDockerPorts(dockerProvider.PublishedApplicationPorts)
 	applicationDrivers := applications.NewDriverRegistry()
+	dockerProvider.WithSharedAppNetwork(cfg.SharedAppNetwork)
 	for _, driver := range []applications.DeploymentDriver{
 		manageddriver.New(dockerProvider, runtimeRegistry, applicationPorts, dockerProvider, cfg.SharedAppNetwork),
-		dockerfiledriver.New(dockerProvider, applicationPorts, dockerProvider, cfg.SharedAppNetwork),
-		imagedriver.New(dockerProvider, applicationPorts, dockerProvider, cfg.SharedAppNetwork),
 		composedriver.New(dockerProvider, applicationPorts, dockerProvider, cfg.SharedAppNetwork),
 	} {
 		if err := applicationDrivers.Register(driver); err != nil {
@@ -306,10 +314,18 @@ func serve() error {
 		cfg.ProjectsRoot,
 		cfg.DirectoryBrowseRoots...,
 	)
+	applicationService.WithRouting(nginxProvider)
+	applicationService.WithRuntimeCleanup(dockerProvider)
 	applicationService.WithSecretStore(secretStore)
+	applicationService.WithDatabaseResolver(databaseService)
 	for _, handler := range []jobs.Handler{
 		applications.NewDetectJobHandler(applicationService, jobRunner),
 		applications.NewDeployJobHandler(applicationService, jobRunner),
+		applications.NewDeploymentActionHandler(applicationService, jobRunner, applications.JobBuild),
+		applications.NewDeploymentActionHandler(applicationService, jobRunner, applications.JobRebuild),
+		applications.NewDeploymentActionHandler(applicationService, jobRunner, applications.JobRecreate),
+		applications.NewLifecycleJobHandler(applicationService, jobRunner, applications.JobPull),
+		applications.NewLifecycleJobHandler(applicationService, jobRunner, applications.JobDown),
 		applications.NewLifecycleJobHandler(applicationService, jobRunner, applications.JobStart),
 		applications.NewLifecycleJobHandler(applicationService, jobRunner, applications.JobStop),
 		applications.NewLifecycleJobHandler(applicationService, jobRunner, applications.JobRestart),
@@ -347,16 +363,6 @@ func serve() error {
 	pluginModule := plugins.NewModule(pluginService, auditService)
 	go applicationService.RunReconciler(workerCtx, 5*time.Second)
 
-	scriptAppRepo := scriptapps.NewRepository(db)
-	scriptAppService := scriptapps.NewService(scriptAppRepo, jobRunner)
-	for _, jobType := range []string{scriptapps.JobInstall, scriptapps.JobUpdate, scriptapps.JobUninstall, scriptapps.JobStart, scriptapps.JobStop, scriptapps.JobRestart} {
-		if err := jobRunner.Register(scriptapps.NewHandler(jobType, scriptAppRepo, jobRunner)); err != nil {
-			logger.Error("script app job handler registration failed", "type", jobType, "error", err)
-			os.Exit(1)
-		}
-	}
-	scriptAppModule := scriptapps.NewModule(scriptAppService, auditService)
-
 	logRegistry := operations.NewRegistry()
 	logSources := []operations.LogSource{
 		devboxLogs,
@@ -388,7 +394,6 @@ func serve() error {
 		runtimeModule,
 		applicationModule,
 		directoryModule,
-		scriptAppModule,
 		dockerModule,
 		databaseModule,
 		networkModule,
@@ -532,6 +537,7 @@ func doctor() int {
 		DataDir:       devsystem.DatabaseDataDir(cfg.DatabasePath),
 		HTTPAddr:      cfg.HTTPAddr,
 		ServiceName:   "devbox",
+		SharedNetwork: cfg.SharedAppNetwork,
 	})
 	if dbErr != nil && len(report.Checks) > 0 {
 		report.Checks[0].Message = dbErr.Error()

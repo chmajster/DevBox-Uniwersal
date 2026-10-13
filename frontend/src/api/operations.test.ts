@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getServiceProbe, listDatabases, listPorts, listProjects } from './operations'
+import { getServiceProbe, listDatabases, listPorts, listDockerContainers } from './operations'
 
 function apiResponse(data: unknown) {
   return new Response(JSON.stringify({ data }), {
@@ -18,7 +18,7 @@ describe('operations API integration', () => {
 
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(listProjects()).resolves.toEqual([])
+    await expect(listDockerContainers()).resolves.toEqual([])
     await expect(listDatabases()).resolves.toEqual([])
   })
 

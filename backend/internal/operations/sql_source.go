@@ -35,16 +35,16 @@ func (s *SQLLogSource) List(ctx context.Context, filter LogFilter) ([]LogEntry, 
 
 	switch s.mode {
 	case LogModeProject:
-		clauses = append(clauses, "j.project_id IS NOT NULL")
+		clauses = append(clauses, "COALESCE(j.application_id,j.project_id) IS NOT NULL")
 	case LogModeDeployment:
-		clauses = append(clauses, "(j.type LIKE 'deploy%' OR j.type LIKE 'deployment%')")
+		clauses = append(clauses, "(j.type LIKE 'deploy%' OR j.type LIKE 'deployment%' OR j.type IN ('application.deploy','application.rebuild','application.recreate','application.build'))")
 	case LogModeJob:
 	default:
 		return nil, fmt.Errorf("unsupported SQL log mode %q", s.mode)
 	}
 
 	if filter.ProjectID != "" {
-		clauses = append(clauses, "j.project_id = ?")
+		clauses = append(clauses, "COALESCE(j.application_id,j.project_id) = ?")
 		args = append(args, filter.ProjectID)
 	}
 	if filter.JobID != "" {
@@ -73,7 +73,7 @@ func (s *SQLLogSource) List(ctx context.Context, filter LogFilter) ([]LogEntry, 
 	}
 
 	args = append(args, normalizeLimit(filter.Limit))
-	query := `SELECT jl.id,j.id,j.project_id,jl.level,jl.message,jl.fields_json,jl.created_at
+	query := `SELECT jl.id,j.id,COALESCE(j.application_id,j.project_id),jl.level,jl.message,jl.fields_json,jl.created_at
 		FROM job_logs jl
 		JOIN jobs j ON j.id = jl.job_id
 		WHERE ` + strings.Join(clauses, " AND ") + `

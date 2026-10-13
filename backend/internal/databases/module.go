@@ -11,6 +11,7 @@ import (
 
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/api"
 	"github.com/chmajster/DevBox-Uniwersal/backend/internal/domain"
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 )
 
 type Module struct {
@@ -39,6 +40,18 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("GET /api/v1/mysql/status", viewer(http.HandlerFunc(m.mysqlStatus)))
 	mux.Handle("POST /api/v1/mysql/{action}", operator(http.HandlerFunc(m.mysqlAction)))
 	mux.Handle("GET /api/v1/databases", viewer(http.HandlerFunc(m.listDatabases)))
+	mux.Handle("GET /api/v1/database-servers", viewer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeData(w, http.StatusOK, m.service.DatabaseServers(r.Context()))
+	})))
+	mux.Handle("POST /api/v1/database-servers/{engine}/{action}", operator(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		actor, _ := requestIdentity(r)
+		job, err := m.service.QueueDatabaseServer(r.Context(), r.PathValue("engine"), r.PathValue("action"), actor)
+		if err != nil {
+			writeModuleError(w, err)
+			return
+		}
+		writeData(w, http.StatusAccepted, job)
+	})))
 	mux.Handle("POST /api/v1/databases", operator(http.HandlerFunc(m.createDatabase)))
 	mux.Handle("DELETE /api/v1/databases/{id}", operator(http.HandlerFunc(m.deleteDatabase)))
 
@@ -52,14 +65,34 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 	mux.Handle("DELETE /api/v1/database-users/{id}/databases/{database_id}", operator(http.HandlerFunc(m.removeUserDatabaseAccess)))
 
 	mux.Handle("GET /api/v1/projects/{id}/database-binding", viewer(http.HandlerFunc(m.getDatabaseBinding)))
-	mux.Handle("PUT /api/v1/projects/{id}/database-binding", operator(http.HandlerFunc(m.updateDatabaseBinding)))
-	mux.Handle("DELETE /api/v1/projects/{id}/database-binding", operator(http.HandlerFunc(m.deleteDatabaseBinding)))
-	mux.Handle("POST /api/v1/projects/{id}/database-binding/test", operator(http.HandlerFunc(m.testDatabaseBinding)))
-	mux.Handle("POST /api/v1/projects/{id}/database-binding/password", operator(http.HandlerFunc(m.rotateDatabasePassword)))
 	mux.Handle("GET /api/v1/projects/{id}/database-binding/compose-services", viewer(http.HandlerFunc(m.composeServices)))
 	mux.Handle("GET /api/v1/projects/{id}/database-services", viewer(http.HandlerFunc(m.getProjectDatabaseServices)))
-	mux.Handle("PUT /api/v1/projects/{id}/database-services", operator(http.HandlerFunc(m.updateProjectDatabaseServices)))
-	mux.Handle("POST /api/v1/projects/{id}/database/provision", operator(http.HandlerFunc(m.provisionProject)))
+	mux.Handle("GET /api/v1/applications/{id}/database-binding", viewer(http.HandlerFunc(m.getApplicationDatabaseBinding)))
+	mux.Handle("PUT /api/v1/applications/{id}/database-binding", operator(http.HandlerFunc(m.updateApplicationDatabaseBinding)))
+	mux.Handle("DELETE /api/v1/applications/{id}/database-binding", operator(http.HandlerFunc(m.deleteApplicationDatabaseBinding)))
+	for _, action := range []string{"provision", "test"} {
+		action := action
+		mux.Handle("POST /api/v1/applications/{id}/database-binding/"+action, operator(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			payload := map[string]any{}
+			if r.ContentLength != 0 {
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					writeModuleError(w, errors.New("invalid database operation"))
+					return
+				}
+			}
+			if err := validApplicationDatabasePayload(payload); err != nil {
+				writeModuleError(w, err)
+				return
+			}
+			actor, _ := requestIdentity(r)
+			job, err := m.service.QueueApplicationDatabase(r.Context(), r.PathValue("id"), "application.database-"+action, payload, actor)
+			if err != nil {
+				writeModuleError(w, err)
+				return
+			}
+			writeData(w, http.StatusAccepted, job)
+		})))
+	}
 	mux.Handle("POST /api/v1/databases/{id}/backup", operator(http.HandlerFunc(m.backupDatabase)))
 	mux.Handle("GET /api/v1/databases/{id}/backups", viewer(http.HandlerFunc(m.listBackups)))
 	mux.Handle("POST /api/v1/databases/{id}/restore", operator(http.HandlerFunc(m.restoreDatabase)))
@@ -68,6 +101,42 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux, middleware api.ModuleMiddlew
 
 	mux.Handle("GET /api/v1/phpmyadmin/status", viewer(http.HandlerFunc(m.phpMyAdminStatus)))
 	mux.Handle("POST /api/v1/phpmyadmin/{action}", operator(http.HandlerFunc(m.phpMyAdminAction)))
+}
+
+func (m *Module) getApplicationDatabaseBinding(w http.ResponseWriter, r *http.Request) {
+	item, found, err := m.service.GetApplicationDatabaseBinding(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]any{"binding": item, "configured": found})
+}
+
+func (m *Module) updateApplicationDatabaseBinding(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		DatabaseID string `json:"database_id"`
+		UserID     string `json:"user_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeModuleError(w, errors.New("invalid database binding request"))
+		return
+	}
+	actor, remote := requestIdentity(r)
+	item, err := m.service.BindApplicationDatabaseUser(r.Context(), r.PathValue("id"), input.DatabaseID, input.UserID, actor, remote)
+	if err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]any{"binding": item, "configured": true})
+}
+
+func (m *Module) deleteApplicationDatabaseBinding(w http.ResponseWriter, r *http.Request) {
+	actor, remote := requestIdentity(r)
+	if err := m.service.UnbindApplicationDatabase(r.Context(), r.PathValue("id"), actor, remote); err != nil {
+		writeModuleError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]any{"binding": providers.ApplicationDatabaseBinding{ApplicationID: r.PathValue("id")}, "configured": false})
 }
 
 func (m *Module) mysqlStatus(w http.ResponseWriter, r *http.Request) {

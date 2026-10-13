@@ -32,6 +32,7 @@ type databaseEngine interface {
 }
 
 type Service struct {
+	servers    map[string]DatabaseServerManager
 	repo       *Repository
 	engine     databaseEngine
 	engines    map[string]databaseEngine
@@ -93,6 +94,14 @@ func NewService(repo *Repository, engine databaseEngine, secretStore secrets.Sec
 		if option != nil {
 			option(service)
 		}
+	}
+	for _, kind := range []string{JobApplicationDatabaseProvision, JobApplicationDatabaseTest} {
+		if err := runner.Register(&applicationDatabaseJob{service: service, kind: kind}); err != nil {
+			return nil, err
+		}
+	}
+	if err := runner.Register(&databaseServerJob{service: service}); err != nil {
+		return nil, err
 	}
 	resolver := func(engineName string) (backupEngine, error) {
 		return service.engineFor(engineName)

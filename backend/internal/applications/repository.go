@@ -43,10 +43,7 @@ func (r *Repository) Create(ctx context.Context, app Application, source Source)
 		return err
 	}
 	defer tx.Rollback()
-	sourceJSON := app.SourceConfig
-	if len(sourceJSON) == 0 {
-		sourceJSON = []byte("{}")
-	}
+	sourceJSON, environment := separateEnvironment(app.SourceConfig)
 	_, err = tx.ExecContext(ctx, `INSERT INTO applications(
 		id,name,slug,description,source_type,source_config_json,driver,desired_state,observed_state,health_state,auto_start,created_by,created_at,updated_at
 	) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -56,12 +53,15 @@ func (r *Repository) Create(ctx context.Context, app Application, source Source)
 		return classifyDBError("create application", err)
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO application_sources(
-		application_id,repository_url,reference,local_path,docker_image,credential_secret_id,current_revision,created_at,updated_at
+		application_id,repository_url,reference,local_path,credential_secret_id,current_revision,created_at,updated_at,docker_image
 	) VALUES(?,?,?,?,?,?,?,?,?)`,
-		app.ID, nullText(source.RepositoryURL), nullText(source.Reference), nullText(source.LocalPath), nullText(source.DockerImage),
-		source.CredentialID, nullText(source.CurrentRevision), dbTime(app.CreatedAt), dbTime(app.UpdatedAt))
+		app.ID, nullText(source.RepositoryURL), nullText(source.Reference), nullText(source.LocalPath),
+		source.CredentialID, nullText(source.CurrentRevision), dbTime(app.CreatedAt), dbTime(app.UpdatedAt), nullText(source.DockerImage))
 	if err != nil {
 		return fmt.Errorf("create application source: %w", err)
+	}
+	if err := saveEnvironment(ctx, tx, app.ID, environment); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -93,18 +93,19 @@ func (r *Repository) Get(ctx context.Context, id string) (Application, error) {
 
 func (r *Repository) Source(ctx context.Context, id string) (Source, error) {
 	var source Source
-	var repositoryURL, reference, localPath, dockerImage, credentialID, revision sql.NullString
-	err := r.db.QueryRowContext(ctx, `SELECT application_id,repository_url,reference,local_path,docker_image,credential_secret_id,current_revision
+	var repositoryURL, reference, localPath, credentialID, revision, image sql.NullString
+	err := r.db.QueryRowContext(ctx, `SELECT application_id,repository_url,reference,local_path,credential_secret_id,current_revision,docker_image
 		FROM application_sources WHERE application_id=?`, id).Scan(
-		&source.ApplicationID, &repositoryURL, &reference, &localPath, &dockerImage, &credentialID, &revision)
+		&source.ApplicationID, &repositoryURL, &reference, &localPath, &credentialID, &revision, &image)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Source{}, ErrNotFound
 	}
 	if err != nil {
 		return Source{}, err
 	}
-	source.RepositoryURL, source.Reference, source.LocalPath, source.DockerImage = repositoryURL.String, reference.String, localPath.String, dockerImage.String
+	source.RepositoryURL, source.Reference, source.LocalPath = repositoryURL.String, reference.String, localPath.String
 	source.CurrentRevision = revision.String
+	source.DockerImage = image.String
 	if credentialID.Valid {
 		value := credentialID.String
 		source.CredentialID = &value
@@ -113,11 +114,13 @@ func (r *Repository) Source(ctx context.Context, id string) (Source, error) {
 }
 
 func (r *Repository) Update(ctx context.Context, app Application) error {
-	sourceJSON := app.SourceConfig
-	if len(sourceJSON) == 0 {
-		sourceJSON = []byte("{}")
+	sourceJSON, environment := separateEnvironment(app.SourceConfig)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
-	res, err := r.db.ExecContext(ctx, `UPDATE applications SET name=?,slug=?,description=?,source_config_json=?,driver=?,desired_state=?,observed_state=?,health_state=?,auto_start=?,updated_at=? WHERE id=?`,
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `UPDATE applications SET name=?,slug=?,description=?,source_config_json=?,driver=?,desired_state=?,observed_state=?,health_state=?,auto_start=?,updated_at=? WHERE id=?`,
 		app.Name, app.Slug, app.Description, string(sourceJSON), app.Driver, app.DesiredState, app.ObservedState, app.HealthState, boolInt(app.AutoStart), dbTime(app.UpdatedAt), app.ID)
 	if err != nil {
 		return classifyDBError("update application", err)
@@ -125,12 +128,15 @@ func (r *Repository) Update(ctx context.Context, app Application) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	return nil
+	if err := saveEnvironment(ctx, tx, app.ID, environment); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) UpdateSource(ctx context.Context, source Source) error {
-	res, err := r.db.ExecContext(ctx, `UPDATE application_sources SET repository_url=?,reference=?,local_path=?,docker_image=?,credential_secret_id=?,current_revision=?,updated_at=? WHERE application_id=?`,
-		nullText(source.RepositoryURL), nullText(source.Reference), nullText(source.LocalPath), nullText(source.DockerImage), source.CredentialID,
+	res, err := r.db.ExecContext(ctx, `UPDATE application_sources SET repository_url=?,reference=?,local_path=?,credential_secret_id=?,current_revision=?,updated_at=? WHERE application_id=?`,
+		nullText(source.RepositoryURL), nullText(source.Reference), nullText(source.LocalPath), source.CredentialID,
 		nullText(source.CurrentRevision), dbTime(time.Now()), source.ApplicationID)
 	if err != nil {
 		return err
@@ -161,6 +167,11 @@ func (r *Repository) SaveRuntime(ctx context.Context, runtime Runtime) error {
 		VALUES(?,?,?,?,?)
 		ON CONFLICT(application_id) DO UPDATE SET runtime=excluded.runtime,version=excluded.version,adapter_metadata_json=excluded.adapter_metadata_json,updated_at=excluded.updated_at`,
 		runtime.ApplicationID, runtime.Name, runtime.Version, string(metadata), dbTime(time.Now()))
+	return err
+}
+
+func (r *Repository) DeleteRuntime(ctx context.Context, applicationID string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM application_runtime WHERE application_id=?`, applicationID)
 	return err
 }
 
@@ -421,7 +432,7 @@ func (r *Repository) Workloads(ctx context.Context, applicationID string) ([]Wor
 }
 
 func (r *Repository) Endpoints(ctx context.Context, applicationID string) ([]Endpoint, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,application_id,workload_id,name,protocol,container_port,host_port,domain,public,primary_endpoint,tls_mode,COALESCE(health_path,''),status,created_at,updated_at FROM endpoints WHERE application_id=? ORDER BY primary_endpoint DESC,name`, applicationID)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,application_id,workload_id,name,protocol,container_port,host_port,domain,public,primary_endpoint,tls_mode,COALESCE(health_path,''),status,created_at,updated_at,EXISTS(SELECT 1 FROM application_routes r WHERE r.endpoint_id=endpoints.id AND r.domain=endpoints.domain AND r.target_port=endpoints.host_port AND r.tls_mode=endpoints.tls_mode AND r.active=1) FROM endpoints WHERE application_id=? ORDER BY primary_endpoint DESC,name`, applicationID)
 	if err != nil {
 		return nil, err
 	}
@@ -433,7 +444,7 @@ func (r *Repository) Endpoints(ctx context.Context, applicationID string) ([]End
 		var domain sql.NullString
 		var public, primary int
 		var created, updated string
-		if err := rows.Scan(&item.ID, &item.ApplicationID, &item.WorkloadID, &item.Name, &item.Protocol, &item.ContainerPort, &hostPort, &domain, &public, &primary, &item.TLSMode, &item.HealthPath, &item.Status, &created, &updated); err != nil {
+		if err := rows.Scan(&item.ID, &item.ApplicationID, &item.WorkloadID, &item.Name, &item.Protocol, &item.ContainerPort, &hostPort, &domain, &public, &primary, &item.TLSMode, &item.HealthPath, &item.Status, &created, &updated, &item.RouteActive); err != nil {
 			return nil, err
 		}
 		if hostPort.Valid {
@@ -561,7 +572,7 @@ func (r *Repository) Events(ctx context.Context, applicationID string, limit int
 	return out, rows.Err()
 }
 
-const applicationSelect = `SELECT a.id,a.name,a.slug,a.description,a.source_type,a.source_config_json,a.driver,a.desired_state,a.observed_state,a.health_state,a.auto_start,a.created_by,a.created_at,a.updated_at FROM applications a`
+const applicationSelect = `SELECT a.id,a.name,a.slug,a.description,a.source_type,json_patch(a.source_config_json,COALESCE((SELECT json_object('environment',json_group_object(name,value)) FROM application_environment_variables WHERE application_id=a.id AND workload_id IS NULL HAVING COUNT(*)>0),'{}')),a.driver,a.desired_state,a.observed_state,a.health_state,a.auto_start,a.created_by,a.created_at,a.updated_at FROM applications a`
 const deploymentSelect = `SELECT id,application_id,job_id,driver,status,stage,COALESCE(source_revision,''),started_at,finished_at,triggered_by,COALESCE(error_text,''),plan_snapshot_json,created_at FROM application_deployments`
 
 type scanFn func(...any) error
@@ -663,4 +674,26 @@ func classifyDBError(operation string, err error) error {
 		return fmt.Errorf("%w: %s", ErrConflict, operation)
 	}
 	return fmt.Errorf("%s: %w", operation, err)
+}
+
+func separateEnvironment(raw json.RawMessage) (json.RawMessage, map[string]string) {
+	config := decodeConfiguration(raw)
+	environment := map[string]string{}
+	data, _ := json.Marshal(config["environment"])
+	_ = json.Unmarshal(data, &environment)
+	delete(config, "environment")
+	clean, _ := json.Marshal(config)
+	return clean, environment
+}
+func saveEnvironment(ctx context.Context, tx *sql.Tx, id string, env map[string]string) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM application_environment_variables WHERE application_id=? AND workload_id IS NULL`, id); err != nil {
+		return err
+	}
+	now := dbTime(time.Now())
+	for name, value := range env {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO application_environment_variables(id,application_id,name,value,created_at,updated_at) VALUES(?,?,?,?,?,?)`, NewID(), id, name, value, now, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }

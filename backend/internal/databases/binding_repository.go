@@ -6,7 +6,48 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 )
+
+func (r *Repository) ApplicationDatabaseBinding(ctx context.Context, applicationID string) (providers.ApplicationDatabaseBinding, error) {
+	var item providers.ApplicationDatabaseBinding
+	err := r.db.QueryRowContext(ctx, `SELECT adb.application_id,adb.database_id,d.name,d.engine,
+		COALESCE(da.username,''),COALESCE(adb.user_id,'')
+		FROM application_database_bindings adb JOIN databases d ON d.id=adb.database_id LEFT JOIN database_accounts da ON da.id=adb.user_id WHERE adb.application_id=?`, applicationID).
+		Scan(&item.ApplicationID, &item.DatabaseID, &item.DatabaseName, &item.Engine, &item.Username, &item.UserID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return providers.ApplicationDatabaseBinding{}, ErrBindingNotFound
+	}
+	if err != nil {
+		return providers.ApplicationDatabaseBinding{}, fmt.Errorf("get application database binding: %w", err)
+	}
+	return item, nil
+}
+
+func (r *Repository) UpsertApplicationDatabaseBinding(ctx context.Context, applicationID, databaseID string, selectedUser ...string) error {
+	user := ""
+	if len(selectedUser) > 0 {
+		user = selectedUser[0]
+	} else {
+		_ = r.db.QueryRowContext(ctx, `SELECT user_id FROM database_user_grants WHERE database_id=? ORDER BY created_at LIMIT 1`, databaseID).Scan(&user)
+	}
+	_, err := r.db.ExecContext(ctx, `INSERT INTO application_database_bindings(application_id,database_id,created_at,updated_at,user_id)
+		VALUES(?,?,?,?,?) ON CONFLICT(application_id) DO UPDATE SET database_id=excluded.database_id,user_id=excluded.user_id,updated_at=excluded.updated_at`,
+		applicationID, databaseID, time.Now().UTC().Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano), nullableBinding(user))
+	if err != nil {
+		return fmt.Errorf("store application database binding: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) DeleteApplicationDatabaseBinding(ctx context.Context, applicationID string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM application_database_bindings WHERE application_id=?`, applicationID)
+	if err != nil {
+		return fmt.Errorf("delete application database binding: %w", err)
+	}
+	return nil
+}
 
 var ErrBindingNotFound = errors.New("database binding not found")
 

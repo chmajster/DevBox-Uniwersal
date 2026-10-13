@@ -4,10 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
-
-	"github.com/chmajster/DevBox-Uniwersal/backend/internal/providers"
 )
 
 type nodeManifest struct {
@@ -17,24 +14,10 @@ type nodeManifest struct {
 	PackageManager  string            `json:"packageManager"`
 	Main            string            `json:"main"`
 }
+type NodeRuntime struct{}
 
-type NodeRuntime struct {
-	base runtimeBase
-}
-
-func NewNodeRuntime(processes providers.ProcessManager, runner CommandRunner) *NodeRuntime {
-	return &NodeRuntime{base: newRuntimeBase(processes, runner)}
-}
-
+func NewNodeRuntime() *NodeRuntime  { return &NodeRuntime{} }
 func (r *NodeRuntime) Name() string { return "node" }
-
-func (r *NodeRuntime) Inspect(ctx context.Context) RuntimeInfo {
-	node := inspectExecutable(ctx, "node", []string{"node"}, "--version")
-	npm := inspectExecutable(ctx, "npm", []string{"npm"}, "--version")
-	pnpm := inspectExecutable(ctx, "pnpm", []string{"pnpm"}, "--version")
-	yarn := inspectExecutable(ctx, "yarn", []string{"yarn"}, "--version")
-	return aggregateRuntimeInfo(r.Name(), node, nil, []DependencyInfo{npm, pnpm, yarn})
-}
 
 func (r *NodeRuntime) Detect(_ context.Context, project ProjectContext) (Detection, error) {
 	if err := validateWorkDir(project); err != nil {
@@ -101,142 +84,6 @@ func (r *NodeRuntime) Detect(_ context.Context, project ProjectContext) (Detecti
 			"suggested_install_command": nodeInstallCommand(manager, fileExists(project.WorkDir, managerLockfile(manager))),
 		},
 	), nil
-}
-
-func (r *NodeRuntime) Validate(_ context.Context, project ProjectContext) (ValidationResult, error) {
-	result := ValidationResult{Valid: true}
-	if err := validateWorkDir(project); err != nil {
-		result.Valid = false
-		result.Errors = append(result.Errors, err.Error())
-		return result, nil
-	}
-	manifest, err := loadNodeManifest(project.WorkDir)
-	if err != nil {
-		result.Valid = false
-		result.Errors = append(result.Errors, err.Error())
-		return result, nil
-	}
-	if manifest == nil {
-		result.Valid = false
-		result.Errors = append(result.Errors, "package.json was not found")
-		return result, nil
-	}
-	if _, err := findExecutable("node"); err != nil {
-		result.Valid = false
-		result.Errors = append(result.Errors, err.Error())
-	}
-	lockfiles := existingFiles(project.WorkDir, "package-lock.json", "pnpm-lock.yaml", "yarn.lock")
-	if len(lockfiles) > 1 {
-		result.Valid = false
-		result.Errors = append(result.Errors, "multiple Node.js lockfiles detected: "+strings.Join(lockfiles, ", "))
-	}
-	manager := nodePackageManager(project.WorkDir, manifest)
-	if _, err := findExecutable(manager); err != nil {
-		result.Valid = false
-		result.Errors = append(result.Errors, fmt.Sprintf("%s is required by the selected lockfile/packageManager", manager))
-	}
-	if _, ok := projectPort(project); !ok {
-		result.Warnings = append(result.Warnings, "runtime port is not configured; PORT will not be injected")
-	}
-	if manifest.Scripts["start"] == "" && manifest.Main == "" && !(projectMode(project) == "development" && manifest.Scripts["dev"] != "") {
-		result.Warnings = append(result.Warnings, "no start script or package main entrypoint was found")
-	}
-	return result, nil
-}
-
-func (r *NodeRuntime) InstallDependencies(ctx context.Context, project ProjectContext) error {
-	manifest, err := loadNodeManifest(project.WorkDir)
-	if err != nil {
-		return err
-	}
-	if manifest == nil {
-		return fmt.Errorf("package.json was not found")
-	}
-	manager := nodePackageManager(project.WorkDir, manifest)
-	executable, err := findExecutable(manager)
-	if err != nil {
-		return err
-	}
-	args := nodeInstallArgs(manager, fileExists(project.WorkDir, managerLockfile(manager)))
-	return r.base.runner.Run(ctx, executable, args, project.WorkDir, project.Environment)
-}
-
-func (r *NodeRuntime) Build(ctx context.Context, project ProjectContext) error {
-	manifest, err := loadNodeManifest(project.WorkDir)
-	if err != nil {
-		return err
-	}
-	if manifest == nil || manifest.Scripts["build"] == "" {
-		return nil
-	}
-	manager := nodePackageManager(project.WorkDir, manifest)
-	executable, err := findExecutable(manager)
-	if err != nil {
-		return err
-	}
-	return r.base.runner.Run(ctx, executable, []string{"run", "build"}, project.WorkDir, project.Environment)
-}
-
-func (r *NodeRuntime) Start(_ context.Context, project ProjectContext) error {
-	manifest, err := loadNodeManifest(project.WorkDir)
-	if err != nil {
-		return err
-	}
-	if manifest == nil {
-		return fmt.Errorf("package.json was not found")
-	}
-	manager := nodePackageManager(project.WorkDir, manifest)
-	environment := map[string]string{}
-	port, hasPort := projectPort(project)
-	if hasPort {
-		environment["PORT"] = fmt.Sprintf("%d", port)
-	}
-
-	if manifest.Scripts["start"] != "" {
-		executable, err := findExecutable(manager)
-		if err != nil {
-			return err
-		}
-		return r.base.start(project, executable, []string{"run", "start"}, environment)
-	}
-	if projectMode(project) == "development" && manifest.Scripts["dev"] != "" {
-		if !hasPort {
-			return fmt.Errorf("runtime port is not configured")
-		}
-		executable, err := findExecutable(manager)
-		if err != nil {
-			return err
-		}
-		return r.base.start(project, executable, []string{"run", "dev", "--", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", port)}, environment)
-	}
-	if strings.TrimSpace(manifest.Main) != "" {
-		node, err := findExecutable("node")
-		if err != nil {
-			return err
-		}
-		return r.base.start(project, node, []string{manifest.Main}, environment)
-	}
-	return fmt.Errorf("Node.js project does not define a runnable start script or main entrypoint")
-}
-
-func (r *NodeRuntime) Stop(ctx context.Context, project ProjectContext) error {
-	return r.base.stop(ctx, project)
-}
-
-func (r *NodeRuntime) Restart(ctx context.Context, project ProjectContext) error {
-	return r.base.restart(ctx, project)
-}
-
-func (r *NodeRuntime) Status(ctx context.Context, project ProjectContext) (ProcessStatus, error) {
-	return r.base.status(ctx, project)
-}
-
-func (r *NodeRuntime) Logs(ctx context.Context, project ProjectContext, options LogOptions) (io.ReadCloser, error) {
-	return r.base.logs(ctx, project, options)
-}
-
-func (r *NodeRuntime) HealthCheck(ctx context.Context, project ProjectContext) (HealthResult, error) {
-	return r.base.httpHealth(ctx, project)
 }
 
 func loadNodeManifest(workDir string) (*nodeManifest, error) {

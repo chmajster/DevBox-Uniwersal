@@ -66,12 +66,18 @@ type ContainerSpec struct {
 	RestartPolicy        string
 }
 
+type ContainerLogLine struct {
+	Stream string
+	Line   string
+}
+
 type ContainerInfo struct {
-	ID     string
-	Name   string
-	Image  string
-	State  string
-	Health string
+	PortBindings []ContainerPortBinding
+	ID           string
+	Name         string
+	Image        string
+	State        string
+	Health       string
 }
 
 type DockerProvider interface {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +23,9 @@ type ComposeApplicationService struct {
 func (p *CLIProvider) ComposeApplicationServices(ctx context.Context, directory, projectName string) ([]ComposeApplicationService, error) {
 	data, err := p.composeConfigJSON(ctx, directory, projectName)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateApplicationCompose(data, directory); err != nil {
 		return nil, err
 	}
 	var root struct {
@@ -143,6 +147,12 @@ func (p *CLIProvider) ComposeUpApplication(ctx context.Context, directory, proje
 }
 
 func (p *CLIProvider) ComposeUpApplicationEnvironment(ctx context.Context, directory, projectName string, labelsByService map[string]map[string]string, environment map[string]map[string]string) error {
+	return p.composeUpApplication(ctx, directory, projectName, labelsByService, environment, nil, false)
+}
+func (p *CLIProvider) ComposeRecreateApplication(ctx context.Context, directory, projectName string, labelsByService map[string]map[string]string, environment map[string]map[string]string) error {
+	return p.composeUpApplication(ctx, directory, projectName, labelsByService, environment, nil, true)
+}
+func (p *CLIProvider) composeUpApplication(ctx context.Context, directory, projectName string, labelsByService map[string]map[string]string, environment map[string]map[string]string, commands map[string][]string, recreate bool, settings ...map[string]any) error {
 	args, err := composeArgs(directory, projectName)
 	if err != nil {
 		return err
@@ -168,6 +178,12 @@ func (p *CLIProvider) ComposeUpApplicationEnvironment(ctx context.Context, direc
 				safe[key] = value
 			}
 			entry := map[string]any{"labels": safe}
+			if command := commands[name]; len(command) > 0 {
+				entry["command"] = command
+			}
+			if id := safe["devbox.project_id"]; id != "" {
+				entry["container_name"] = "devbox-" + id + "-" + name
+			}
 			if values := environment[name]; len(values) > 0 {
 				env := map[string]string{}
 				for key, value := range values {
@@ -180,7 +196,128 @@ func (p *CLIProvider) ComposeUpApplicationEnvironment(ctx context.Context, direc
 			}
 			services[name] = entry
 		}
-		payload, _ := json.Marshal(map[string]any{"services": services})
+		resourceLabels := map[string]string{}
+		type resource struct {
+			External bool `json:"external"`
+		}
+		var original struct {
+			Networks map[string]resource `json:"networks"`
+			Volumes  map[string]resource `json:"volumes"`
+			Services map[string]struct {
+				Image      string `json:"image"`
+				WorkingDir string `json:"working_dir"`
+				Build      *struct {
+					Context    string `json:"context"`
+					Dockerfile string `json:"dockerfile"`
+				} `json:"build"`
+				Networks map[string]any   `json:"networks"`
+				Volumes  []map[string]any `json:"volumes"`
+			} `json:"services"`
+		}
+		data, err := p.composeConfigJSON(ctx, directory, projectName)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(data, &original); err != nil {
+			return err
+		}
+		if err := validateApplicationCompose(data, directory); err != nil {
+			return err
+		}
+		for name, service := range original.Services {
+			mounts := []map[string]any{}
+			if entry, ok := services[name].(map[string]any); ok && len(settings) > 0 && !composeServiceIsInfrastructure(name, service.Image, nil) {
+				config := settings[0]
+				if restart, _ := config["restart_policy"].(string); restart != "" {
+					entry["restart"] = restart
+				}
+				primary, _ := config["compose_service"].(string)
+				if name == primary || service.Build != nil || service.WorkingDir != "" {
+					if workdir, _ := config["working_directory"].(string); workdir != "" {
+						if name == primary {
+							entry["working_dir"] = workdir
+						}
+					}
+					target := ""
+					if name == primary {
+						target, _ = config["mount_target"].(string)
+					}
+					if target == "" {
+						target = service.WorkingDir
+					}
+					if target == "" && service.Build != nil {
+						file := service.Build.Dockerfile
+						if file == "" {
+							file = "Dockerfile"
+						}
+						data, _ := os.ReadFile(filepath.Join(service.Build.Context, file))
+						for _, line := range strings.Split(string(data), "\n") {
+							fields := strings.Fields(line)
+							if len(fields) == 2 && strings.EqualFold(fields[0], "WORKDIR") && strings.HasPrefix(fields[1], "/") {
+								target = fields[1]
+							}
+						}
+					}
+					if target != "" && target != "/" {
+						mounts = append(mounts, map[string]any{"type": "bind", "source": directory, "target": target, "read_only": false})
+					}
+				}
+			}
+			for _, mount := range service.Volumes {
+				source, _ := mount["source"].(string)
+				kind, _ := mount["type"].(string)
+				relative, err := filepath.Rel(directory, source)
+				if kind == "bind" && err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+					copyMount := map[string]any{}
+					for key, value := range mount {
+						copyMount[key] = value
+					}
+					copyMount["read_only"] = false
+					mounts = append(mounts, copyMount)
+				}
+			}
+			if len(mounts) > 0 {
+				if entry, ok := services[name].(map[string]any); ok {
+					entry["volumes"] = mounts
+				}
+			}
+			if p.sharedAppNetwork != "" && !composeServiceIsInfrastructure(name, service.Image, nil) {
+				if err := p.EnsureNetwork(ctx, p.sharedAppNetwork); err != nil {
+					return err
+				}
+				if entry, ok := services[name].(map[string]any); ok {
+					nets := map[string]any{}
+					for net, settings := range service.Networks {
+						nets[net] = settings
+					}
+					nets["devbox_shared"] = map[string]any{}
+					entry["networks"] = nets
+				}
+			}
+		}
+
+		for _, labels := range labelsByService {
+			for _, key := range []string{"devbox.managed", "devbox.project_id", "devbox.project_name"} {
+				resourceLabels[key] = labels[key]
+			}
+			break
+		}
+		networks := map[string]any{}
+		if p.sharedAppNetwork != "" {
+			networks["devbox_shared"] = map[string]any{"name": p.sharedAppNetwork, "external": true}
+		}
+		volumes := map[string]any{}
+		for name, item := range original.Networks {
+			if !item.External {
+				networks[name] = map[string]any{"name": projectName + "_" + name, "labels": resourceLabels}
+			}
+		}
+		for name, item := range original.Volumes {
+			if !item.External {
+				volumes[name] = map[string]any{"name": projectName + "_" + name, "labels": resourceLabels}
+			}
+		}
+		payload, _ := json.Marshal(map[string]any{"services": services, "networks": networks, "volumes": volumes})
 		file, err := os.CreateTemp("", "devbox-compose-labels-*.json")
 		if err != nil {
 			return err
@@ -205,8 +342,15 @@ func (p *CLIProvider) ComposeUpApplicationEnvironment(ctx context.Context, direc
 	}
 	defer cleanup()
 	args = append(args, "up", "--detach", "--remove-orphans")
+	if recreate {
+		args = append(args, "--force-recreate")
+	}
 	_, _, err = p.runCompose(ctx, args...)
 	return err
+}
+
+func (p *CLIProvider) ComposeUpHostingApplication(ctx context.Context, directory, projectName string, labels, environment map[string]map[string]string, commands map[string][]string, recreate bool, config map[string]any) error {
+	return p.composeUpApplication(ctx, directory, projectName, labels, environment, commands, recreate, config)
 }
 
 func (p *CLIProvider) ComposeStart(ctx context.Context, directory, projectName string) error {
@@ -224,4 +368,8 @@ func (p *CLIProvider) ComposePullApplication(ctx context.Context, directory, pro
 	args = append(args, "pull", "--ignore-buildable")
 	_, _, err = p.runCompose(ctx, args...)
 	return err
+}
+
+func (p *CLIProvider) ComposeUpConfiguredApplication(ctx context.Context, directory, projectName string, labels, environment map[string]map[string]string, commands map[string][]string, recreate bool) error {
+	return p.composeUpApplication(ctx, directory, projectName, labels, environment, commands, recreate)
 }

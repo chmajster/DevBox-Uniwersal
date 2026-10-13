@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"syscall"
 	"time"
 
@@ -96,6 +97,13 @@ func (m *PortManager) ReserveExact(ctx context.Context, projectID, purpose strin
 		return PortRecord{}, fmt.Errorf("inspect port lease: %w", err)
 	}
 
+	var applicationLease int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM application_port_leases WHERE port=? AND state='reserved'`, port).Scan(&applicationLease); err != nil {
+		return PortRecord{}, err
+	}
+	if applicationLease > 0 {
+		return PortRecord{}, ErrPortInUse
+	}
 	socketAvailable, err := m.probe(port)
 	if err != nil {
 		return PortRecord{}, fmt.Errorf("probe port %d: %w", port, err)
@@ -174,6 +182,13 @@ func (m *PortManager) Inspect(ctx context.Context, port int) (PortRecord, error)
 	`, port)
 	record, err := scanPort(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
+		items, lookupErr := m.applicationPorts(ctx, &port)
+		if lookupErr != nil {
+			return PortRecord{}, lookupErr
+		}
+		if len(items) == 1 {
+			return items[0], nil
+		}
 		return PortRecord{}, ErrNotFound
 	}
 	if err != nil {
@@ -212,7 +227,17 @@ func (m *PortManager) List(ctx context.Context) ([]PortRecord, error) {
 		record.SocketAvailable = available
 		out = append(out, record)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	applicationPorts, err := m.applicationPorts(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, applicationPorts...)
+	sort.Slice(out, func(i, j int) bool { return out[i].Port < out[j].Port })
+	return out, nil
 }
 
 func scanPort(scan rowScanner) (PortRecord, error) {
@@ -295,4 +320,49 @@ func containsFold(value, needle string) bool {
 		}
 	}
 	return false
+}
+
+func (m *PortManager) applicationPorts(ctx context.Context, port *int) ([]PortRecord, error) {
+	query := `SELECT l.id,l.application_id,a.name,l.endpoint_id,l.port,l.purpose,l.state,l.created_at,l.released_at,e.container_port,COALESCE(e.status='running' AND l.state='reserved',0) FROM application_port_leases l JOIN applications a ON a.id=l.application_id LEFT JOIN endpoints e ON e.id=l.endpoint_id`
+	args := []any{}
+	if port != nil {
+		query += " WHERE l.port=?"
+		args = append(args, *port)
+	}
+	rows, err := m.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PortRecord{}
+	for rows.Next() {
+		var item PortRecord
+		var appID, name string
+		var endpoint, released sql.NullString
+		var container sql.NullInt64
+		var created string
+		if err := rows.Scan(&item.ID, &appID, &name, &endpoint, &item.Port, &item.Purpose, &item.State, &created, &released, &container, &item.MappingActive); err != nil {
+			return nil, err
+		}
+		item.ApplicationID = &appID
+		item.Application = &name
+		item.CreatedAt, _ = parseDBTime(created)
+		if endpoint.Valid {
+			item.EndpointID = &endpoint.String
+		}
+		if container.Valid {
+			value := int(container.Int64)
+			item.ContainerPort = &value
+		}
+		if released.Valid {
+			value, _ := parseDBTime(released.String)
+			item.ReleasedAt = &value
+		}
+		item.SocketAvailable, err = m.probe(item.Port)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }
