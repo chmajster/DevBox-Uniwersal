@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { APPLICATION_TABS } from '../routes'
-import { apiURL, request } from '../api/client'
+import { request } from '../api/client'
 import type { Job, LogEntry } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { JobProgress } from '../components/JobProgress'
 import { Modal } from '../components/Modal'
+import { Icon } from '../components/Icon'
 import { usePolling } from '../control-room/usePolling'
 import { ApplicationStatus, ConfigurationFields } from '../applications/components'
 import { DatabaseBinding } from '../applications/DatabaseBinding'
 import { ApplicationResources } from '../applications/ApplicationResources'
 import { ApplicationMetadataForm } from '../applications/ApplicationMetadataForm'
-import { date, deploymentModeName, endpointURL, message, readConfiguration, validateManagedConfiguration, sourceNames, type ApplicationDetail } from '../applications/model'
+import { ApplicationOverview } from '../applications/ApplicationOverview'
+import { ApplicationRuntime, ApplicationEndpoints, ApplicationContainers } from '../applications/ApplicationTopology'
+import { runtimeLabel, tabLabels, type ApplicationTab } from '../applications/detailModel'
+import { date, endpointURL, message, readConfiguration, validateManagedConfiguration, sourceNames, type ApplicationDetail } from '../applications/model'
+import '../applications/detail.css'
 
 const tabs = APPLICATION_TABS
 function ConfigForm({ app, disabled, onSaved }: { app: ApplicationDetail; disabled: boolean; onSaved(): void }) {
@@ -49,7 +54,7 @@ function ConfigForm({ app, disabled, onSaved }: { app: ApplicationDetail; disabl
   }
   return <form onSubmit={(event) => void submit(event)}><fieldset className="acp-card" disabled={disabled || saving}><legend>Konfiguracja aplikacji</legend>
     <ConfigurationFields value={{ ...app.source_config, ...(phpRuntime && !app.source_config?.runtime ? { runtime: 'php' } : {}) }} deploymentMode={deploymentMode} hasProvisionedWorkloads={app.workloads.length > 0} applicationId={app.id} moduleContainerID={moduleContainerID} phpRuntime={phpRuntime} onDeploymentModeChange={setDeploymentMode} /><label className="acp-check"><input type="checkbox" name="auto_start" defaultChecked={app.auto_start} />Przywracanie stanu docelowego po restarcie DevBox</label>
-    <p>Zmiana technologii, wersji, modułów lub document root uruchamia przebudowę działającej aplikacji. Pozostałe zmiany zastosuj przyciskiem „Deploy”.</p>
+    <p className="app-form-hint">Zmiana technologii, wersji, modułów lub katalogu publicznego uruchamia przebudowę działającej aplikacji. Pozostałe zmiany zastosuj przyciskiem „Wdróż”.</p>
     {error && <p role="alert" className="error-banner">{error}</p>}{saved && <p role="status">Konfiguracja zapisana. Postęp przebudowy sprawdzisz w Zadaniach.</p>}
     <button type="submit">{saving ? 'Zapisywanie…' : 'Zapisz konfigurację'}</button>
   </fieldset></form>
@@ -65,14 +70,14 @@ function ApplicationLogs({ id, workloads }: { id: string; workloads: Application
   const logs = usePolling(load, 2000)
   const entries = (logs.data ?? []).filter((entry) => entry.line.toLowerCase().includes(query.toLowerCase()) && (!stream || entry.stream === stream))
   useEffect(() => { if (autoScroll && consoleRef.current) consoleRef.current.scrollTop = consoleRef.current.scrollHeight }, [logs.data, autoScroll])
-  return <section className="acp-card"><div className="acp-toolbar">
+  return <section className="acp-card"><div className="app-section-title"><Icon name="logs" /><h2>Logi kontenera</h2><span className="app-subtle-label">Aktualizacja co 2 s</span></div><div className="acp-toolbar app-log-filters">
     <label>Usługa<select value={workload} onChange={(event) => setWorkload(event.target.value)}><option value="">Wszystkie</option>{workloads.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
-    <label>Tail<select value={tail} onChange={(event) => setTail(event.target.value)}>{['100','200','500','2000'].map((value) => <option key={value}>{value}</option>)}</select></label>
-    <label>Szukaj / filtruj<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+    <label>Liczba wierszy<select value={tail} onChange={(event) => setTail(event.target.value)}>{['100','200','500','2000'].map((value) => <option key={value}>{value}</option>)}</select></label>
+    <label>Szukaj w logach<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Wpisz szukaną frazę…" /></label>
     <label>Strumień<select value={stream} onChange={(event) => setStream(event.target.value)}><option value="">stdout + stderr</option><option>stdout</option><option>stderr</option></select></label>
-    <label className="acp-check"><input type="checkbox" checked={autoScroll} onChange={(event) => setAutoScroll(event.target.checked)} />Auto-scroll</label>
+    <label className="acp-check"><input type="checkbox" checked={autoScroll} onChange={(event) => setAutoScroll(event.target.checked)} />Przewijaj do nowych wpisów</label>
     <button className="secondary-button" onClick={logs.refresh}>Odśwież</button>
-  </div>{logs.error && <p role="alert">{logs.error}</p>}<pre ref={consoleRef} className="acp-logs" tabIndex={0} aria-label="Logi aplikacji">{entries.map((entry) => `[${entry.workload}] [${entry.stream ?? 'stdout/stderr'}] ${entry.line}`).join('\n') || 'Brak wpisów.'}</pre></section>
+  </div>{logs.error && <p className="error-banner" role="alert">{logs.error}</p>}<pre ref={consoleRef} className="acp-logs" tabIndex={0} aria-label="Logi aplikacji">{entries.map((entry) => `[${entry.workload}] [${entry.stream ?? 'stdout/stderr'}] ${entry.line}`).join('\n') || (logs.loading && !logs.data ? 'Wczytywanie logów…' : 'Brak wpisów dla wybranego filtra.')}</pre><p className="app-resource-caption">Widoczne wpisy: {entries.length} · odczyt {logs.updatedAt ? new Date(logs.updatedAt).toLocaleTimeString('pl-PL') : '—'}</p></section>
 }
 
 function Secrets({ id, disabled }: { id: string; disabled: boolean }) {
@@ -103,7 +108,7 @@ function Secrets({ id, disabled }: { id: string; disabled: boolean }) {
 function Events({ id }: { id: string }) {
   const load = useCallback((signal: AbortSignal) => request<Record<string, unknown>[]>(`/applications/${encodeURIComponent(id)}/events`, { signal }), [id])
   const events = usePolling(load, 5000)
-  return <section className="acp-card"><h2>Zdarzenia</h2>{events.error && <p role="alert">{events.error}</p>}<pre className="acp-logs" tabIndex={0}>{events.data?.length ? events.data.map((entry) => JSON.stringify(entry, null, 2)).join('\n') : 'Brak zdarzeń.'}</pre></section>
+  return <section className="acp-card"><div className="app-section-title"><Icon name="clock" /><h2>Zdarzenia aplikacji</h2></div>{events.error && <p className="error-banner" role="alert">{events.error}</p>}{events.data?.length ? <div className="app-event-list">{events.data.map((entry, index) => <details key={String(entry.id ?? index)}><summary><Icon name="activity" size={15} /><strong>{String(entry.type ?? entry.event_type ?? 'Zdarzenie')}</strong><span>{entry.created_at ? date(String(entry.created_at)) : String(entry.stage ?? '')}</span></summary><pre className="acp-logs" tabIndex={0}>{JSON.stringify(entry, null, 2)}</pre></details>)}</div> : <p className="muted">{events.loading && !events.data ? 'Wczytywanie zdarzeń…' : 'Brak zapisanych zdarzeń.'}</p>}</section>
 }
 function ApplicationJobs({ id, selected }: { id: string; selected: string }) {
   const load = useCallback((signal: AbortSignal) => request<Job[]>(`/applications/${encodeURIComponent(id)}/jobs`, { signal }), [id])
@@ -119,80 +124,146 @@ export function ApplicationDetailPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [params] = useSearchParams()
-  const [tab, setTab] = useState<typeof tabs[number]>(() => tabs.includes(params.get('tab') as typeof tabs[number]) ? params.get('tab') as typeof tabs[number] : 'Overview')
+  const [params, setParams] = useSearchParams()
+  const requestedTab = params.get('tab') as ApplicationTab
+  const selectedTab = tabs.includes(requestedTab) ? requestedTab : 'Overview'
+  function setTab(next: ApplicationTab) {
+    const query = new URLSearchParams(params)
+    if (next === 'Overview') query.delete('tab')
+    else query.set('tab', next)
+    setParams(query, { preventScrollReset: true })
+  }
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const actionPending = useRef(false)
+  const more = useRef<HTMLDetailsElement>(null)
+  const tabNavigation = useRef<HTMLElement>(null)
   const [jobID, setJobID] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [confirmation, setConfirmation] = useState('')
+  useEffect(() => {
+    function outside(event: PointerEvent) {
+      if (more.current && !more.current.contains(event.target as Node)) more.current.open = false
+    }
+    function escape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && more.current?.open) {
+        more.current.open = false
+        more.current.querySelector('summary')?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', outside)
+    document.addEventListener('keydown', escape)
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape) }
+  }, [])
   const load = useCallback(async (signal: AbortSignal) => {
-    // A failed provider inspection must not keep showing a stale green state.
     let stateError = ''
     try { await request(`/applications/${encodeURIComponent(id)}/state`, { signal }) }
-    catch (error) { stateError = message(error) }
+    catch (cause) { stateError = message(cause) }
     const app = await request<ApplicationDetail>(`/applications/${encodeURIComponent(id)}`, { signal })
     return { app, stateError }
   }, [id])
   const detail = usePolling(load, 5000)
   const app = detail.data?.app
+  useEffect(() => {
+    tabNavigation.current?.querySelector<HTMLElement>('[aria-current]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [selectedTab, app?.driver])
   const editable = user?.role === 'admin' || user?.role === 'operator'
   const locked = busy || !!app?.active_operation
-  async function action(action: string) {
+  async function action(actionName: string) {
     if (!editable || locked || actionPending.current) return
+    if (more.current) more.current.open = false
     actionPending.current = true
     setTab('Jobs')
     setBusy(true); setError('')
-    try { const result = await request<Job | { job: Job }>(`/applications/${encodeURIComponent(id)}/${action}`, { method: 'POST' }); setJobID('job' in result ? result.job.id : result.id); detail.refresh() }
-    catch (error) { setError(message(error)) } finally { actionPending.current = false; setBusy(false) }
+    try {
+      const result = await request<Job | { job: Job }>(`/applications/${encodeURIComponent(id)}/${actionName}`, { method: 'POST' })
+      setJobID('job' in result ? result.job.id : result.id)
+      detail.refresh()
+    } catch (cause) { setError(message(cause)) } finally { actionPending.current = false; setBusy(false) }
+  }
+  function openDelete() {
+    if (more.current) more.current.open = false
+    setConfirmation(''); setDeleting(true)
   }
   async function remove(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError('')
-    try { const job = await request<Job>(`/applications/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ remove_containers: true, delete_configuration: true, remove_source: false, remove_generated_images: false, remove_volumes: false }) }); navigate(`/jobs?job=${encodeURIComponent(job.id)}`) }
-    catch (error) { setError(message(error)) } finally { setBusy(false) }
+    try {
+      const job = await request<Job>(`/applications/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ remove_containers: true, delete_configuration: true, remove_source: false, remove_generated_images: false, remove_volumes: false }) })
+      navigate(`/jobs?job=${encodeURIComponent(job.id)}`)
+    } catch (cause) { setError(message(cause)) } finally { setBusy(false) }
   }
-  if (!app) return <div className="acp"><Link to="/apps">Aplikacje</Link><p role={detail.error ? 'alert' : 'status'}>{detail.error || 'Wczytywanie aplikacji…'}</p><button onClick={detail.refresh}>Odśwież</button></div>
+  if (!app) return <div className="acp application-detail"><Link to="/apps">← Aplikacje</Link><section className="acp-card app-loading"><Icon name={detail.error ? 'alert' : 'box'} size={28} /><h1>{detail.error ? 'Nie udało się wczytać aplikacji' : 'Wczytywanie aplikacji…'}</h1><p role={detail.error ? 'alert' : 'status'}>{detail.error || 'Pobieranie konfiguracji i aktualnego stanu kontenerów.'}</p><button className="secondary-button" onClick={detail.refresh}><Icon name="refresh" size={16} />Spróbuj ponownie</button></section></div>
+  const tab = selectedTab === 'Services' && app.driver !== 'compose' ? 'Overview' : selectedTab
+  const inspectionFailed = !!detail.data?.stateError
   const primary = app.endpoints.find((endpoint) => endpoint.primary)
-  const url = endpointURL(primary, window.location.hostname)
+  const url = inspectionFailed ? null : endpointURL(primary, window.location.hostname)
   const recent = app.deployments[0]
-  const runtimeMetadata = app.runtime?.metadata ?? {}
-  const volumes = Array.isArray(runtimeMetadata.volumes) ? runtimeMetadata.volumes as { type?: string; source?: string; target?: string; read_only?: boolean }[] : []
-  const profile = String(runtimeMetadata.profile ?? recent?.plan_snapshot?.runtime?.metadata?.profile ?? app.runtime?.name ?? '')
-  const profileNames: Record<string, string> = { wordpress: 'WordPress', generic_php: 'PHP', generic_node: 'Node.js', generic_python: 'Python', generic_go: 'Go', generic_static: 'Static', php: 'PHP', node: 'Node.js', python: 'Python', go: 'Go', static: 'Static' }
-  const runtimeSource = String(app.source.docker_image || runtimeMetadata.source_path || app.source.local_path || app.source.repository_url || app.slug)
-  const runtimeGenerated = runtimeMetadata.generated === true
-  return <div className="acp"><header className="acp-header"><div><Link to="/apps">Aplikacje</Link><h1>{app.name}</h1><p>{app.description || sourceNames[app.source_type]}</p></div><div className="acp-actions"><ApplicationStatus value={detail.data?.stateError ? 'unknown' : app.status} />{editable && <button className="secondary-button" disabled={locked} onClick={() => setTab('Settings')}>Zmień nazwę</button>}{url && <a className="button-link secondary-button" href={url} target="_blank" rel="noreferrer">Otwórz aplikację ↗</a>}<button disabled={!editable || locked} onClick={() => void action('deploy')}>Deploy</button></div></header>
+  const provisioned = app.workloads.length > 0
+  const isRunning = ['running', 'starting', 'restarting'].includes(app.observed_state)
+  const visibleTabs = tabs.filter((item) => item !== 'Services' || app.driver === 'compose')
+  const extraActions = [
+    { action: 'build', label: 'Zbuduj obraz', hint: 'Przygotuj obraz bez zmiany kontenera', icon: 'box' as const },
+    { action: 'rebuild', label: 'Przebuduj', hint: 'Zbuduj i wymień kontener aplikacji', icon: 'refresh' as const },
+    { action: 'recreate', label: 'Odtwórz kontenery', hint: 'Zastosuj konfigurację z istniejącego obrazu', icon: 'backup' as const },
+    ...(app.driver === 'compose' ? [
+      { action: 'pull', label: 'Pobierz obrazy', hint: 'Pobierz obrazy serwisów Compose', icon: 'archive' as const },
+      { action: 'down', label: 'Wyłącz stack', hint: 'Usuń kontenery, zachowaj trwałe dane', icon: 'stop' as const },
+    ] : []),
+  ]
+  return <div className="acp application-detail">
+    <header className="acp-header app-detail-header">
+      <div className="app-heading-main">
+        <Link className="app-back-link" to="/apps">← Wszystkie aplikacje</Link>
+        <div className="app-title-row"><div className="app-runtime-mark" aria-hidden="true"><Icon name="code" size={26} /></div><div>
+          <div className="app-name-row"><h1>{app.name}</h1><ApplicationStatus value={inspectionFailed ? 'unknown' : app.status} /></div>
+          <p className="app-heading-meta">{runtimeLabel(app)}<span>·</span>{sourceNames[app.source_type] ?? app.source_type}</p>
+        </div></div>
+        {app.description && <p className="app-description">{app.description}</p>}
+      </div>
+      <div className="acp-actions app-heading-actions">
+        {editable && <button className="secondary-button" disabled={locked} onClick={() => setTab('Settings')}><Icon name="edit" size={15} />Zmień nazwę</button>}
+        {url && <a className="button-link app-open-button" href={url} target="_blank" rel="noreferrer"><Icon name="external" size={16} />Otwórz aplikację</a>}
+      </div>
+    </header>
+    <div className="app-operation-bar">
+      <div className="acp-actions">
+        <button className="secondary-button" disabled={!editable || locked || !provisioned} onClick={() => void action(isRunning ? 'stop' : 'start')}><Icon name={isRunning ? 'stop' : 'play'} size={15} />{isRunning ? 'Zatrzymaj' : 'Uruchom'}</button>
+        <button className="secondary-button" disabled={!editable || locked || !provisioned} onClick={() => void action('restart')}><Icon name="refresh" size={15} />Restart</button>
+        <span className="app-operation-divider" />
+        <button className="app-deploy-button" disabled={!editable || locked} onClick={() => void action('deploy')}><Icon name="box" size={15} />Wdróż</button>
+        <details ref={more} className="app-more-actions">
+          <summary><Icon name="menu" size={15} />Więcej działań<Icon name="chevron" size={13} /></summary>
+          <div className="app-action-popover">
+            {extraActions.map((item) => <button key={item.action} aria-label={item.label} title={item.hint} disabled={!editable || locked || !provisioned} onClick={() => void action(item.action)}><Icon name={item.icon} size={17} /><span><strong>{item.label}</strong><small>{item.hint}</small></span></button>)}
+            <button aria-label="Odśwież stan" disabled={!editable || locked} onClick={() => void action('reconcile')}><Icon name="activity" size={17} /><span><strong>Odśwież stan</strong><small>Sprawdź kontenery w Dockerze</small></span></button>
+            {user?.role === 'admin' && <button className="app-danger-action" aria-label="Usuń" disabled={locked} onClick={openDelete}><Icon name="trash" size={17} /><span><strong>Usuń</strong><small>Zachowaj źródła i trwałe dane</small></span></button>}
+          </div>
+        </details>
+      </div>
+      <button className="secondary-button app-read-status" onClick={detail.refresh} title="Pobierz aktualny widok"><Icon name="refresh" size={13} /><span>Odczyt {detail.updatedAt ? new Date(detail.updatedAt).toLocaleTimeString('pl-PL') : '—'}</span></button>
+    </div>
     {(error || detail.error || detail.data?.stateError) && <p className="error-banner" role="alert">{error || detail.error || `Odczyt stanu nie powiódł się: ${detail.data?.stateError}`}</p>}
-    <div className="acp-toolbar"><span>Odczyt: {detail.updatedAt ? new Date(detail.updatedAt).toLocaleTimeString('pl-PL') : '—'}</span><div className="acp-actions">{['start', 'stop', 'restart', 'build', 'rebuild', 'recreate', ...(app.driver === 'compose' ? ['pull', 'down'] : [])].map((actionName, i) => <button className="secondary-button" key={actionName} disabled={!editable || locked || !app.workloads.length} onClick={() => void action(actionName)}>{['Start', 'Stop', 'Restart', 'Build', 'Rebuild', 'Recreate', 'Pull', 'Down'][i]}</button>)}<button className="secondary-button" disabled={!editable || locked} title="Odczytaj rzeczywisty stan kontenerów" onClick={() => void action('reconcile')}>Odśwież stan</button>{user?.role === 'admin' && <button className="secondary-button" disabled={locked} onClick={() => { setConfirmation(''); setDeleting(true) }}>Usuń</button>}</div></div>
-    {app.active_operation && <p className="acp-notice" role="status">Operacja: {app.active_operation.type} · {app.active_operation.status}. <Link to={`/jobs?job=${encodeURIComponent(app.active_operation.id)}`}>Postęp i anulowanie</Link></p>}
-    {jobID && !app.active_operation && <p role="status">Zlecone zadanie: <Link to={`/jobs?job=${encodeURIComponent(jobID)}`}>{jobID.slice(0, 8)}</Link>. Stan aplikacji jest odczytywany niezależnie od wyniku zadania.</p>}
-    {recent?.status === 'waiting_for_configuration' && <p className="acp-notice">{app.source_config?.deployment_mode === 'compose' ? 'Docker Compose nie wskazuje jednoznacznej usługi HTTP i portu. Ustaw główny serwis oraz port kontenera, zapisz konfigurację i ponów wdrożenie.' : 'Wdrożenie wymaga konfiguracji runtime, endpointu lub sekretów. Uzupełnij brakujące ustawienia, zapisz i ponów wdrożenie.'} Szczegóły są w zdarzeniach i wyniku zadania.</p>}
-    <nav className="acp-tabs" aria-label="Sekcje aplikacji">{tabs.filter((item) => item !== 'Services' || app.driver === 'compose').map((item) => <button key={item} className="secondary-button" aria-current={tab === item ? 'page' : undefined} onClick={() => setTab(item)}>{item}</button>)}</nav>
-    {tab === 'Overview' && <section className="acp-card"><h2>Stan i źródło</h2><dl className="acp-facts"><div><dt>Stan docelowy</dt><dd>{app.desired_state}</dd></div><div><dt>Stan zaobserwowany</dt><dd>{detail.data?.stateError ? 'unknown' : app.observed_state}</dd></div><div><dt>Health</dt><dd><ApplicationStatus value={detail.data?.stateError ? 'unknown' : app.health_state} /></dd></div><div><dt>Tryb wdrożenia</dt><dd>{deploymentModeName(app.source_config?.deployment_mode, app.driver)}</dd></div><div><dt>Runtime</dt><dd>{app.runtime ? `${app.runtime.name} ${app.runtime.version ?? ''}` : '—'}</dd></div><div><dt>Źródło</dt><dd>{app.source.repository_url || app.source.local_path || app.slug}</dd></div></dl></section>}
-      {(tab === 'Overview' || tab === 'Runtime') && <section className="acp-card"><h2>Środowisko uruchomieniowe</h2><dl className="acp-facts">
-        <div><dt>Tryb</dt><dd>{deploymentModeName(app.source_config?.deployment_mode, app.driver)}</dd></div>
-        <div><dt>Wykryty typ</dt><dd>{(profileNames[profile] ?? profile) || '—'}</dd></div>
-        <div><dt>Runtime</dt><dd>{app.runtime ? `${app.runtime.name} ${app.runtime.version ?? ''}` : '—'}</dd></div>
-        <div><dt>Kontener</dt><dd><code>{String(runtimeMetadata.container_name ?? app.workloads.find((workload) => workload.primary)?.driver_resource_id ?? '—')}</code></dd></div>
-        <div><dt>Źródło</dt><dd><code>{runtimeSource}</code></dd></div>
-        <div><dt>Port kontenera</dt><dd>{primary?.container_port ?? String(runtimeMetadata.container_port ?? '—')}</dd></div>
-        <div><dt>Port hosta</dt><dd>{primary?.host_port ?? '—'}</dd></div>
-        <div><dt>Start command</dt><dd><code>{String(app.source_config?.start_command ?? 'Domyślna komenda runtime')}</code></dd></div><div><dt>Sieć</dt><dd>{String(runtimeMetadata.network ?? '') || '—'}</dd></div>
-        <div><dt>Wygenerowany runtime</dt><dd>{runtimeGenerated ? 'Tak' : 'Nie'}</dd></div>
-      </dl>
-      {volumes.length > 0 && <div className="acp-table"><table><thead><tr><th>Typ</th><th>Źródło</th><th>Cel</th><th>Dostęp</th></tr></thead><tbody>{volumes.map((volume) => <tr key={`${volume.source ?? ''}:${volume.target ?? ''}`}><td>{volume.type ?? '—'}</td><td><code>{volume.source || '—'}</code></td><td><code>{volume.target ?? '—'}</code></td><td>{volume.read_only ? 'Tylko odczyt' : 'Odczyt i zapis'}</td></tr>)}</tbody></table></div>}
-      <DatabaseBinding applicationId={app.id} disabled={!editable || locked} />
-      {editable && app.driver === 'managed' && <a className="button-link secondary-button" href={apiURL(`/applications/${encodeURIComponent(app.id)}/export`)} download>Eksport Dockerfile i Compose</a>}
-      </section>}
-      {(tab === 'Services' || tab === 'Docker') && <section className="acp-card"><h2>Usługi ({app.workloads.length})</h2><div className="acp-table"><table><thead><tr><th>Nazwa</th><th>Rola</th><th>Stan</th><th>Health</th><th>Obraz / kontener</th></tr></thead><tbody>{app.workloads.map((workload) => <tr key={workload.id}><td>{workload.name}{workload.primary && <small className="acp-line">Główna</small>}</td><td>{workload.role}</td><td><ApplicationStatus value={detail.data?.stateError ? 'unknown' : workload.observed_state} /></td><td><ApplicationStatus value={detail.data?.stateError ? 'unknown' : workload.health_state} /></td><td>{workload.image || '—'}<small className="acp-line">{workload.driver_resource_id || 'Brak kontenera'}</small></td></tr>)}{!app.workloads.length && <tr><td colSpan={5}>Brak usług. Uruchom pierwsze wdrożenie.</td></tr>}</tbody></table></div></section>}
-      {['Overview', 'Ports', 'Domains'].includes(tab) && <section className="acp-card"><h2>Endpointy</h2><p>Domena kieruje przez reverse proxy na opublikowany port. Dla domen lokalnych ustaw DNS lub wpis w pliku hosts na adres serwera. TLS kończy się w proxy.</p><div className="acp-table"><table><thead><tr><th>Nazwa</th><th>Protokół</th><th>Port wewnętrzny</th><th>Port hosta</th><th>Adres</th></tr></thead><tbody>{app.endpoints.map((endpoint) => { const link = endpointURL(endpoint, window.location.hostname); return <tr key={endpoint.id}><td>{endpoint.name}{endpoint.primary ? ' · główny' : ''}</td><td>{endpoint.protocol}</td><td>{endpoint.container_port}</td><td>{endpoint.host_port ?? '—'}</td><td>{link ? <a href={link} target="_blank" rel="noreferrer">{link}</a> : 'Brak adresu HTTP'}</td></tr> })}{!app.endpoints.length && <tr><td colSpan={5}>Brak endpointów.</td></tr>}</tbody></table></div></section>}
-    {tab === 'Settings' && <><ApplicationMetadataForm key={app.id} app={app} disabled={!editable || locked} onSaved={detail.refresh} /><ConfigForm key={`${app.id}:${app.driver}:${String(app.source_config?.deployment_mode ?? '')}:${Object.prototype.hasOwnProperty.call(app.source_config ?? {}, 'deployment_driver') ? String(app.source_config?.deployment_driver ?? '') : 'active'}`} app={app} disabled={!editable || locked} onSaved={detail.refresh} /></>}
-    {tab === 'Jobs' && <><ApplicationJobs id={app.id} selected={app.active_operation?.id ?? jobID} /><section className="acp-card"><h2>Historia wdrożeń</h2><div className="acp-table"><table><thead><tr><th>Utworzono</th><th>Wynik</th><th>Etap</th><th>Rewizja / zadanie</th><th>Błąd</th></tr></thead><tbody>{app.deployments.map((deployment) => <tr key={deployment.id}><td>{date(deployment.created_at)}</td><td><ApplicationStatus value={deployment.status} /></td><td>{deployment.stage}</td><td><code>{deployment.source_revision?.slice(0, 12) || '—'}</code>{deployment.job_id && <Link className="acp-line" to={`/jobs?job=${encodeURIComponent(deployment.job_id)}`}>Zadanie, logi i retry</Link>}</td><td>{deployment.error || '—'}</td></tr>)}{!app.deployments.length && <tr><td colSpan={5}>Brak wdrożeń.</td></tr>}</tbody></table></div></section></>}
-    {tab === 'Logs' && <ApplicationLogs id={app.id} workloads={app.workloads} />}
-    {tab === 'Environment' && <><section className="acp-card"><h2>Environment variables</h2><dl className="acp-facts">{Object.entries((app.source_config?.environment ?? {}) as Record<string, string>).map(([name, value]) => <div key={name}><dt><code>{name}</code></dt><dd>{value}</dd></div>)}</dl><p>Edytuj zwykłe wartości i importuj .env w <button className="secondary-button" onClick={() => setTab('Settings')}>Settings</button>.</p></section><Secrets id={app.id} disabled={!editable || locked} /></>}
-    {(tab === 'Overview' || tab === 'Docker') && <ApplicationResources id={app.id} />}
-    {tab === 'Docker' && <Events id={app.id} />}
+    {app.active_operation && <div className="app-operation-notice" role="status"><Icon name="clock" size={20} /><div><strong>Operacja w toku</strong><p>{app.active_operation.type} · {app.active_operation.status}</p></div><Link to={`/jobs?job=${encodeURIComponent(app.active_operation.id)}`}>Postęp i anulowanie<Icon name="arrow" size={15} /></Link></div>}
+    {jobID && !app.active_operation && <p className="acp-notice" role="status">Zlecono zadanie. <Link to={`/jobs?job=${encodeURIComponent(jobID)}`}>Sprawdź wynik</Link>. Bieżący stan aplikacji jest odczytywany osobno.</p>}
+    {recent?.status === 'waiting_for_configuration' && <p className="acp-notice">Wdrożenie wymaga konfiguracji. Uzupełnij runtime, port lub główną usługę w Ustawieniach i ponów wdrożenie. Szczegóły znajdziesz w Zadaniach.</p>}
+    <nav ref={tabNavigation} className="acp-tabs app-detail-tabs" aria-label="Sekcje aplikacji">{visibleTabs.map((item) => <button id={`app-tab-${item}`} key={item} className="secondary-button" aria-current={tab === item ? 'page' : undefined} onClick={() => setTab(item)}><Icon name={tabLabels[item].icon} size={16} />{tabLabels[item].label}</button>)}</nav>
+    <div className="app-tab-content" role="region" aria-labelledby={`app-tab-${tab}`}>
+      {tab === 'Overview' && <><ApplicationOverview app={app} url={url} inspectionFailed={inspectionFailed} onTab={setTab} /><ApplicationResources id={app.id} /></>}
+      {tab === 'Runtime' && <ApplicationRuntime app={app} editable={editable} />}
+      {tab === 'Database' && <DatabaseBinding applicationId={app.id} disabled={!editable || locked} />}
+      {(tab === 'Services' || tab === 'Docker') && <ApplicationContainers app={app} inspectionFailed={inspectionFailed} />}
+      {(tab === 'Ports' || tab === 'Domains') && <ApplicationEndpoints app={app} inspectionFailed={inspectionFailed} domains={tab === 'Domains'} />}
+      {tab === 'Settings' && <div className="app-settings-layout">
+        {!editable && <p className="acp-notice">Tryb podglądu. Edycja wymaga roli Administrator lub Operator.</p>}
+        <ApplicationMetadataForm key={app.id} app={app} disabled={!editable || locked} onSaved={detail.refresh} />
+        <ConfigForm key={`${app.id}:${app.driver}:${String(app.source_config?.deployment_mode ?? '')}:${String(app.source_config?.deployment_driver ?? '')}`} app={app} disabled={!editable || locked} onSaved={detail.refresh} />
+        {user?.role === 'admin' && <section className="acp-card app-danger-zone"><div><h2>Usuń aplikację</h2><p>Usunięcie konfiguracji i kontenerów zachowa katalog źródłowy oraz trwałe dane.</p></div><button className="secondary-button" disabled={locked} onClick={openDelete}><Icon name="trash" size={15} />Usuń aplikację</button></section>}
+      </div>}
+      {tab === 'Jobs' && <><ApplicationJobs id={app.id} selected={app.active_operation?.id ?? jobID} /><section className="acp-card"><div className="app-section-title"><Icon name="clock" /><h2>Historia wdrożeń</h2></div><div className="acp-table"><table><thead><tr><th>Utworzono</th><th>Wynik</th><th>Etap</th><th>Rewizja / zadanie</th><th>Błąd</th></tr></thead><tbody>{app.deployments.map((deployment) => <tr key={deployment.id}><td>{date(deployment.created_at)}</td><td><ApplicationStatus value={deployment.status} /></td><td>{deployment.stage}</td><td><code>{deployment.source_revision?.slice(0, 12) || '—'}</code>{deployment.job_id && <Link className="acp-line" to={`/jobs?job=${encodeURIComponent(deployment.job_id)}`}>Szczegóły zadania</Link>}</td><td>{deployment.error || '—'}</td></tr>)}{!app.deployments.length && <tr><td colSpan={5}>Brak wdrożeń. Historia pojawi się po pierwszej operacji.</td></tr>}</tbody></table></div></section></>}
+      {tab === 'Logs' && <ApplicationLogs id={app.id} workloads={app.workloads} />}
+      {tab === 'Environment' && <><section className="acp-card"><div className="app-section-title"><Icon name="code" /><h2>Zmienne środowiskowe</h2><button className="secondary-button app-section-action" disabled={!editable || locked} onClick={() => setTab('Settings')}><Icon name="edit" size={15} />Edytuj zmienne</button></div>{Object.keys((app.source_config?.environment ?? {}) as Record<string, string>).length ? <dl className="app-environment-values">{Object.entries((app.source_config?.environment ?? {}) as Record<string, string>).map(([name, value]) => <div key={name}><dt><code>{name}</code></dt><dd><code>{value}</code></dd></div>)}</dl> : <p className="muted">Nie dodano zwykłych zmiennych środowiskowych. Wartości i import .env znajdziesz w Ustawieniach.</p>}</section><Secrets id={app.id} disabled={!editable || locked} /></>}
+      {tab === 'Docker' && <><ApplicationResources id={app.id} /><Events id={app.id} /></>}
+    </div>
     <Modal open={deleting} onClose={() => { if (!busy) setDeleting(false) }} labelId="acp-delete-title"><h2 id="acp-delete-title">Usuń aplikację</h2><p>Kontenery, sekrety i konfiguracja „{app.name}” zostaną usunięte. Katalog źródłowy, obrazy i trwałe wolumeny zostaną zachowane.</p><form onSubmit={(event) => void remove(event)}><label>Wpisz nazwę aplikacji<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" /></label>{error && <p role="alert">{error}</p>}<div className="acp-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => setDeleting(false)}>Anuluj</button><button type="submit" disabled={confirmation !== app.name || locked}>Usuń aplikację</button></div></form></Modal>
   </div>
 }

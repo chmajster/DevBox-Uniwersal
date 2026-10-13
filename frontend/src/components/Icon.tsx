@@ -36,6 +36,10 @@ const paths = {
   eye: ['M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z', 'M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z'],
   lock: ['M5 10h14v11H5zM8 10V6a4 4 0 0 1 8 0v4M12 14v3'],
   check: ['m5 12 4 4L19 6'],
+  copy: ['M9 9h12v12H9zM15 9V3H3v12h6'],
+  edit: ['m15 4 5 5M4 20l1-6L16 3l5 5-11 11-6 1Z'],
+  external: ['M14 3h7v7m-1-6L10 14M10 3H3v18h18v-7'],
+  stop: ['M6 6h12v12H6z'],
   alert: ['m12 3 10 18H2L12 3ZM12 9v5m0 3h.01']
 } as const
 

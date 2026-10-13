@@ -5,8 +5,8 @@ import { ComposeChoice } from './ComposeChoice'
 describe('ComposeChoice', () => {
   it('offers all three source deployment modes', () => {
     const markup = renderToStaticMarkup(<ComposeChoice value="" onChange={() => {}} />)
-    expect(markup).toContain('Existing Docker Compose')
-    expect(markup).toContain('DevBox Managed Runtime')
+    expect(markup).toContain('Docker Compose')
+    expect(markup).toContain('Automatyczny Docker')
     expect(markup).not.toContain('checked=""')
     expect(markup).toContain('Dockerfile aplikacji')
     expect(markup.match(/type="radio"/g)).toHaveLength(3)
@@ -19,6 +19,6 @@ describe('ComposeChoice', () => {
   it('selects Auto Container', () => {
     const markup = renderToStaticMarkup(<ComposeChoice value="auto" onChange={() => {}} />)
     expect(markup.match(/checked=""/g)).toHaveLength(1)
-    expect(markup).toContain('DevBox Managed Runtime')
+    expect(markup).toContain('Automatyczny Docker')
   })
 })

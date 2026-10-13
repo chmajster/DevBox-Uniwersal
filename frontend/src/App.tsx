@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppLayout } from './layout/AppLayout'
 import { AuditPage } from './pages/AuditPage'
@@ -17,13 +18,14 @@ import { LogsPage } from './pages/LogsPage'
 import { LoginPage } from './pages/LoginPage'
 import { PortsPage } from './pages/PortsPage'
 import { PluginsPage } from './pages/PluginsPage'
-import { ApplicationDetailPage } from './pages/ApplicationDetailPage'
 import { ApplicationWizardPage } from './pages/ApplicationWizardPage'
 import { ApplicationsPage } from './pages/ApplicationsPage'
 import { ROUTES } from './routes'
 import { RuntimeManagerPage } from './pages/RuntimeManagerPage'
 import { UpdatesPage } from './pages/UpdatesPage'
 import { UsersPage } from './pages/UsersPage'
+
+const ApplicationDetailPage = lazy(() => import('./pages/ApplicationDetailPage').then((module) => ({ default: module.ApplicationDetailPage })))
 
 export function App() {
   return <BrowserRouter><Routes>
@@ -36,7 +38,7 @@ export function App() {
         <Route path={ROUTES.users} element={<UsersPage />} />
         <Route path="/applications" element={<Navigate to={ROUTES.applications} replace />} />
         <Route path="apps/new" element={<ApplicationWizardPage />} />
-        <Route path="apps/:id" element={<ApplicationDetailPage />} />
+        <Route path="apps/:id" element={<Suspense fallback={<div className="acp"><p role="status">Wczytywanie szczegółów aplikacji…</p></div>}><ApplicationDetailPage /></Suspense>} />
         <Route path={ROUTES.logs} element={<LogsPage />} />
         <Route path={ROUTES.health} element={<HealthPage />} />
         <Route path={ROUTES.backups} element={<BackupsPage />} />

@@ -19,9 +19,9 @@ describe('application control plane UI contract', () => {
   })
   it('does not claim stopped for unknown state or success for failed deployments', () => {
     const unknown = renderToStaticMarkup(createElement(ApplicationStatus, { value: 'unknown' }))
-    expect(unknown).toContain('UNKNOWN'); expect(unknown).not.toContain('Zatrzymana')
+    expect(unknown).toContain('Nieznany'); expect(unknown).not.toContain('Zatrzymana')
     expect(renderToStaticMarkup(createElement(ApplicationStatus, { value: 'waiting_for_configuration' }))).toContain('Wymaga konfiguracji')
-    expect(renderToStaticMarkup(createElement(ApplicationStatus, { value: 'failed' }))).toContain('FAILED')
+    expect(renderToStaticMarkup(createElement(ApplicationStatus, { value: 'failed' }))).toContain('Błąd')
   })
   it('builds typed configuration without accidentally turning blank ports into invalid values', () => {
     const form = new FormData(); form.set('container_port', '8080'); form.set('host_port', '0')
