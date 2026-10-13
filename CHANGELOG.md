@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-13 — Application rename
+
+- Added a visible Zmień nazwę action and an independent name/description form. Runtime validation no longer blocks renaming detected or legacy applications, and configuration saves no longer overwrite metadata.
+- Added HTTP API, Chromium and real Docker rename regressions covering stable runtime/source/port identity, no extra jobs, duplicate/blank names, persisted list/detail updates and Viewer restrictions.
+
 ## 2026-10-11 — Local runtime configuration
 
 - Preserved explicit language, version, execution mode and edited settings when source detection completes; language selection is available before choosing the directory.

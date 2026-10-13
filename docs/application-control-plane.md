@@ -82,6 +82,8 @@ Docker observation and HTTP readiness are separate. Reconciliation polls actual 
 
 After Compose Down use Deploy/Recreate before Start. Jobs expose stage/progress, streams, timestamps, errors, cancellation and retry. The application operation lock prevents conflicting mutations. Logs poll and support service/stream selection, search and tailing. Settings, database bindings, containers, mounts, health, CPU/RAM, operation history and addresses are visible in details.
 
+Rename: open application details, select **Zmień nazwę** and save the **Nazwa i opis aplikacji** form in Settings. This sends only `name` and `description` through `PATCH /api/v1/applications/{id}`. It works independently of runtime/version selection, takes effect immediately and does not require Deploy. The slug, source directories, container identities and ports stay stable. Duplicate or blank names are rejected; Admin/Operator can edit, and active operations must finish first.
+
 Managed replacement retains the old container and restores it if startup fails. Compose command/port updates attempt to restore the previous successful plan, images, topology and leases without rebuilding. This recovery is best effort: source Compose changes, external resources and data writes are not transactional. Same-port replacement can briefly interrupt service.
 
 Domains use the published loopback endpoint through Nginx. Candidate and global configurations are checked before reload. Domain ownership is unique. Existing TLS certificates are supported under `<SQLite directory>/certificates/<hostname>/`; key/certificate/hostname/validity are checked. Client DNS is configured separately. Let's Encrypt stays disabled until an ACME issuer/challenge workflow is implemented.

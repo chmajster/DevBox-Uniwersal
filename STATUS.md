@@ -1,6 +1,6 @@
 # Current status
 
-Updated on 2026-10-11; verification from both sessions is recorded below. Application is the only user-application lifecycle model. `/apps` supports local, Git, empty starter and OCI sources, with existing Compose, existing Dockerfile and generated Docker choices. All application processes run in Docker; the managed and Compose engines share persistent topology, jobs, ports, secrets and reconciliation.
+Updated on 2026-10-13; verification from previous sessions is recorded below. Application is the only user-application lifecycle model. `/apps` supports local, Git, empty starter and OCI sources, with existing Compose, existing Dockerfile and generated Docker choices. All application processes run in Docker; the managed and Compose engines share persistent topology, jobs, ports, secrets and reconciliation.
 
 The installed systemd service also deployed the existing OpenWiki Windows source through the DevBox API and Job Engine on port 8080, using PHP 8.4.26 and its existing MySQL database. Login and `/health` returned HTTP 200; the non-root Apache worker (1000:1000) authenticated with application credentials and executed SELECT 1. Host-to-container reads, container-to-host source writes and storage writes passed. The source probe now tolerates DrvFS chmod rejection while still proving actual reads/writes. Full backend tests, vet, Docker race tests, backend build, the real non-root DrvFS regression and the real PHP writable-mount test passed. External local sources require the specific systemd ReadWritePaths exception documented in the installer guide. Browser UI automation was unavailable in this session; this deployment used the actual API and job lifecycle.
 
@@ -75,6 +75,20 @@ Environment: Windows host, Ubuntu-26.04 WSL, Docker Engine 29.1.3, Compose 2.40.
 | git diff --check | PASS |
 
 The initial aggregate Docker run exposed a nested-file fixture error and root-created Git/starter source ownership that prevented non-root writes. Both were corrected and the affected groups rerun successfully. A targeted Dockerfile run collided with a simultaneously running source group using the same host ports; the final full source/recovery group passed without that overlap. All five application Docker groups have passing executed results. Results combine aggregate and affected-group reruns rather than claiming the initial aggregate passed. The browser fixture also removed a synthetic application before its reads finished; cleanup ordering and normal 404 behavior were corrected and the workspace smoke rerun successfully.
+
+## Executed verification on 2026-10-13
+
+Application details now expose Zmień nazwę and save name/description independently of the runtime form. Existing PATCH semantics preserve the slug, runtime configuration, source, container and published port; metadata changes do not enqueue deployment jobs. The separate runtime form cannot overwrite name/description.
+
+- Full backend tests, go vet and all command builds: PASS.
+- Metadata API race tests: PASS; blank/duplicate name failures preserve the original application.
+- Frontend: 77 tests, ESLint, TypeScript and production build PASS. Vite retains its non-fatal large-chunk warning.
+- Chromium workspace smoke: PASS, including rename with a missing runtime version and an incomplete unsaved runtime form, trimming, duplicate-name feedback, retained edits during polling, reload/list persistence, Operator editing, Viewer restrictions and mobile layouts.
+- Real Docker `TestApplicationDockerRename`: PASS, 13.90 seconds; unchanged actual container ID and HTTP response, stable configuration/topology and no extra jobs.
+- Linux installer preservation tests and shell syntax; Windows parser/metadata tests: PASS.
+- Installed WSL DevBox frontend updated and verified over HTTP against the tested bundle; service and health remained active/OK. Existing application records were not renamed during verification.
+
+The Docker check above is targeted to renaming; the earlier full runtime/database suites were not repeated for this UI change.
 
 ## Operational limits and unverified items
 
