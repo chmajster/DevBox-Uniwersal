@@ -10,7 +10,7 @@ export interface Workload {
 }
 export interface Deployment {
   id: string; job_id?: string; status: string; stage: string; driver: string; error?: string
-  created_at: string; source_revision?: string; finished_at?: string; plan_snapshot?: { runtime?: { metadata?: { profile?: string } } }
+  created_at: string; source_revision?: string; finished_at?: string; plan_snapshot?: { runtime?: { metadata?: Record<string, unknown> } }
 }
 export interface Application {
   id: string; name: string; slug: string; description: string; source_type: string; driver: string
@@ -35,8 +35,8 @@ export interface CreateApplication {
 }
 export const sourceNames: Record<string, string> = { git: 'Repozytorium Git', local: 'Katalog lokalny', empty: 'Pusta aplikacja', docker_image: 'Obraz OCI' }
 export const statusNames: Record<string, string> = {
-  running: 'RUNNING', stopped: 'STOPPED', starting: 'STARTING', restarting: 'RESTARTING', building: 'BUILDING', unknown: 'UNKNOWN',
-  degraded: 'Częściowo sprawna', failed: 'FAILED', missing: 'Brak kontenera', exited: 'Zakończona',
+  running: 'Działa', stopped: 'Zatrzymana', starting: 'Uruchamianie', restarting: 'Restartowanie', building: 'Budowanie', unknown: 'Nieznany',
+  degraded: 'Częściowo sprawna', failed: 'Błąd', missing: 'Brak kontenera', exited: 'Zakończona',
   healthy: 'Sprawna', unhealthy: 'Niesprawna', queued: 'W kolejce', success: 'Sukces',
   cancelled: 'Anulowana', waiting_for_configuration: 'Wymaga konfiguracji'
 }
@@ -100,7 +100,7 @@ export function deploymentModeName(mode: unknown, driver = '') {
   if (mode === 'image') return 'Obraz OCI'
   if (mode === 'compose' || (!mode && driver === 'compose')) return 'Docker Compose z aplikacji'
   if (!mode && driver && !['managed', 'compose'].includes(driver)) return 'Zachowana konfiguracja aplikacji'
-  if (mode === 'auto' || !mode) return 'DevBox Managed Runtime'
-  return 'DevBox Managed Runtime'
+  if (mode === 'auto' || !mode) return 'Automatyczny Docker'
+  return 'Automatyczny Docker'
 }
 export function date(value?: string) { return value ? new Date(value).toLocaleString('pl-PL') : '—' }

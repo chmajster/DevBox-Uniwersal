@@ -7,7 +7,7 @@ export function EnvironmentEditor({ value = {} }: { value?: Record<string, unkno
   let encoded = { publicValues: {}, secrets: {} }
   try { encoded = encodeEnvironment(rows) } catch { /* Form submission validates rows. */ }
   function update(index: number, patch: Partial<EnvironmentRow>) { setRows(rows.map((row, i) => i === index ? { ...row, ...patch } : row)) }
-  return <section className="acp-wide"><h3>Environment variables</h3>
+  return <section className="acp-wide acp-environment-editor"><h3>Zmienne środowiskowe</h3>
     {rows.map((row, index) => <div className="acp-env-row" key={index}>
       <input aria-label={`Nazwa zmiennej ${index + 1}`} required pattern="[A-Za-z_][A-Za-z0-9_]*" value={row.name} onChange={(event) => update(index, { name: event.target.value })} placeholder="KEY" />
       <span>=</span><input aria-label={`Wartość zmiennej ${index + 1}`} type={row.secret ? 'password' : 'text'} autoComplete="off" value={row.value} onChange={(event) => update(index, { value: event.target.value })} placeholder="VALUE" />

@@ -10,6 +10,10 @@ Choose Auto, PHP, Python, Go, Node.js or Static before selecting a directory. De
 
 MySQL, MariaDB and PostgreSQL run as independent shared servers with persistent volumes. Applications use Docker DNS on `devbox-apps`, separate SQL accounts and encrypted credentials. The panel supports lifecycle jobs, HTTP readiness, logs, CPU/RAM, configuration export and per-application SQL tests that authenticate and execute `SELECT 1` inside the actual workload. See [Application hosting](docs/application-control-plane.md) for setup, examples and real Docker tests.
 
+To rename an application, open its details, click **Zmień nazwę**, then **Zapisz nazwę i opis**. Metadata saves independently of runtime configuration and does not require a deployment.
+
+Application details show container state, HTTP availability, runtime and port separately, with a copyable address and CPU/RAM/network cards. Polish tabs separate runtime, database, environment/secrets, ports, domains, logs, jobs, containers and settings. Tabs persist in the URL for reload and browser history; extra lifecycle actions are under **Więcej działań**. The layout supports dark/light themes and narrow screens.
+
 This refactor preserves existing Project records but does not automatically adopt them or migrate project-specific database/domain bindings. New application IDs are independent of legacy Project IDs.
 
 ## Foundation stack

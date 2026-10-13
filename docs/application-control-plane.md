@@ -82,6 +82,10 @@ Docker observation and HTTP readiness are separate. Reconciliation polls actual 
 
 After Compose Down use Deploy/Recreate before Start. Jobs expose stage/progress, streams, timestamps, errors, cancellation and retry. The application operation lock prevents conflicting mutations. Logs poll and support service/stream selection, search and tailing. Settings, database bindings, containers, mounts, health, CPU/RAM, operation history and addresses are visible in details.
 
+Rename: open application details, select **Zmień nazwę** and save the **Nazwa i opis aplikacji** form in Settings. This sends only `name` and `description` through `PATCH /api/v1/applications/{id}`. It works independently of runtime/version selection, takes effect immediately and does not require Deploy. The slug, source directories, container identities and ports stay stable. Duplicate or blank names are rejected; Admin/Operator can edit, and active operations must finish first.
+
+Details navigation: **Przegląd** presents independent container/HTTP/runtime/port cards, an active address with copying, source location, database summary, latest deployment and actual Docker resource readings. **Baza danych** contains binding/provisioning/connection testing; **Środowisko** contains runtime, networks and mounts. A failed latest deployment is distinct from the currently running application. Legacy metadata gaps remain visible rather than inferred from failed plans. **Zatrzymaj/Uruchom**, **Restart** and **Wdróż** are primary actions; build/rebuild/recreate, Compose pull/down, reconciliation and deletion are in **Więcej działań**. Polish sections persist in `?tab=` for browser history/reload and scroll horizontally on narrow screens.
+
 Managed replacement retains the old container and restores it if startup fails. Compose command/port updates attempt to restore the previous successful plan, images, topology and leases without rebuilding. This recovery is best effort: source Compose changes, external resources and data writes are not transactional. Same-port replacement can briefly interrupt service.
 
 Domains use the published loopback endpoint through Nginx. Candidate and global configurations are checked before reload. Domain ownership is unique. Existing TLS certificates are supported under `<SQLite directory>/certificates/<hostname>/`; key/certificate/hostname/validity are checked. Client DNS is configured separately. Let's Encrypt stays disabled until an ACME issuer/challenge workflow is implemented.
@@ -113,6 +117,8 @@ cd ..
 bash scripts/test-install.sh
 python3 -m unittest discover -s frontend/e2e -p 'test_*.py'
 ```
+
+After building the frontend and installing Python Playwright/Chromium, run `python3 frontend/e2e/workspace_smoke.py` and `python3 frontend/e2e/application_detail_smoke.py`. These production-bundle browser regressions use isolated synthetic API fixtures, cover navigation, clipboard, menus, metadata/settings/secrets, state failures, dark/light and mobile widths, and save screenshots under `frontend/ui-artifacts`.
 
 Real Docker integration requires a disposable Docker environment with image network access and enough space:
 

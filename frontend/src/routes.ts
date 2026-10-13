@@ -14,4 +14,4 @@ export const ROUTES = {
   audit: '/audit'
 } as const
 
-export const APPLICATION_TABS = ['Overview', 'Runtime', 'Environment', 'Ports', 'Domains', 'Logs', 'Jobs', 'Docker', 'Settings', 'Services'] as const
+export const APPLICATION_TABS = ['Overview', 'Runtime', 'Database', 'Environment', 'Ports', 'Domains', 'Logs', 'Jobs', 'Docker', 'Settings', 'Services'] as const

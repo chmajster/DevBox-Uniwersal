@@ -38,6 +38,10 @@ HTTP mutations return queued jobs. One job owns an application's operation lock;
 
 Docker names contain immutable application IDs. Ownership labels identify containers/images/private networks and nonexternal Compose networks/volumes. Reconciliation inspects actual resources every five seconds and skips application replacements in progress. It invalidates observations when Docker is unavailable and treats missing/exited desired-running resources and lost publication as failures. Endpoint/domain URLs reflect publication/route activity.
 
+The details UI saves name/description with a metadata-only PATCH, separately from runtime settings and secrets. Rename does not validate or replace the runtime plan, enqueue jobs, change the stable slug or move Docker/source identities. Metadata editing retains the Operator role and active-operation guard.
+
+The details route is loaded lazily. Its overview, topology and resource components reuse existing application read APIs; database configuration has its own tab. The selected section is encoded in `?tab=` and works with reload/back/forward. Failed inspection suppresses active HTTP links and invalidates runtime badges. Current runtime metadata takes precedence over the last successful plan; a newer failed deployment cannot describe the serving container. Missing legacy mount/network metadata is shown explicitly. Extra lifecycle actions remain subject to RBAC and the existing operation lock.
+
 Domains reserve unique ownership before Nginx activation. Candidate and global config pass validation before reload. Existing certificates are verified for domain/date/key pair and terminate TLS at Nginx; application runtime remains HTTP. ACME is disabled because no issuer/challenge implementation is configured.
 
 ## Security and deletion

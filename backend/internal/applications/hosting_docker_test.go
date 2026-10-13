@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -485,6 +486,39 @@ volumes:
 	public, _ := json.Marshal(compose)
 	if strings.Contains(string(public), "DB_PASSWORD=") {
 		t.Fatal("public application leaked credentials")
+	}
+}
+
+func TestApplicationDockerRename(t *testing.T) {
+	f := newHostingDockerFixture(t)
+	root := f.source("rename", map[string]string{"index.html": "rename-http"})
+	app := f.create(applications.CreateInput{Name: "before-rename", SourceType: applications.SourceLocal, Source: applications.SourceInput{LocalPath: root}, Configuration: map[string]any{"deployment_mode": "auto", "runtime": "static", "runtime_version": "1.28"}})
+	app = f.deploy(app.ID)
+	containerID := app.Workloads[0].DriverResourceID
+	beforeID, err := exec.CommandContext(f.ctx, "docker", "inspect", "--format", "{{.Id}}", containerID).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "Nowa nazwa aplikacji"
+	renamed, err := f.app.Update(f.ctx, app.ID, applications.UpdateInput{Name: &name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Name = name
+	app.UpdatedAt = renamed.UpdatedAt
+	if !reflect.DeepEqual(app, renamed) {
+		t.Fatal("renaming changed runtime, source, port or deployment identity")
+	}
+	if f.http(renamed) != "rename-http" {
+		t.Fatal("renamed application stopped serving HTTP")
+	}
+	actualID, err := exec.CommandContext(f.ctx, "docker", "inspect", "--format", "{{.Id}}", containerID).Output()
+	if err != nil || string(actualID) != string(beforeID) {
+		t.Fatalf("rename replaced the running container: %s %v", actualID, err)
+	}
+	var count int
+	if err := f.db.QueryRow("SELECT COUNT(*) FROM jobs WHERE application_id=?", app.ID).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("rename enqueued extra jobs: count=%d error=%v", count, err)
 	}
 }
 
