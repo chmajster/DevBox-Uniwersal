@@ -2,6 +2,7 @@
 Run in frontend after npm ci && npm run build, using Python Playwright.
 No real credentials, Docker mutations, databases or managed hosts are contacted.
 """
+import copy
 import json
 import os
 import re
@@ -43,7 +44,7 @@ def application(identifier, name, runtime, status, port):
                 created_at='2026-09-28T08:00:00Z', updated_at='2026-09-28T08:00:00Z')
 
 def install_api(context, role='admin', authenticated=True):
-    state = dict(authenticated=authenticated, posts=[], calls=[], failures=set(), tick=0, deployment_stage='PREPARE', secrets=[],
+    state = dict(authenticated=authenticated, posts=[], patches=[], calls=[], failures=set(), tick=0, deployment_stage='PREPARE', secrets=[],
                  applications=[application('portal', 'Portal zespołu', 'php', 'running', 8080),
                                application('api', 'API projektu', 'go', 'running', 8081),
                                application('worker', 'Worker', 'python', 'stopped', 8082)])
@@ -72,6 +73,7 @@ def install_api(context, role='admin', authenticated=True):
                  '/database-servers': [dict(engine=engine, container='devbox-'+engine, running=True, installed=True) for engine in ('mysql','mariadb','postgresql')],
                  '/runtimes/catalog': [dict(name=name, label=name, versions=[version, '8.3'] if name == 'php' else [version], default_version=version, container_port=port) for name, version, port in [('php','8.4',8080),('python','3.13',8000),('node','22',3000),('go','1.26',8080),('static','1.28',8080)]],
                  '/runtimes/php/modules': [dict(name='pdo_mysql', label='pdo_mysql', description='SQL')],
+                 '/runtimes/go/modules': [],
                  '/runtimes/static/modules': [],
                  '/jobs/job-test/logs': [],
                  '/ports': [dict(port=8080), dict(port=8081)],
@@ -166,7 +168,15 @@ def install_api(context, role='admin', authenticated=True):
                 data = app
             elif method == 'PATCH' and suffix == '':
                 body = route.request.post_data_json
-                app.update(name=body['name'], description=body['description'], source_config=body['configuration'])
+                state['patches'].append(body)
+                if 'name' in body and any(item['id'] != app['id'] and item['name'].casefold() == body['name'].strip().casefold() for item in state['applications']):
+                    route.fulfill(status=409, json={'error': {'code': 'conflict', 'message': 'Aplikacja o tej nazwie już istnieje.'}})
+                    return
+                for key in ('name', 'description', 'auto_start'):
+                    if key in body:
+                        app[key] = body[key]
+                if 'configuration' in body:
+                    app['source_config'] = body['configuration']
                 data = app
             elif method == 'GET' and suffix == 'logs':
                 data = [dict(workload='web', line='GET /health 200')]
@@ -363,11 +373,56 @@ def main():
             expect(dialog.get_by_role('button', name='Usuń aplikację')).to_be_disabled()
             dialog.get_by_role('button', name='Anuluj', exact=True).click()
             assert not state['posts']
+            # Renaming must work independently of incomplete legacy settings
+            # and unsaved edits in the runtime form.
+            portal = state['applications'][0]
+            configuration = copy.deepcopy(portal['source_config'])
+            portal['source_config'].pop('runtime_version')
+            page.reload()
+            page.get_by_role('button', name='Zmień nazwę', exact=True).click()
+            page.get_by_label('Język / oprogramowanie', exact=True).select_option('')
+            expect(page.get_by_label('Wybór wersji', exact=True)).to_be_disabled()
+            before = copy.deepcopy(portal)
+            page.get_by_label('Nazwa', exact=True).fill('   ')
+            expect(page.get_by_role('button', name='Zapisz nazwę i opis')).to_be_disabled()
+            assert not state['patches']
+            page.get_by_label('Nazwa', exact=True).fill('Worker')
+            page.get_by_role('button', name='Zapisz nazwę i opis').click()
+            expect(page.get_by_role('alert')).to_contain_text('Aplikacja o tej nazwie już istnieje.')
+            expect(page.get_by_role('heading', name='Portal zespołu', exact=True)).to_be_visible()
+            expect(page.get_by_label('Nazwa', exact=True)).to_have_value('Worker')
+            page.get_by_label('Nazwa', exact=True).fill('  Nowa nazwa portalu  ')
+            page.get_by_label('Opis', exact=True).fill('  Nowy opis  ')
+            # Background observation must not overwrite unsaved metadata.
+            with page.expect_response(lambda response: '/applications/portal/state' in response.url):
+                page.clock.fast_forward(5100)
+            expect(page.get_by_label('Nazwa', exact=True)).to_have_value('  Nowa nazwa portalu  ')
+            page.get_by_role('button', name='Zapisz nazwę i opis').click()
+            expect(page.get_by_text('Nazwa i opis zapisane.', exact=True)).to_be_visible()
+            expect(page.get_by_role('heading', name='Nowa nazwa portalu', exact=True)).to_be_visible()
+            expect(page.get_by_label('Nazwa', exact=True)).to_have_value('Nowa nazwa portalu')
+            assert state['patches'][-1] == dict(name='Nowa nazwa portalu', description='Nowy opis')
+            before.update(name='Nowa nazwa portalu', description='Nowy opis')
+            assert portal == before, 'Renaming changed runtime, sources, topology or deployments'
+            assert state['posts'] == ['/applications/portal', '/applications/portal']
+            page.screenshot(path=str(OUT / 'application-rename.png'), full_page=True)
+            for width in (390, 320):
+                page.set_viewport_size({'width': width, 'height': 844})
+                no_overflow(page)
+            page.set_viewport_size({'width': 1440, 'height': 1086})
+            page.reload()
+            expect(page.get_by_role('heading', name='Nowa nazwa portalu', exact=True)).to_be_visible()
+            page.goto(BASE + '/apps')
+            expect(page.get_by_role('link', name='Nowa nazwa portalu', exact=True)).to_be_visible()
+            # Restore the concrete runtime version for the configuration smoke.
+            portal['source_config'] = configuration
+            page.get_by_role('link', name='Nowa nazwa portalu', exact=True).click()
             page.get_by_role('button', name='Settings', exact=True).click()
             page.get_by_label('Port wewnętrzny', exact=True).fill('8080')
             page.get_by_role('button', name='Zapisz konfigurację').click()
             expect(page.get_by_text('Konfiguracja zapisana.', exact=False)).to_be_visible()
             assert state['applications'][0]['source_config']['container_port'] == 8080
+            assert 'name' not in state['patches'][-1] and 'description' not in state['patches'][-1]
             page.get_by_role('button', name='Environment', exact=True).click()
             page.get_by_label('Nazwa', exact=True).fill('API_TOKEN')
             page.get_by_label('Nowa wartość', exact=True).fill('synthetic-secret')
@@ -437,6 +492,10 @@ def main():
             expect(v.get_by_role('link', name='Dodaj aplikację')).to_have_count(0)
             v.get_by_role('link', name='Portal zespołu', exact=True).click()
             expect(v.get_by_role('button', name='Deploy', exact=True)).to_be_disabled()
+            expect(v.get_by_role('button', name='Zmień nazwę', exact=True)).to_have_count(0)
+            v.get_by_role('button', name='Settings', exact=True).click()
+            expect(v.get_by_label('Nazwa', exact=True)).to_be_disabled()
+            expect(v.get_by_role('button', name='Zapisz nazwę i opis')).to_be_disabled()
             expect(v.get_by_role('button', name='Usuń', exact=True)).to_have_count(0)
             expect(v.get_by_role('link', name='Kopie zapasowe', exact=True)).to_have_count(0)
             expect(v.get_by_role('link', name='Audyt', exact=True)).to_have_count(0)
@@ -448,6 +507,17 @@ def main():
             v.keyboard.press('Escape')
             expect(v.get_by_role('dialog')).to_have_count(0)
             viewer.close()
+            operator = browser.new_context(viewport={'width': 1280, 'height': 900})
+            operator_state = install_api(operator, role='operator')
+            o = operator.new_page()
+            o.on('pageerror', lambda error: errors.append(str(error)))
+            o.goto(BASE + '/apps/api')
+            o.get_by_role('button', name='Zmień nazwę', exact=True).click()
+            o.get_by_label('Nazwa', exact=True).fill('API operatora')
+            o.get_by_role('button', name='Zapisz nazwę i opis').click()
+            expect(o.get_by_role('heading', name='API operatora', exact=True)).to_be_visible()
+            assert operator_state['patches'] == [dict(name='API operatora', description='Aplikacja testowa')]
+            operator.close()
             login = browser.new_context(viewport={'width': 1440, 'height': 960})
             install_api(login, authenticated=False)
             l = login.new_page()
@@ -465,6 +535,7 @@ def main():
             browser.close()
         assert not errors, errors
         report = {'status': 'passed', 'fixtures': 'Synthetic API only; production bundle', 'checks': ['dark default/light persistence', 'real-source gauges', 'chart sample accumulation and metric/range switching', 'service failures', 'logs filters/deep link', 'job queue and details deep links', 'search', 'application wizard/configuration/secrets/deployment/CSRF', 'live runtime state independent of deployment', 'failed provider inspection', 'preserve data confirmation', '900/390/320px no overflow', 'API failures/null collections', 'viewer RBAC visibility', 'blocked storage', 'login']}
+        report['checks'].append('independent rename, validation, polling, persistence and Operator/Viewer RBAC')
         (OUT / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         print(json.dumps(report, ensure_ascii=False))
     finally:
