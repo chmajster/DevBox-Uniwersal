@@ -90,6 +90,16 @@ Application details now expose Zmień nazwę and save name/description independe
 
 The Docker check above is targeted to renaming; the earlier full runtime/database suites were not repeated for this UI change.
 
+The follow-up details UI refinement separates container state, HTTP readiness, runtime, port, database and latest deployment, adds address copying and Polish URL-backed tabs, and refines runtime/topology/resources/logs/settings plus dark/light/mobile layouts. Current runtime metadata overrides the latest successful plan; failed plans and missing legacy metadata do not imply a running configuration. The route is lazy-loaded, removing the previous main-bundle size warning (481.28 kB main JS, 40.53 kB details JS).
+
+- Frontend: 79 tests in 20 files, ESLint, TypeScript and production build PASS, without Vite chunk-size warnings.
+- Chromium branding: 6 cases PASS; Python asset integrity: 5 tests PASS.
+- Chromium workspace smoke and dedicated application details regression: PASS with the production bundle and synthetic API. Coverage includes independent rename/settings/secrets, RBAC, failed inspection, sections, copy/clipboard, menu Escape/outside dismissal, URL reload/back/forward, deployment vs live runtime, both themes and 900/390/320 px layouts.
+- Full backend tests, go vet, command builds and Linux/Windows installer checks: PASS again; backend behavior is unchanged by this refinement.
+- Screenshots inspected for the captured read-only Plan application data and synthetic desktop/settings/light/mobile views. Connected browser surfaces were unavailable; this is an isolated visual preview, not a claim of live browser testing against the user's application.
+
+- Installed frontend index, all six generated assets and a direct Settings URL match the tested build over HTTP. The systemd service stayed active, health returned OK, and Plan remained running with unchanged source/configuration, container identity and ports. No existing application was renamed, deployed or restarted during this UI verification.
+
 ## Operational limits and unverified items
 
 - Browser regressions use synthetic API fixtures and the production frontend bundle. The current bundle was exercised locally in headless Chromium, with screenshots inspected. Real runtime/SQL behavior was checked separately with Docker; the 2026-10-08 session also checked the backend HTTP API.

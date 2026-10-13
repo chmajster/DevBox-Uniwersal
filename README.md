@@ -12,6 +12,8 @@ MySQL, MariaDB and PostgreSQL run as independent shared servers with persistent 
 
 To rename an application, open its details, click **Zmień nazwę**, then **Zapisz nazwę i opis**. Metadata saves independently of runtime configuration and does not require a deployment.
 
+Application details show container state, HTTP availability, runtime and port separately, with a copyable address and CPU/RAM/network cards. Polish tabs separate runtime, database, environment/secrets, ports, domains, logs, jobs, containers and settings. Tabs persist in the URL for reload and browser history; extra lifecycle actions are under **Więcej działań**. The layout supports dark/light themes and narrow screens.
+
 This refactor preserves existing Project records but does not automatically adopt them or migrate project-specific database/domain bindings. New application IDs are independent of legacy Project IDs.
 
 ## Foundation stack

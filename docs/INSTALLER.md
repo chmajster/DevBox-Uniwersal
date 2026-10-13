@@ -34,6 +34,8 @@ The installer supports Ubuntu and Debian. User applications require Docker Engin
 
 After updating the panel, reload the browser (Ctrl+F5 if necessary). Application details include **Zmień nazwę**; save the separate name/description form without deploying the application.
 
+The refined details panel includes an address copy button, separate database/settings tabs and **Więcej działań** for build/rebuild/recreate and administrative operations. Updating these frontend assets does not require restarting application containers. Install the complete generated `frontend/dist` so the lazily loaded details script and stylesheet are present.
+
 `devbox status` reports platform and component state. `devbox doctor` performs operational diagnostics without exposing a generic root shell. Git-based systemd updates persist their live state in `/var/lib/devbox/update-status`; the API exposes it at `GET /api/v1/update/progress`, including percentage, stage, timestamps and failure state. Failed runs also expose the exit code and a bounded, sanitized tail of `/var/log/devbox-update.log` to authenticated administrators so the exact failing command output can be diagnosed from the UI. Common password/token/authorization patterns are redacted before log lines are returned. The file is updated atomically and remains available across the intentional `devbox.service` restart.
 
 ## Privileged helper

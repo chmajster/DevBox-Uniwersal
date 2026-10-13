@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-13 — Application details UI
+
+- Refined the header, primary actions, extra-actions menu, Polish navigation and responsive dark/light layouts. Sections persist in the URL and browser history.
+- Added a copyable application address, separate container/HTTP/runtime/port summaries, source and database/deployment summaries, resource cards and a dedicated database tab.
+- Reworked runtime, mounts, endpoints, containers, logs and settings for readability; legacy metadata gaps and failed inspection remain explicit, independently of failed deployment history.
+- Lazy-loaded the details route and added production-bundle Chromium coverage for navigation, copying, menus and narrow screens.
+
 ## 2026-10-13 — Application rename
 
 - Added a visible Zmień nazwę action and an independent name/description form. Runtime validation no longer blocks renaming detected or legacy applications, and configuration saves no longer overwrite metadata.
